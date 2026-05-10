@@ -1,10 +1,10 @@
 export default function VaultsPage() {
   return (
-    <div className="flex gap-gutter w-full h-full">
+    <div className="flex flex-col lg:flex-row gap-gutter w-full h-full overflow-y-auto lg:overflow-hidden pb-8 lg:pb-0 pr-2 lg:pr-0">
       {/* Left Column: Primary Data */}
       <div className="flex-1 flex flex-col gap-gutter">
         {/* Summary Cards Row */}
-        <div className="grid grid-cols-2 gap-gutter">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-gutter">
           <div className="glass-panel p-6 rounded flex flex-col gap-2">
             <div className="flex items-center justify-between text-on-surface-variant">
               <span className="font-mono-sm text-mono-sm">TOTAL VALUE LOCKED</span>
@@ -45,14 +45,14 @@ export default function VaultsPage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full min-w-[800px] text-left border-collapse">
               <thead className="sticky top-0 bg-surface-container-lowest/90 backdrop-blur border-b border-outline-variant z-10">
                 <tr>
-                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal">ASSET</th>
-                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal text-right">TOTAL BALANCE</th>
-                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal text-right">SEALED (LOCKED)</th>
-                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal text-right">AVAILABLE</th>
-                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal text-right">ACTIONS</th>
+                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal whitespace-nowrap">ASSET</th>
+                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal text-right whitespace-nowrap">TOTAL BALANCE</th>
+                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal text-right whitespace-nowrap">SEALED (LOCKED)</th>
+                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal text-right whitespace-nowrap">AVAILABLE</th>
+                  <th className="font-mono-sm text-mono-sm text-on-surface-variant py-3 px-6 font-normal text-right whitespace-nowrap">ACTIONS</th>
                 </tr>
               </thead>
               <tbody className="font-mono-data text-mono-data">
@@ -123,7 +123,7 @@ export default function VaultsPage() {
       </div>
 
       {/* Right Column: Contextual Sidebar */}
-      <div className="w-80 flex flex-col gap-gutter flex-shrink-0">
+      <div className="w-full lg:w-80 flex flex-col gap-gutter flex-shrink-0 min-h-[500px] lg:min-h-0">
         {/* Collateral Health */}
         <div className="glass-panel rounded p-6 flex flex-col gap-4">
           <div className="flex items-center justify-between">

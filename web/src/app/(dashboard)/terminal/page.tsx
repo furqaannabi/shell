@@ -1,9 +1,9 @@
 export default function TerminalPage() {
   return (
-    <>
+    <div className="flex flex-col lg:flex-row gap-4 h-full w-full overflow-y-auto lg:overflow-hidden pb-8 lg:pb-0 pr-2 lg:pr-0">
       {/* Left Panel: Sealed Order Entry */}
-      <section className="w-full md:w-80 flex-shrink-0 flex flex-col gap-4">
-        <div className="glass-panel glass-panel-active rounded-lg p-4 flex flex-col h-full">
+      <section className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-4">
+        <div className="glass-panel glass-panel-active rounded-lg p-4 flex flex-col h-full min-h-[500px] lg:min-h-0">
           <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#1E293B]">
             <h2 className="font-headline-md text-[18px] text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>lock</span>
@@ -22,8 +22,8 @@ export default function TerminalPage() {
             
             {/* Side */}
             <div className="grid grid-cols-2 gap-2">
-              <button className="bg-surface-container-high border border-outline-variant text-on-surface py-2 rounded font-mono-sm text-mono-sm hover:border-primary transition-colors" type="button">Buy</button>
-              <button className="bg-error-container/20 border border-error-container/50 text-error py-2 rounded font-mono-sm text-mono-sm hover:bg-error-container/40 transition-colors" type="button">Sell</button>
+              <button className="bg-surface-container-high border border-outline-variant text-on-surface py-2 rounded font-mono-sm text-mono-sm hover:border-primary transition-colors cursor-pointer" type="button">Buy</button>
+              <button className="bg-error-container/20 border border-error-container/50 text-error py-2 rounded font-mono-sm text-mono-sm hover:bg-error-container/40 transition-colors cursor-pointer" type="button">Sell</button>
             </div>
             
             {/* Size */}
@@ -51,7 +51,7 @@ export default function TerminalPage() {
               {/* Expiry */}
               <div className="relative group">
                 <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Expiry</label>
-                <select className="input-sealed w-full rounded p-2 text-on-surface font-mono-sm text-mono-sm appearance-none">
+                <select className="input-sealed w-full rounded p-2 text-on-surface font-mono-sm text-mono-sm appearance-none cursor-pointer">
                   <option>1 Hour</option>
                   <option>24 Hours</option>
                   <option>GTC</option>
@@ -68,7 +68,7 @@ export default function TerminalPage() {
             </div>
             
             <div className="mt-auto pt-4">
-              <button className="w-full bg-primary text-on-primary py-3 rounded font-mono-sm text-mono-sm font-bold uppercase tracking-wider hover:opacity-90 transition-opacity shadow-[0_0_8px_rgba(87,241,219,0.3)] flex justify-center items-center gap-2" type="button">
+              <button className="w-full bg-primary text-on-primary py-3 rounded font-mono-sm text-mono-sm font-bold uppercase tracking-wider hover:opacity-90 transition-opacity shadow-[0_0_8px_rgba(87,241,219,0.3)] flex justify-center items-center gap-2 cursor-pointer" type="button">
                 <span className="material-symbols-outlined text-[18px]">verified_user</span> Submit Sealed Order
               </button>
             </div>
@@ -77,16 +77,16 @@ export default function TerminalPage() {
       </section>
 
       {/* Center Panel: Active Orders */}
-      <section className="flex-1 flex flex-col gap-4 min-w-[400px]">
+      <section className="flex-1 flex flex-col gap-4 min-w-0 w-full min-h-[400px] lg:min-h-0">
         <div className="glass-panel rounded-lg p-4 flex flex-col h-full">
           <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#1E293B]">
             <h2 className="font-headline-md text-[18px] text-on-surface">Active Orders</h2>
-            <button className="text-on-surface-variant hover:text-primary transition-colors">
+            <button className="text-on-surface-variant hover:text-primary transition-colors cursor-pointer">
               <span className="material-symbols-outlined text-[20px]">filter_list</span>
             </button>
           </div>
-          <div className="overflow-auto flex-1">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-auto flex-1 w-full">
+            <table className="w-full text-left border-collapse min-w-[500px]">
               <thead>
                 <tr className="font-mono-sm text-[11px] text-on-surface-variant uppercase tracking-wider border-b border-[#1E293B]">
                   <th className="pb-2 font-normal">Asset</th>
@@ -134,13 +134,13 @@ export default function TerminalPage() {
       </section>
 
       {/* Right Panel: Order Book & Receipts */}
-      <section className="w-full md:w-80 flex-shrink-0 flex flex-col gap-4">
+      <section className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-4 min-h-[600px] lg:min-h-0">
         {/* Depth Reference */}
         <div className="glass-panel rounded-lg p-4 flex flex-col flex-1">
           <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#1E293B]">
             <h2 className="font-headline-md text-[14px] text-on-surface uppercase tracking-wider">DeepBook Reference</h2>
           </div>
-          <div className="flex-1 overflow-auto flex flex-col text-[11px] font-mono-data text-on-surface-variant">
+          <div className="flex-1 overflow-auto flex flex-col text-[11px] font-mono-data text-on-surface-variant min-h-[200px]">
             <div className="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
               <div className="absolute right-0 top-0 bottom-0 bg-error-container/10 w-[80%] z-0"></div>
               <span className="text-error relative z-10">3,452.10</span>
@@ -182,7 +182,7 @@ export default function TerminalPage() {
           <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#1E293B]">
             <h2 className="font-headline-md text-[14px] text-on-surface uppercase tracking-wider">Settlement Receipts</h2>
           </div>
-          <div className="flex-1 overflow-auto flex flex-col gap-2">
+          <div className="flex-1 overflow-auto flex flex-col gap-2 min-h-[200px]">
             <div className="p-2 border border-[#1E293B] rounded bg-surface-container-lowest flex flex-col gap-1 hover:border-secondary/50 transition-colors">
               <div className="flex justify-between font-mono-data text-[12px]">
                 <span className="text-primary">BUY ETH</span>
@@ -208,6 +208,6 @@ export default function TerminalPage() {
           </div>
         </div>
       </section>
-    </>
+    </div>
   );
 }
