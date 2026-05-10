@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>System Logs - Shell Finance</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1;
+        }
+        
+        /* Custom scrollbar for high-density tech vibe */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #282a2e; /* surface-container-high */
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3c4a46; /* outline-variant */
+        }
+    </style>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#e0e0ff",
+                        "on-secondary-fixed": "#000767",
+                        "surface-container-highest": "#333539",
+                        "outline": "#859490",
+                        "inverse-surface": "#e2e2e8",
+                        "primary": "#57f1db",
+                        "outline-variant": "#3c4a46",
+                        "on-secondary-container": "#a8afff",
+                        "surface-container": "#1e2024",
+                        "primary-fixed": "#62fae3",
+                        "primary-container": "#2dd4bf",
+                        "on-primary-fixed": "#00201c",
+                        "on-background": "#e2e2e8",
+                        "error-container": "#93000a",
+                        "tertiary-fixed": "#e0e3e5",
+                        "surface-bright": "#37393e",
+                        "background": "#111318",
+                        "on-surface-variant": "#bacac5",
+                        "on-error": "#690005",
+                        "on-tertiary-container": "#4a4d4f",
+                        "error": "#ffb4ab",
+                        "on-primary": "#003731",
+                        "inverse-primary": "#006b5f",
+                        "on-tertiary-fixed": "#191c1e",
+                        "primary-fixed-dim": "#3cddc7",
+                        "inverse-on-surface": "#2f3035",
+                        "tertiary-fixed-dim": "#c4c7c9",
+                        "surface-dim": "#111318",
+                        "on-primary-fixed-variant": "#005047",
+                        "surface-container-high": "#282a2e",
+                        "tertiary-container": "#bcbec0",
+                        "on-surface": "#e2e2e8",
+                        "on-tertiary-fixed-variant": "#444749",
+                        "on-primary-container": "#00574d",
+                        "surface-variant": "#333539",
+                        "surface-tint": "#3cddc7",
+                        "tertiary": "#d8dadc",
+                        "surface": "#111318",
+                        "surface-container-lowest": "#0c0e12",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "on-tertiary": "#2d3133",
+                        "secondary-container": "#2f3aa3",
+                        "secondary": "#bdc2ff",
+                        "on-secondary": "#131e8c",
+                        "surface-container-low": "#1a1c20",
+                        "on-secondary-fixed-variant": "#2f3aa3",
+                        "on-error-container": "#ffdad6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container-max": "1440px",
+                        "margin": "24px",
+                        "gutter": "16px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "mono-data": ["JetBrains Mono", "monospace"],
+                        "display-lg": ["Geist", "sans-serif"],
+                        "body-base": ["Geist", "sans-serif"],
+                        "mono-sm": ["JetBrains Mono", "monospace"],
+                        "headline-md": ["Geist", "sans-serif"],
+                        "body-sm": ["Geist", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "mono-data": ["14px", { "lineHeight": "1.4", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-base": ["16px", { "lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400" }],
+                        "mono-sm": ["12px", { "lineHeight": "1.2", "letterSpacing": "0", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "body-sm": ["14px", { "lineHeight": "1.4", "letterSpacing": "0", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body-base antialiased min-h-screen flex flex-col selection:bg-primary selection:text-on-primary">
+<!-- TopNavBar (Shared Component) -->
+<nav class="bg-surface/90 backdrop-blur-xl border-b border-outline-variant h-14 fixed top-0 w-full z-50 px-margin flex justify-between items-center">
+<!-- Brand -->
+<div class="flex items-center gap-4">
+<span class="font-display-lg text-headline-md font-bold text-primary tracking-tighter">SHELL FINANCE</span>
+</div>
+<!-- Center Nav Links -->
+<div class="hidden md:flex items-center gap-8 h-full">
+<a class="text-on-surface-variant h-full flex items-center hover:text-primary-fixed-dim transition-colors duration-200 font-display-lg text-body-base uppercase tracking-widest text-sm" href="#">Terminal</a>
+<a class="text-on-surface-variant h-full flex items-center hover:text-primary-fixed-dim transition-colors duration-200 font-display-lg text-body-base uppercase tracking-widest text-sm" href="#">Operator</a>
+<a class="text-on-surface-variant h-full flex items-center hover:text-primary-fixed-dim transition-colors duration-200 font-display-lg text-body-base uppercase tracking-widest text-sm" href="#">Analytics</a>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-opacity active:opacity-70">
+<span class="material-symbols-outlined text-[20px]">notifications_active</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-opacity active:opacity-70">
+<span class="material-symbols-outlined text-[20px]">account_balance_wallet</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-opacity active:opacity-70">
+<span class="material-symbols-outlined text-[20px]">settings_input_component</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border border-outline-variant overflow-hidden flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">person</span>
+</div>
+</div>
+</nav>
+<div class="flex flex-1 pt-14">
+<!-- SideNavBar (Shared Component) -->
+<aside class="bg-surface-container-lowest/80 backdrop-blur-2xl border-r border-outline-variant fixed left-0 top-14 h-[calc(100vh-3.5rem)] w-[280px] flex flex-col py-gutter space-y-unit z-40 hidden md:flex">
+<!-- Header -->
+<div class="px-margin mb-6 mt-4">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-10 h-10 rounded border border-outline-variant bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[20px]">memory</span>
+</div>
+<div>
+<h2 class="font-mono-data text-primary text-body-sm leading-tight tracking-tight">ENCLAVE_ST-1</h2>
+<div class="flex items-center gap-1.5 mt-0.5">
+<span class="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(45,212,191,0.5)] animate-pulse"></span>
+<span class="font-mono-sm text-mono-sm text-on-surface-variant text-[10px]">CONNECTED: SECURE</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Navigation Links -->
+<nav class="flex-1 flex flex-col">
+<a class="text-on-surface-variant py-3 px-margin flex items-center gap-3 hover:bg-surface-container-high hover:text-on-surface transition-all duration-150 active:translate-x-1 font-mono-data text-mono-data uppercase text-xs" href="#">
+<span class="material-symbols-outlined text-[18px]">terminal</span>
+                    Execution
+                </a>
+<a class="text-on-surface-variant py-3 px-margin flex items-center gap-3 hover:bg-surface-container-high hover:text-on-surface transition-all duration-150 active:translate-x-1 font-mono-data text-mono-data uppercase text-xs" href="#">
+<span class="material-symbols-outlined text-[18px]">encrypted</span>
+                    Enclaves
+                </a>
+<a class="text-on-surface-variant py-3 px-margin flex items-center gap-3 hover:bg-surface-container-high hover:text-on-surface transition-all duration-150 active:translate-x-1 font-mono-data text-mono-data uppercase text-xs" href="#">
+<span class="material-symbols-outlined text-[18px]">account_balance</span>
+                    Vaults
+                </a>
+<a class="text-on-surface-variant py-3 px-margin flex items-center gap-3 hover:bg-surface-container-high hover:text-on-surface transition-all duration-150 active:translate-x-1 font-mono-data text-mono-data uppercase text-xs" href="#">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+                    Settings
+                </a>
+<!-- Active Item -->
+<a class="bg-primary/5 text-primary border-r-2 border-primary py-3 px-margin flex items-center gap-3 active:translate-x-1 duration-75 font-mono-data text-mono-data uppercase text-xs shadow-[inset_-2px_0_10px_rgba(45,212,191,0.05)]" href="#">
+<span class="material-symbols-outlined text-[18px] icon-fill">database</span>
+                    Logs
+                </a>
+<a class="text-on-surface-variant py-3 px-margin flex items-center gap-3 hover:bg-surface-container-high hover:text-on-surface transition-all duration-150 active:translate-x-1 font-mono-data text-mono-data uppercase text-xs mt-auto" href="#">
+<span class="material-symbols-outlined text-[18px]">contact_support</span>
+                    Support
+                </a>
+</nav>
+<!-- CTA -->
+<div class="px-margin pb-margin pt-4 mt-auto">
+<button class="w-full bg-surface-container-lowest border border-outline-variant text-on-surface hover:border-primary hover:text-primary transition-colors py-2 px-4 font-mono-data text-mono-data text-xs flex justify-center items-center gap-2">
+                    INITIATE TRADE
+                    <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</aside>
+<!-- Main Workspace -->
+<main class="flex-1 md:ml-[280px] p-margin flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
+<!-- Page Header -->
+<header class="flex items-end justify-between mb-6 shrink-0">
+<div class="flex items-center gap-4">
+<h1 class="font-headline-md text-headline-md tracking-tight text-on-surface">System Logs</h1>
+<div class="flex items-center gap-2 bg-surface-container px-2 py-1 border border-outline-variant rounded-sm">
+<span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(45,212,191,0.4)] animate-pulse"></span>
+<span class="font-mono-sm text-mono-sm text-primary tracking-widest uppercase text-[10px]">Live Stream</span>
+</div>
+</div>
+<div class="flex gap-3">
+<button class="h-8 px-4 flex items-center gap-2 border border-outline-variant bg-surface-container-lowest hover:bg-surface-container hover:border-primary transition-all text-on-surface font-mono-data text-mono-data text-xs rounded-sm group">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant group-hover:text-primary transition-colors">download</span>
+                        EXPORT CSV
+                    </button>
+</div>
+</header>
+<!-- Workspace Grid (12 Columns) -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-gutter flex-1 min-h-0">
+<!-- Center Column: Log Stream (9 cols) -->
+<section class="md:col-span-9 flex flex-col h-full gap-4 min-h-0">
+<!-- Filter Bar -->
+<div class="bg-surface-container-lowest/80 backdrop-blur-md border border-outline-variant p-2 flex items-center gap-3 shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+<!-- Search Input -->
+<div class="relative flex-1 group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant group-focus-within:text-primary transition-colors">search</span>
+<input class="w-full bg-[#0A0C10] border border-outline-variant rounded-none pl-9 pr-24 py-1.5 text-on-surface font-mono-sm text-mono-sm focus:ring-0 focus:border-secondary-container transition-colors placeholder:text-on-surface-variant/50" placeholder="Search by Tx Hash, Enclave ID, or Event Type..." type="text"/>
+<div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+<span class="font-mono-data text-[8px] tracking-widest text-secondary-container opacity-0 group-focus-within:opacity-100 transition-opacity">ENCRYPTED</span>
+<div class="px-1.5 py-0.5 bg-surface-container border border-outline-variant text-[10px] text-on-surface-variant font-mono-sm rounded-sm">⌘K</div>
+</div>
+</div>
+<!-- Dividers -->
+<div class="w-px h-5 bg-outline-variant"></div>
+<!-- Time Range Picker -->
+<div class="flex gap-1 bg-[#0A0C10] border border-outline-variant p-0.5">
+<button class="px-3 py-1 font-mono-sm text-mono-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors">1H</button>
+<button class="px-3 py-1 font-mono-sm text-mono-sm bg-surface-container text-primary border border-primary/30 shadow-[0_0_8px_rgba(45,212,191,0.1)]">24H</button>
+<button class="px-3 py-1 font-mono-sm text-mono-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors">7D</button>
+</div>
+<button class="w-8 h-8 flex items-center justify-center border border-outline-variant bg-[#0A0C10] text-on-surface-variant hover:text-primary hover:border-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">filter_list</span>
+</button>
+</div>
+<!-- Log Table Container (Level 1 Sealed) -->
+<div class="flex-1 bg-surface-container-lowest/90 backdrop-blur-xl border border-outline-variant flex flex-col overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+<!-- Table Header -->
+<div class="flex border-b border-outline-variant bg-[#0A0C10]/50 py-2 px-4 shrink-0">
+<div class="w-[18%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Timestamp (UTC)</div>
+<div class="w-[12%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Level</div>
+<div class="w-[20%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Module</div>
+<div class="w-[45%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Message / Hash</div>
+<div class="w-[5%] flex justify-end"></div>
+</div>
+<!-- Table Body (Scrollable) -->
+<div class="flex-1 overflow-y-auto">
+<!-- Log Row: INFO -->
+<div class="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
+<div class="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:01.451</div>
+<div class="w-[12%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">INFO</div>
+<div class="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">seal::key_server</div>
+<div class="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Ephemeral key generation cycle completed successfully.</div>
+<div class="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</div>
+</div>
+<!-- Log Row: MATCH (Expanded) -->
+<div class="flex flex-col border-b border-outline-variant/50 bg-primary/5 shadow-[inset_2px_0_0_#2dd4bf]">
+<div class="flex items-start py-2 px-4 cursor-pointer">
+<div class="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:04.112</div>
+<div class="w-[12%] font-mono-data text-mono-data text-primary text-[11px] pt-0.5 font-bold">MATCH</div>
+<div class="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">shell::pool::engine</div>
+<div class="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Cross-pool execution confirmed. Settled quantity: 45,000 USDC.</div>
+<div class="w-[5%] flex justify-end text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">expand_less</span>
+</div>
+</div>
+<!-- Expanded Content (JSON Raw) -->
+<div class="px-4 py-3 bg-[#0A0C10] border-t border-outline-variant/50 shadow-[inset_0_4px_12px_rgba(0,0,0,0.5)]">
+<div class="flex items-center justify-between mb-2">
+<span class="font-mono-sm text-[10px] text-on-surface-variant uppercase tracking-widest">RAW PAYLOAD</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[14px]">content_copy</span>
+</button>
+</div>
+<pre class="font-mono-data text-[10px] text-primary/80 leading-relaxed overflow-x-auto">{
+  "event_id": "evt_9x8f7a6b5c4d3e2f1",
+  "type": "ORDER_MATCH_SETTLED",
+  "enclave_sig": "0x4a9b...7f1c",
+  "details": {
+    "maker_order": "ord_881249aa",
+    "taker_order": "ord_991249bb",
+    "asset_pair": "ETH/USDC",
+    "price_execution": "1845.20",
+    "volume_matched": "24.3871",
+    "latency_ms": 1.4
+  },
+  "zk_proof_status": "VERIFIED_ON_CHAIN"
+}</pre>
+</div>
+</div>
+<!-- Log Row: WARN -->
+<div class="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
+<div class="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:09.881</div>
+<div class="w-[12%] font-mono-data text-mono-data text-tertiary text-[11px] pt-0.5 font-bold">WARN</div>
+<div class="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">nautilus::router</div>
+<div class="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Liquidity fragmentation detected across shards. Optimization required.</div>
+<div class="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</div>
+</div>
+<!-- Log Row: ERROR -->
+<div class="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer bg-error-container/10">
+<div class="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:15.004</div>
+<div class="w-[12%] font-mono-data text-mono-data text-error text-[11px] pt-0.5 font-bold">ERROR</div>
+<div class="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">shell::rpc_node</div>
+<div class="w-[45%] font-mono-data text-mono-data text-error text-[11px] truncate pr-2 pt-0.5">Connection timeout to external pricing oracle. Retrying...</div>
+<div class="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</div>
+</div>
+<!-- Log Row: INFO -->
+<div class="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
+<div class="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:16.220</div>
+<div class="w-[12%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">INFO</div>
+<div class="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">seal::attestation</div>
+<div class="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Quote verification completed for Node 44-B.</div>
+<div class="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</div>
+</div>
+<!-- Log Row: MATCH -->
+<div class="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
+<div class="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:18.901</div>
+<div class="w-[12%] font-mono-data text-mono-data text-primary text-[11px] pt-0.5 font-bold">MATCH</div>
+<div class="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">shell::pool::engine</div>
+<div class="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Partial fill execution. Settled: 12.5 BTC. Remaining: 8.0 BTC.</div>
+<div class="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Log Footer Status -->
+<div class="border-t border-outline-variant bg-[#0A0C10] p-1.5 flex justify-between items-center shrink-0">
+<div class="flex items-center gap-4 px-2">
+<span class="font-mono-sm text-[9px] text-on-surface-variant tracking-widest uppercase">Stream Active</span>
+<span class="font-mono-sm text-[9px] text-on-surface-variant tracking-widest uppercase">Buffer: 4.2 MB</span>
+</div>
+<div class="flex gap-1">
+<button class="p-1 hover:bg-surface-container rounded text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[14px]">keyboard_arrow_left</span>
+</button>
+<button class="p-1 hover:bg-surface-container rounded text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[14px]">keyboard_arrow_right</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Right Sidebar (3 cols) -->
+<aside class="hidden md:flex flex-col gap-4 col-span-3 min-h-0">
+<!-- Active Enclaves Card -->
+<div class="bg-surface-container-lowest/80 backdrop-blur-md border border-outline-variant shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] flex flex-col">
+<div class="p-3 border-b border-outline-variant bg-surface-container/30 flex items-center justify-between">
+<h3 class="font-mono-data text-xs text-on-surface tracking-wide uppercase">Active Enclaves</h3>
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">dns</span>
+</div>
+<div class="p-3 flex flex-col gap-3">
+<!-- Enclave Item -->
+<div class="flex items-center justify-between group cursor-pointer">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(45,212,191,0.6)]"></span>
+<div>
+<div class="font-mono-data text-[11px] text-on-surface group-hover:text-primary transition-colors">ENC_ALPHA_01</div>
+<div class="font-mono-sm text-[9px] text-on-surface-variant">EU-WEST-3 • 14ms</div>
+</div>
+</div>
+<span class="font-mono-sm text-[9px] text-primary bg-primary/10 px-1 border border-primary/20">SEALED</span>
+</div>
+<!-- Enclave Item -->
+<div class="flex items-center justify-between group cursor-pointer">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(45,212,191,0.6)]"></span>
+<div>
+<div class="font-mono-data text-[11px] text-on-surface group-hover:text-primary transition-colors">ENC_BETA_02</div>
+<div class="font-mono-sm text-[9px] text-on-surface-variant">US-EAST-1 • 42ms</div>
+</div>
+</div>
+<span class="font-mono-sm text-[9px] text-primary bg-primary/10 px-1 border border-primary/20">SEALED</span>
+</div>
+<!-- Enclave Item (Syncing) -->
+<div class="flex items-center justify-between group cursor-pointer opacity-70">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse"></span>
+<div>
+<div class="font-mono-data text-[11px] text-on-surface group-hover:text-on-surface transition-colors">ENC_GAMMA_03</div>
+<div class="font-mono-sm text-[9px] text-on-surface-variant">AP-NORTHEAST-1 • SYNC</div>
+</div>
+</div>
+<span class="font-mono-sm text-[9px] text-tertiary border border-tertiary/20 px-1">ATTESTING</span>
+</div>
+</div>
+</div>
+<!-- Log Retention Card -->
+<div class="bg-surface-container-lowest/80 backdrop-blur-md border border-outline-variant shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] flex flex-col">
+<div class="p-3 border-b border-outline-variant bg-surface-container/30 flex items-center justify-between">
+<h3 class="font-mono-data text-xs text-on-surface tracking-wide uppercase">Log Retention</h3>
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">storage</span>
+</div>
+<div class="p-4 flex flex-col gap-4">
+<div class="flex flex-col gap-1.5">
+<div class="flex justify-between items-end">
+<span class="font-mono-sm text-[10px] text-on-surface-variant uppercase">Storage Used</span>
+<span class="font-mono-data text-xs text-on-surface">84.2 GB <span class="text-on-surface-variant text-[10px]">/ 100 GB</span></span>
+</div>
+<!-- Tech Progress Bar -->
+<div class="h-1.5 w-full bg-[#0A0C10] border border-outline-variant overflow-hidden relative">
+<div class="absolute top-0 left-0 h-full bg-primary w-[84%] shadow-[0_0_8px_rgba(45,212,191,0.5)]"></div>
+<!-- Grid overlay on progress bar for tech feel -->
+<div class="absolute top-0 left-0 w-full h-full bg-[linear-gradient(90deg,transparent_0%,transparent_90%,rgba(10,12,16,0.3)_90%,rgba(10,12,16,0.3)_100%)] bg-[length:4px_100%]"></div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-2 mt-2">
+<div class="flex flex-col p-2 bg-[#0A0C10] border border-outline-variant">
+<span class="font-mono-sm text-[9px] text-on-surface-variant uppercase mb-1">Oldest Record</span>
+<span class="font-mono-data text-[10px] text-on-surface">30 Days (Max)</span>
+</div>
+<div class="flex flex-col p-2 bg-[#0A0C10] border border-outline-variant">
+<span class="font-mono-sm text-[9px] text-on-surface-variant uppercase mb-1">Archive Policy</span>
+<span class="font-mono-data text-[10px] text-primary">S3 Cold Storage</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Decorative Tech Element / Protocol State Snippet -->
+<div class="mt-auto border border-outline-variant border-dashed p-3 relative overflow-hidden group">
+<div class="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="font-mono-sm text-[9px] text-on-surface-variant leading-relaxed mix-blend-screen opacity-50">
+                            &gt; SYS_CHECK_OK <br/>
+                            &gt; HASH_RATE: 4.2 EH/s <br/>
+                            &gt; ZERO_KNOWLEDGE_PROOFS: ACTIVE <br/>
+                            &gt; MEMPOOL_CLEAR: TRUE
+                        </div>
+<div class="absolute bottom-1 right-2 w-1.5 h-3 bg-primary animate-pulse"></div>
+</div>
+</aside>
+</div>
+</main>
+</div>
+</body></html>

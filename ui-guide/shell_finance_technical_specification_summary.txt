@@ -1,0 +1,32 @@
+TECHNICAL SPECIFICATION · v0.1 · CONFIDENTIAL
+Shell Finance
+Confidential order flow on DeepBook · Sui Overflow 2026 · DeFi & Payments track
+
+1. Executive Summary
+Shell Finance is the first true on-chain dark pool: a confidential order flow layer for DeepBook where institutional traders submit Seal-encrypted orders, a Nautilus TEE matches and clears them against DeepBook's CLOB, and only post-execution receipts are revealed.
+
+2. Problem
+Institutional execution on public chains is a leak. Every public order book exposes order intent before execution.
+
+3. Solution
+Shell Finance composes three Sui-native primitives:
+- Seal: Threshold-encrypts the order envelope.
+- Nautilus: AWS Nitro Enclave runs the matching engine.
+- DeepBook: Settles via DeepBook v3 spot or margin.
+
+4. Architecture
+- shell::pool (shared object)
+- shell::attestation (PCR verification)
+- shell::settlement (hot-potato pattern)
+
+5. User Flow
+- Login via zkLogin or wallet.
+- Submit order (side, size, limit, expiry, slippage).
+- Order is Seal-encrypted and published.
+- Enclave decrypts and matches.
+- Settlement PTB lands on Sui.
+- SettlementReceipt minted.
+
+6. What's revealed
+- Pre-match: Order exists, trader address, expiry. (Side, size, price are PRIVATE).
+- Post-settlement: Filled price, size, parties, tx hash. (Original limit/slippage PRIVATE).
