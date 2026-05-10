@@ -23,9 +23,9 @@ export default function LogsPage() {
         {/* Center Column: Log Stream (9 cols) */}
         <section className="md:col-span-9 flex flex-col h-full gap-4 min-h-0">
           {/* Filter Bar */}
-          <div className="bg-surface-container-lowest/80 backdrop-blur-md border border-outline-variant p-2 flex items-center gap-3 shrink-0">
+          <div className="bg-surface-container-lowest/80 backdrop-blur-md border border-outline-variant p-2 flex items-center gap-3 shrink-0 overflow-x-auto">
             {/* Search Input */}
-            <div className="relative flex-1 group">
+            <div className="relative flex-1 min-w-[200px] group">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant group-focus-within:text-primary transition-colors">search</span>
               <input 
                 className="w-full bg-[#0A0C10] border border-outline-variant rounded-none pl-9 pr-24 py-1.5 text-on-surface font-mono-sm text-mono-sm focus:ring-0 focus:border-secondary transition-colors placeholder:text-on-surface-variant/50" 
@@ -33,71 +33,73 @@ export default function LogsPage() {
                 type="text"
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                <span className="font-mono-data text-[8px] tracking-widest text-secondary opacity-0 group-focus-within:opacity-100 transition-opacity">ENCRYPTED</span>
+                <span className="font-mono-data text-[8px] tracking-widest text-secondary opacity-0 group-focus-within:opacity-100 transition-opacity hidden sm:inline">ENCRYPTED</span>
                 <div className="px-1.5 py-0.5 bg-surface-container border border-outline-variant text-[10px] text-on-surface-variant font-mono-sm rounded-sm">⌘K</div>
               </div>
             </div>
             
             {/* Dividers */}
-            <div className="w-px h-5 bg-outline-variant"></div>
+            <div className="w-px h-5 bg-outline-variant hidden sm:block"></div>
             
             {/* Time Range Picker */}
-            <div className="flex gap-1 bg-[#0A0C10] border border-outline-variant p-0.5">
+            <div className="flex gap-1 bg-[#0A0C10] border border-outline-variant p-0.5 shrink-0">
               <button className="px-3 py-1 font-mono-sm text-mono-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors">1H</button>
               <button className="px-3 py-1 font-mono-sm text-mono-sm bg-surface-container text-primary border border-primary/30 shadow-[0_0_8px_rgba(45,212,191,0.1)]">24H</button>
               <button className="px-3 py-1 font-mono-sm text-mono-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors">7D</button>
             </div>
             
-            <button className="w-8 h-8 flex items-center justify-center border border-outline-variant bg-[#0A0C10] text-on-surface-variant hover:text-primary hover:border-primary transition-colors">
+            <button className="w-8 h-8 flex items-center justify-center border border-outline-variant bg-[#0A0C10] text-on-surface-variant hover:text-primary hover:border-primary transition-colors shrink-0">
               <span className="material-symbols-outlined text-[16px]">filter_list</span>
             </button>
           </div>
 
           {/* Log Table Container */}
           <div className="flex-1 bg-surface-container-lowest/90 backdrop-blur-xl border border-outline-variant flex flex-col overflow-hidden">
-            {/* Table Header */}
-            <div className="flex border-b border-outline-variant bg-[#0A0C10]/50 py-2 px-4 shrink-0">
-              <div className="w-[18%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Timestamp (UTC)</div>
-              <div className="w-[12%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Level</div>
-              <div className="w-[20%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Module</div>
-              <div className="w-[45%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Message / Hash</div>
-              <div className="w-[5%] flex justify-end"></div>
-            </div>
-            
-            {/* Table Body */}
-            <div className="flex-1 overflow-y-auto">
-              {/* Log Row: INFO */}
-              <div className="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
-                <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:01.451</div>
-                <div className="w-[12%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">INFO</div>
-                <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">seal::key_server</div>
-                <div className="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Ephemeral key generation cycle completed successfully.</div>
-                <div className="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
-                  <span className="material-symbols-outlined text-[16px]">expand_more</span>
-                </div>
-              </div>
-
-              {/* Log Row: MATCH (Expanded) */}
-              <div className="flex flex-col border-b border-outline-variant/50 bg-primary/5 shadow-[inset_2px_0_0_#2dd4bf]">
-                <div className="flex items-start py-2 px-4 cursor-pointer">
-                  <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:04.112</div>
-                  <div className="w-[12%] font-mono-data text-mono-data text-primary text-[11px] pt-0.5 font-bold">MATCH</div>
-                  <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">shell::pool::engine</div>
-                  <div className="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Cross-pool execution confirmed. Settled quantity: 45,000 USDC.</div>
-                  <div className="w-[5%] flex justify-end text-primary transition-colors">
-                    <span className="material-symbols-outlined text-[16px]">expand_less</span>
-                  </div>
+            <div className="flex-1 overflow-x-auto flex flex-col">
+              <div className="min-w-[800px] flex flex-col h-full">
+                {/* Table Header */}
+                <div className="flex border-b border-outline-variant bg-[#0A0C10]/50 py-2 px-4 shrink-0">
+                  <div className="w-[18%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Timestamp (UTC)</div>
+                  <div className="w-[12%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Level</div>
+                  <div className="w-[20%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Module</div>
+                  <div className="w-[45%] font-mono-sm text-mono-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Message / Hash</div>
+                  <div className="w-[5%] flex justify-end"></div>
                 </div>
                 
-                {/* Expanded Content */}
-                <div className="px-4 py-3 bg-[#0A0C10] border-t border-outline-variant/50 shadow-[inset_0_4px_12px_rgba(0,0,0,0.5)]">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono-sm text-[10px] text-on-surface-variant uppercase tracking-widest">RAW PAYLOAD</span>
-                    <button className="text-on-surface-variant hover:text-primary transition-colors">
-                      <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                    </button>
+                {/* Table Body */}
+                <div className="flex-1 overflow-y-auto">
+                  {/* Log Row: INFO */}
+                  <div className="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
+                    <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:01.451</div>
+                    <div className="w-[12%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">INFO</div>
+                    <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">seal::key_server</div>
+                    <div className="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Ephemeral key generation cycle completed successfully.</div>
+                    <div className="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
+                      <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                    </div>
                   </div>
-                  <pre className="font-mono-data text-[10px] text-primary/80 leading-relaxed overflow-x-auto">
+
+                  {/* Log Row: MATCH (Expanded) */}
+                  <div className="flex flex-col border-b border-outline-variant/50 bg-primary/5 shadow-[inset_2px_0_0_#2dd4bf]">
+                    <div className="flex items-start py-2 px-4 cursor-pointer">
+                      <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:04.112</div>
+                      <div className="w-[12%] font-mono-data text-mono-data text-primary text-[11px] pt-0.5 font-bold">MATCH</div>
+                      <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">shell::pool::engine</div>
+                      <div className="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Cross-pool execution confirmed. Settled quantity: 45,000 USDC.</div>
+                      <div className="w-[5%] flex justify-end text-primary transition-colors">
+                        <span className="material-symbols-outlined text-[16px]">expand_less</span>
+                      </div>
+                    </div>
+                    
+                    {/* Expanded Content */}
+                    <div className="px-4 py-3 bg-[#0A0C10] border-t border-outline-variant/50 shadow-[inset_0_4px_12px_rgba(0,0,0,0.5)]">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-mono-sm text-[10px] text-on-surface-variant uppercase tracking-widest">RAW PAYLOAD</span>
+                        <button className="text-on-surface-variant hover:text-primary transition-colors">
+                          <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                        </button>
+                      </div>
+                      <pre className="font-mono-data text-[10px] text-primary/80 leading-relaxed overflow-x-auto">
 {`{
   "event_id": "evt_9x8f7a6b5c4d3e2f1",
   "type": "ORDER_MATCH_SETTLED",
@@ -112,40 +114,42 @@ export default function LogsPage() {
   },
   "zk_proof_status": "VERIFIED_ON_CHAIN"
 }`}
-                  </pre>
-                </div>
-              </div>
+                      </pre>
+                    </div>
+                  </div>
 
-              {/* Log Row: WARN */}
-              <div className="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
-                <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:09.881</div>
-                <div className="w-[12%] font-mono-data text-mono-data text-tertiary text-[11px] pt-0.5 font-bold">WARN</div>
-                <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">nautilus::router</div>
-                <div className="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Liquidity fragmentation detected across shards. Optimization required.</div>
-                <div className="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
-                  <span className="material-symbols-outlined text-[16px]">expand_more</span>
-                </div>
-              </div>
+                  {/* Log Row: WARN */}
+                  <div className="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
+                    <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:09.881</div>
+                    <div className="w-[12%] font-mono-data text-mono-data text-tertiary text-[11px] pt-0.5 font-bold">WARN</div>
+                    <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">nautilus::router</div>
+                    <div className="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Liquidity fragmentation detected across shards. Optimization required.</div>
+                    <div className="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
+                      <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                    </div>
+                  </div>
 
-              {/* Log Row: ERROR */}
-              <div className="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer bg-error-container/10">
-                <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:15.004</div>
-                <div className="w-[12%] font-mono-data text-mono-data text-error text-[11px] pt-0.5 font-bold">ERROR</div>
-                <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">shell::rpc_node</div>
-                <div className="w-[45%] font-mono-data text-mono-data text-error text-[11px] truncate pr-2 pt-0.5">Connection timeout to external pricing oracle. Retrying...</div>
-                <div className="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
-                  <span className="material-symbols-outlined text-[16px]">expand_more</span>
-                </div>
-              </div>
-              
-              {/* Log Row: INFO */}
-              <div className="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
-                <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:16.220</div>
-                <div className="w-[12%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">INFO</div>
-                <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">seal::attestation</div>
-                <div className="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Quote verification completed for Node 44-B.</div>
-                <div className="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
-                  <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                  {/* Log Row: ERROR */}
+                  <div className="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer bg-error-container/10">
+                    <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:15.004</div>
+                    <div className="w-[12%] font-mono-data text-mono-data text-error text-[11px] pt-0.5 font-bold">ERROR</div>
+                    <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">shell::rpc_node</div>
+                    <div className="w-[45%] font-mono-data text-mono-data text-error text-[11px] truncate pr-2 pt-0.5">Connection timeout to external pricing oracle. Retrying...</div>
+                    <div className="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
+                      <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                    </div>
+                  </div>
+                  
+                  {/* Log Row: INFO */}
+                  <div className="flex items-start py-2 px-4 border-b border-outline-variant/30 hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
+                    <div className="w-[18%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">2023-10-27 14:32:16.220</div>
+                    <div className="w-[12%] font-mono-data text-mono-data text-on-surface-variant text-[11px] pt-0.5">INFO</div>
+                    <div className="w-[20%] font-mono-data text-mono-data text-on-surface-variant text-[11px] truncate pr-2 pt-0.5">seal::attestation</div>
+                    <div className="w-[45%] font-mono-data text-mono-data text-on-surface text-[11px] truncate pr-2 pt-0.5">Quote verification completed for Node 44-B.</div>
+                    <div className="w-[5%] flex justify-end text-outline-variant group-hover:text-primary transition-colors">
+                      <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

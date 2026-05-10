@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-export default function TopNavBar() {
+export default function TopNavBar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const pathname = usePathname();
 
   const links = [
@@ -13,8 +13,14 @@ export default function TopNavBar() {
   ];
 
   return (
-    <nav className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-gutter h-16 bg-surface-dim/80 backdrop-blur-md border-b border-outline-variant flat no shadows">
-      <div className="flex items-center gap-6">
+    <nav className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-4 md:px-gutter h-16 bg-surface-dim/80 backdrop-blur-md border-b border-outline-variant flat no shadows">
+      <div className="flex items-center gap-4 md:gap-6">
+        <button 
+          className="md:hidden p-2 -ml-2 mt-1 rounded text-on-surface hover:text-primary transition-colors cursor-pointer"
+          onClick={onMenuToggle}
+        >
+          <span className="material-symbols-outlined">menu</span>
+        </button>
         <div className="text-headline-md font-headline-md font-bold tracking-tighter text-primary">SHELL FINANCE</div>
         <div className="hidden md:flex gap-4 h-full items-center">
           {links.map(link => {
@@ -35,8 +41,8 @@ export default function TopNavBar() {
           })}
         </div>
       </div>
-      <div className="flex items-center gap-4">
-        <div className="flex gap-2">
+      <div className="flex items-center gap-2 md:gap-4">
+        <div className="hidden md:flex gap-2">
           <button className="p-2 rounded-full text-on-surface-variant hover:text-primary transition-colors duration-200 cursor-pointer" title="Security">
             <span className="material-symbols-outlined">security</span>
           </button>
@@ -44,11 +50,13 @@ export default function TopNavBar() {
             <span className="material-symbols-outlined">notifications</span>
           </button>
         </div>
-        <button className="bg-primary text-on-primary px-4 py-2 rounded font-mono-sm text-mono-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2 cursor-pointer">
-          Connect Wallet
+        <button className="bg-primary text-on-primary px-3 md:px-4 py-1.5 md:py-2 rounded font-mono-sm text-[11px] md:text-mono-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 md:gap-2 cursor-pointer shadow-[0_0_8px_rgba(87,241,219,0.2)]">
+          <span className="material-symbols-outlined md:hidden" style={{ fontSize: '16px', lineHeight: '1' }}>account_balance_wallet</span>
+          <span className="hidden md:inline leading-none mt-0.5">Connect Wallet</span>
+          <span className="md:hidden leading-none mt-0.5">Connect</span>
         </button>
-        <div className="w-8 h-8 rounded-full border border-outline-variant bg-surface-container flex items-center justify-center overflow-hidden cursor-pointer">
-          <span className="material-symbols-outlined text-sm text-on-surface">person</span>
+        <div className="w-7 h-7 md:w-8 md:h-8 rounded-full border border-outline-variant bg-surface-container flex items-center justify-center overflow-hidden cursor-pointer flex-shrink-0">
+          <span className="material-symbols-outlined text-[14px] md:text-sm text-on-surface">person</span>
         </div>
       </div>
     </nav>
