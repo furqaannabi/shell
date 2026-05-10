@@ -18,7 +18,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         />
         
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col gap-4 p-4 overflow-hidden h-full min-h-0 w-full transition-all duration-300 md:ml-64">
+        <main className="flex-1 flex flex-col gap-4 p-4 overflow-hidden h-full min-h-0 w-full transition-all duration-300 md:ml-20 xl:ml-64">
           {children}
         </main>
 
