@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Trader Terminal - Shell Finance</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-highest": "#333539",
+                    "error-container": "#93000a",
+                    "surface-dim": "#111318",
+                    "tertiary-fixed": "#e0e3e5",
+                    "on-error": "#690005",
+                    "on-tertiary": "#2d3133",
+                    "on-secondary-container": "#a8afff",
+                    "on-tertiary-fixed": "#191c1e",
+                    "primary-container": "#2dd4bf",
+                    "background": "#111318",
+                    "surface-container": "#1e2024",
+                    "surface-bright": "#37393e",
+                    "tertiary": "#d8dadc",
+                    "inverse-surface": "#e2e2e8",
+                    "error": "#ffb4ab",
+                    "surface": "#111318",
+                    "on-tertiary-container": "#4a4d4f",
+                    "on-background": "#e2e2e8",
+                    "surface-container-high": "#282a2e",
+                    "secondary-container": "#2f3aa3",
+                    "primary-fixed": "#62fae3",
+                    "primary-fixed-dim": "#3cddc7",
+                    "on-surface": "#e2e2e8",
+                    "secondary": "#bdc2ff",
+                    "surface-tint": "#3cddc7",
+                    "surface-container-lowest": "#0c0e12",
+                    "on-primary-fixed-variant": "#005047",
+                    "on-secondary-fixed": "#000767",
+                    "on-primary-container": "#00574d",
+                    "surface-container-low": "#1a1c20",
+                    "secondary-fixed-dim": "#bdc2ff",
+                    "on-primary-fixed": "#00201c",
+                    "on-secondary-fixed-variant": "#2f3aa3",
+                    "tertiary-fixed-dim": "#c4c7c9",
+                    "outline": "#859490",
+                    "inverse-on-surface": "#2f3035",
+                    "tertiary-container": "#bcbec0",
+                    "on-primary": "#003731",
+                    "on-error-container": "#ffdad6",
+                    "on-tertiary-fixed-variant": "#444749",
+                    "inverse-primary": "#006b5f",
+                    "surface-variant": "#333539",
+                    "secondary-fixed": "#e0e0ff",
+                    "outline-variant": "#3c4a46",
+                    "primary": "#57f1db",
+                    "on-surface-variant": "#bacac5",
+                    "on-secondary": "#131e8c"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "container-max": "1440px",
+                    "unit": "4px",
+                    "gutter": "16px",
+                    "margin": "24px"
+            },
+            "fontFamily": {
+                    "body-base": [
+                            "Geist"
+                    ],
+                    "headline-md": [
+                            "Geist"
+                    ],
+                    "display-lg": [
+                            "Geist"
+                    ],
+                    "mono-sm": [
+                            "JetBrains Mono"
+                    ],
+                    "body-sm": [
+                            "Geist"
+                    ],
+                    "mono-data": [
+                            "JetBrains Mono"
+                    ]
+            },
+            "fontSize": {
+                    "body-base": [
+                            "16px",
+                            {
+                                    "lineHeight": "1.5",
+                                    "letterSpacing": "0",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "display-lg": [
+                            "48px",
+                            {
+                                    "lineHeight": "1.1",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "mono-sm": [
+                            "12px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "letterSpacing": "0",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "body-sm": [
+                            "14px",
+                            {
+                                    "lineHeight": "1.4",
+                                    "letterSpacing": "0",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "mono-data": [
+                            "14px",
+                            {
+                                    "lineHeight": "1.4",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "500"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #0A0C10; /* Level 0 Base */
+            color: #e2e2e8;
+        }
+        
+        /* Glassmorphism utility for Level 1 (Sealed Containers) */
+        .glass-panel {
+            background-color: rgba(26, 29, 35, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid transparent; /* Fallback */
+            border-top: 1px solid rgba(255, 255, 255, 0.1); /* 1px top-highlight */
+        }
+
+        /* Active State Glowing Border */
+        .glass-panel-active {
+            border: 1px solid #57f1db; /* Primary Teal */
+            box-shadow: 0 0 8px rgba(45, 212, 191, 0.3);
+        }
+
+        /* Input field specifics */
+        .input-sealed {
+            background-color: #0c0e12 !important; /* surface-container-lowest */
+            border: 1px solid #3c4a46; /* outline-variant */
+            color: #e2e2e8; /* on-surface */
+            transition: all 0.2s ease;
+        }
+        .input-sealed:focus {
+            border-color: #57f1db; /* Primary Teal */
+            outline: none;
+            box-shadow: 0 0 8px rgba(87, 241, 219, 0.2);
+        }
+
+        /* Custom Scrollbar for dark theme */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0A0C10;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333539;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #444749;
+        }
+
+        .pulse-teal {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(87, 241, 219, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 4px rgba(87, 241, 219, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(87, 241, 219, 0); }
+        }
+    </style>
+</head>
+<body class="font-body-base text-body-base antialiased min-h-screen flex flex-col overflow-hidden">
+<!-- TopNavBar -->
+<nav class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-gutter h-16 bg-surface-dim/80 backdrop-blur-md border-b border-outline-variant flat no shadows">
+<div class="flex items-center gap-6">
+<div class="text-headline-md font-headline-md font-bold tracking-tighter text-primary">SHELL FINANCE</div>
+<div class="hidden md:flex gap-4">
+<a class="text-primary font-bold border-b-2 border-primary pb-1 flex items-center h-full" href="#">Terminal</a>
+<a class="text-on-surface-variant font-medium hover:text-primary transition-colors duration-200 flex items-center h-full" href="#">Operator</a>
+<a class="text-on-surface-variant font-medium hover:text-primary transition-colors duration-200 flex items-center h-full" href="#">Analytics</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex gap-2">
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary transition-colors duration-200" data-icon="security"><span class="material-symbols-outlined">security</span></button>
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary transition-colors duration-200" data-icon="notifications"><span class="material-symbols-outlined">notifications</span></button>
+</div>
+<button class="bg-primary text-on-primary px-4 py-2 rounded font-mono-sm text-mono-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2">Connect Wallet</button>
+<img alt="User avatar" class="w-8 h-8 rounded-full border border-outline-variant object-cover" data-alt="A sophisticated macro photograph of abstract dark geometric glass shapes interlocking, illuminated by a subtle bioluminescent teal glow from within. The texture is smooth and polished, reflecting high-end corporate identity and privacy. The lighting is low-key, enhancing the deep blacks and sleek cyans." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDGHS3Jpk1ntsbXFw5vwmaTfdjpVah4lql6wQvZ2Lbm-o3TzjvjiSFL0hq4oxzftG_H5cRLpM8COh5opB2ge7gqlfA5Avf1jse02QLxG1WbjMaZ7o8Ka5-jxhvBzjUKOcBrFkKW8asNG6Ko92uhCtHBc-plk7sSpNl1-OYmSSFAe0gofVh3UHYRqM4SZF2g1NrPl728fPIXhCYEdVNoa4Mto73FvVrfmbbqakw78zQZFfHKjyT7lHTIdG_9x_EmkzDWckkzO8Y_XZoE"/>
+</div>
+</nav>
+<div class="flex flex-1 pt-16 h-screen">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-16 bottom-0 w-64 flex flex-col z-40 bg-surface-container-low/90 backdrop-blur-xl border-r border-outline-variant flat no shadows">
+<div class="p-4 border-b border-outline-variant">
+<div class="flex items-center gap-3 mb-4">
+<img alt="Institutional Entity" class="w-10 h-10 rounded bg-surface-container object-cover" data-alt="A macro shot of a highly secure server rack component with a minimalist matte black finish and a single glowing teal LED indicator. The metallic surfaces are pristine, suggesting a sterile, high-tech, and secure data environment. Focus is tight on the indicator light." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBldYuQrcixjtFRJbYtW4KBMiFabU5ROThF-fz8jw-LT49ql-czUXv71sqJAIAY_fMe794dyB1BDR0hvhf2WxXBlxpW0TlhgyNZzI5Du1ywjckYHoo0NQ3cDanGSoijKqS4MO43EGI2DEgDbmiHEVFs6mXT-whZjchexj3_bEUlvRAlDflPTht8ioO9u3of6IBBco1MZrK5po5tiEK1lf08nnQY7pUzLbL2htLl9sNf7ja4s_bgQXQkWglKlQ7Z0MlvwAoO5PpNEIOW"/>
+<div>
+<div class="font-body-sm text-body-sm text-on-surface font-medium">Prime Terminal</div>
+<div class="font-mono-sm text-mono-sm text-primary flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-primary pulse-teal block"></span>
+                            Enclave: ACTIVE
+                        </div>
+</div>
+</div>
+<button class="w-full bg-surface-container-high border border-outline-variant text-on-surface hover:bg-surface-container-highest transition-all py-2 rounded font-mono-sm text-mono-sm flex justify-center items-center gap-2">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">add</span> New Sealed Order
+                </button>
+</div>
+<nav class="flex-1 py-4 flex flex-col gap-1 overflow-y-auto">
+<a class="flex items-center gap-3 px-4 py-2 mx-2 rounded bg-secondary-container/30 text-secondary border-r-2 border-secondary" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-body-sm text-body-sm">Execution</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 mx-2 rounded text-on-surface-variant hover:bg-surface-container-highest/50 hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="dns">dns</span>
+<span class="font-body-sm text-body-sm">Enclaves</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 mx-2 rounded text-on-surface-variant hover:bg-surface-container-highest/50 hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="account_balance_wallet">account_balance_wallet</span>
+<span class="font-body-sm text-body-sm">Vaults</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 mx-2 rounded text-on-surface-variant hover:bg-surface-container-highest/50 hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-body-sm text-body-sm">Settings</span>
+</a>
+</nav>
+<div class="p-4 border-t border-outline-variant flex flex-col gap-1">
+<a class="flex items-center gap-3 px-2 py-2 rounded text-on-surface-variant hover:bg-surface-container-highest/50 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span class="font-body-sm text-body-sm">Support</span>
+</a>
+<a class="flex items-center gap-3 px-2 py-2 rounded text-on-surface-variant hover:bg-surface-container-highest/50 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+<span class="font-body-sm text-body-sm">Logs</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 flex-1 flex flex-col md:flex-row gap-4 p-4 overflow-hidden h-full">
+<!-- Left Panel: Sealed Order Entry -->
+<section class="w-full md:w-80 flex-shrink-0 flex flex-col gap-4">
+<div class="glass-panel glass-panel-active rounded-lg p-4 flex flex-col h-full">
+<div class="flex justify-between items-center mb-4 pb-2 border-b border-[#1E293B]">
+<h2 class="font-headline-md text-[18px] text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">lock</span>
+                            Sealed Order
+                        </h2>
+</div>
+<form class="flex flex-col gap-4 flex-1">
+<!-- Ticker -->
+<div class="relative group">
+<label class="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Asset</label>
+<div class="relative">
+<input class="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data pr-10" type="text" value="ETH/USDC"/>
+<span class="absolute right-2 top-2 text-primary font-mono-sm text-[10px] opacity-0 group-focus-within:opacity-100 transition-opacity">ENCRYPTED</span>
+</div>
+</div>
+<!-- Side -->
+<div class="grid grid-cols-2 gap-2">
+<button class="bg-surface-container-high border border-outline-variant text-on-surface py-2 rounded font-mono-sm text-mono-sm hover:border-primary transition-colors" type="button">Buy</button>
+<button class="bg-error-container/20 border border-error-container/50 text-error py-2 rounded font-mono-sm text-mono-sm hover:bg-error-container/40 transition-colors" type="button">Sell</button>
+</div>
+<!-- Size -->
+<div class="relative group">
+<label class="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Size</label>
+<div class="relative">
+<input class="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-12" placeholder="0.00" type="text"/>
+<span class="absolute right-2 top-2 text-on-surface-variant font-mono-sm">ETH</span>
+</div>
+</div>
+<!-- Limit Price (Private) -->
+<div class="relative group">
+<label class="block font-mono-sm text-mono-sm text-on-surface-variant mb-1 flex justify-between">
+                                Limit Price
+                                <span class="text-secondary text-[10px] border border-secondary/30 px-1 rounded">Private</span>
+</label>
+<div class="relative">
+<input class="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-12" placeholder="0.00" type="text"/>
+<span class="absolute right-2 top-2 text-on-surface-variant font-mono-sm">USDC</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<!-- Expiry -->
+<div class="relative group">
+<label class="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Expiry</label>
+<select class="input-sealed w-full rounded p-2 text-on-surface font-mono-sm text-mono-sm appearance-none">
+<option>1 Hour</option>
+<option>24 Hours</option>
+<option>GTC</option>
+</select>
+</div>
+<!-- Max Slippage -->
+<div class="relative group">
+<label class="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Max Slippage</label>
+<div class="relative">
+<input class="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-6" type="text" value="0.1"/>
+<span class="absolute right-2 top-2 text-on-surface-variant font-mono-sm">%</span>
+</div>
+</div>
+</div>
+<div class="mt-auto pt-4">
+<button class="w-full bg-primary text-on-primary py-3 rounded font-mono-sm text-mono-sm font-bold uppercase tracking-wider hover:opacity-90 transition-opacity shadow-[0_0_8px_rgba(87,241,219,0.3)] flex justify-center items-center gap-2" type="submit">
+<span class="material-symbols-outlined text-[18px]">verified_user</span> Submit Sealed Order
+                            </button>
+</div>
+</form>
+</div>
+</section>
+<!-- Center Panel: Active Orders -->
+<section class="flex-1 flex flex-col gap-4 min-w-[400px]">
+<div class="glass-panel rounded-lg p-4 flex flex-col h-full">
+<div class="flex justify-between items-center mb-4 pb-2 border-b border-[#1E293B]">
+<h2 class="font-headline-md text-[18px] text-on-surface">Active Orders</h2>
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">filter_list</span></button>
+</div>
+<div class="overflow-auto flex-1">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="font-mono-sm text-[11px] text-on-surface-variant uppercase tracking-wider border-b border-[#1E293B]">
+<th class="pb-2 font-normal">Asset</th>
+<th class="pb-2 font-normal">Side</th>
+<th class="pb-2 font-normal text-right">Size</th>
+<th class="pb-2 font-normal text-right">Status</th>
+<th class="pb-2 font-normal text-right">Expiry</th>
+</tr>
+</thead>
+<tbody class="font-mono-data text-mono-data text-on-surface">
+<tr class="border-b border-transparent hover:bg-surface-container-low transition-colors group">
+<td class="py-3">ETH/USDC</td>
+<td class="py-3 text-primary">BUY</td>
+<td class="py-3 text-right">50.00</td>
+<td class="py-3 text-right flex items-center justify-end gap-1">
+<span class="material-symbols-outlined text-[14px] text-secondary" style="font-variation-settings: 'FILL' 1;">shield</span>
+<span class="text-secondary text-[12px]">Sealed</span>
+</td>
+<td class="py-3 text-right text-on-surface-variant text-[12px]">59m 12s</td>
+</tr>
+<tr class="border-b border-transparent hover:bg-surface-container-low transition-colors group">
+<td class="py-3">WBTC/USDC</td>
+<td class="py-3 text-error">SELL</td>
+<td class="py-3 text-right">2.50</td>
+<td class="py-3 text-right flex items-center justify-end gap-1">
+<span class="material-symbols-outlined text-[14px] text-tertiary animate-spin">sync</span>
+<span class="text-tertiary text-[12px]">Decrypting</span>
+</td>
+<td class="py-3 text-right text-on-surface-variant text-[12px]">1h 14m</td>
+</tr>
+<tr class="border-b border-transparent hover:bg-surface-container-low transition-colors group">
+<td class="py-3">SOL/USDC</td>
+<td class="py-3 text-primary">BUY</td>
+<td class="py-3 text-right">1000.00</td>
+<td class="py-3 text-right flex items-center justify-end gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary pulse-teal" style="font-variation-settings: 'FILL' 1;">bolt</span>
+<span class="text-primary text-[12px]">Matching</span>
+</td>
+<td class="py-3 text-right text-on-surface-variant text-[12px]">GTC</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<!-- Right Panel: Order Book & Receipts -->
+<section class="w-full md:w-80 flex-shrink-0 flex flex-col gap-4">
+<!-- Depth Reference -->
+<div class="glass-panel rounded-lg p-4 flex flex-col flex-1">
+<div class="flex justify-between items-center mb-2 pb-2 border-b border-[#1E293B]">
+<h2 class="font-headline-md text-[14px] text-on-surface uppercase tracking-wider">DeepBook Reference</h2>
+</div>
+<div class="flex-1 overflow-auto flex flex-col text-[11px] font-mono-data text-on-surface-variant">
+<div class="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
+<div class="absolute right-0 top-0 bottom-0 bg-error-container/10 w-[80%] z-0"></div>
+<span class="text-error relative z-10">3,452.10</span>
+<span class="relative z-10">12.5</span>
+</div>
+<div class="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
+<div class="absolute right-0 top-0 bottom-0 bg-error-container/10 w-[60%] z-0"></div>
+<span class="text-error relative z-10">3,451.80</span>
+<span class="relative z-10">4.2</span>
+</div>
+<div class="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
+<div class="absolute right-0 top-0 bottom-0 bg-error-container/10 w-[20%] z-0"></div>
+<span class="text-error relative z-10">3,451.20</span>
+<span class="relative z-10">1.8</span>
+</div>
+<div class="my-2 py-1 text-center font-bold text-on-surface border-y border-[#1E293B]">3,450.50 USDC</div>
+<div class="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
+<div class="absolute right-0 top-0 bottom-0 bg-primary-container/10 w-[30%] z-0"></div>
+<span class="text-primary relative z-10">3,449.90</span>
+<span class="relative z-10">5.0</span>
+</div>
+<div class="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
+<div class="absolute right-0 top-0 bottom-0 bg-primary-container/10 w-[50%] z-0"></div>
+<span class="text-primary relative z-10">3,449.10</span>
+<span class="relative z-10">8.5</span>
+</div>
+<div class="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
+<div class="absolute right-0 top-0 bottom-0 bg-primary-container/10 w-[90%] z-0"></div>
+<span class="text-primary relative z-10">3,448.00</span>
+<span class="relative z-10">22.0</span>
+</div>
+</div>
+</div>
+<!-- Settlement Receipts -->
+<div class="glass-panel rounded-lg p-4 flex flex-col flex-1">
+<div class="flex justify-between items-center mb-2 pb-2 border-b border-[#1E293B]">
+<h2 class="font-headline-md text-[14px] text-on-surface uppercase tracking-wider">Settlement Receipts</h2>
+</div>
+<div class="flex-1 overflow-auto flex flex-col gap-2">
+<div class="p-2 border border-[#1E293B] rounded bg-surface-container-lowest flex flex-col gap-1 hover:border-secondary/50 transition-colors">
+<div class="flex justify-between font-mono-data text-[12px]">
+<span class="text-primary">BUY ETH</span>
+<span class="text-on-surface">3,445.00</span>
+</div>
+<div class="flex justify-between font-mono-sm text-[10px] text-on-surface-variant">
+<span>Size: 10.0</span>
+<span>CP: 0x8a...4f2</span>
+</div>
+<div class="font-mono-sm text-[9px] text-secondary truncate">Tx: 0x123abc...def456</div>
+</div>
+<div class="p-2 border border-[#1E293B] rounded bg-surface-container-lowest flex flex-col gap-1 hover:border-secondary/50 transition-colors">
+<div class="flex justify-between font-mono-data text-[12px]">
+<span class="text-error">SELL SOL</span>
+<span class="text-on-surface">142.50</span>
+</div>
+<div class="flex justify-between font-mono-sm text-[10px] text-on-surface-variant">
+<span>Size: 500.0</span>
+<span>CP: 0x9b...1e8</span>
+</div>
+<div class="font-mono-sm text-[9px] text-secondary truncate">Tx: 0x789def...abc123</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+</body></html>
