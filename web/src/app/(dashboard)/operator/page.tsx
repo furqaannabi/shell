@@ -1,148 +1,197 @@
 export default function OperatorPage() {
   return (
     <div className="max-w-container-max mx-auto space-y-margin w-full h-full overflow-y-auto pb-8 pr-2">
-      {/* Enclave Header */}
-      <header className="glass-panel p-6 rounded border border-outline-variant flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
-        <div>
-          <h1 className="font-headline-md text-headline-md text-on-surface mb-1">Nautilus Enclave Management</h1>
-          <div className="flex flex-wrap items-center gap-2 md:gap-4 font-mono-sm text-mono-sm text-on-surface-variant">
-            <span className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div> 
-              ID: ENCL-994A-BX
-            </span>
-            <span className="text-outline hidden md:inline">|</span>
-            <span>Region: us-east-secure</span>
-            <span className="text-outline hidden md:inline">|</span>
-            <span>Uptime: 99.999%</span>
+      {/* Top Header Panel: Enclave Status */}
+      <section className="glass-panel p-6 rounded border border-outline-variant flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded border border-primary/30 bg-surface-container-low flex items-center justify-center">
+            <span className="material-symbols-outlined text-primary text-[24px]">security</span>
+          </div>
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <h1 className="font-headline-md text-[20px] text-on-surface leading-none">Enclave Status</h1>
+              <span className="font-mono-sm text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                ACTIVE
+              </span>
+            </div>
+            <div className="font-mono-sm text-mono-sm text-on-surface-variant">
+              ID: sgx-zone-alpha-992
+            </div>
           </div>
         </div>
-        <div className="text-left md:text-right w-full md:w-auto">
-          <div className="text-xs text-on-surface-variant uppercase tracking-widest mb-1">PCR Integrity</div>
-          <div className="font-mono-data text-primary border border-primary px-3 py-1 rounded inline-block bg-primary/10 shadow-[0_0_8px_rgba(87,241,219,0.3)]">ATTESTED SECURE</div>
-        </div>
-      </header>
 
-      <div className="grid grid-cols-12 gap-margin">
-        {/* PCR Table */}
-        <div className="col-span-12 xl:col-span-8 glass-panel rounded border border-outline-variant p-4">
-          <div className="flex justify-between items-start md:items-center mb-4 border-b border-outline-variant pb-2 gap-4">
-            <h2 className="font-body-base text-on-surface font-medium">Registered Platform Configuration Registers (PCRs)</h2>
-            <button className="text-xs border border-outline-variant px-3 py-1.5 rounded hover:border-primary text-on-surface-variant hover:text-primary transition-colors shrink-0 whitespace-nowrap cursor-pointer">Add PCR</button>
+        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-6 lg:gap-12 w-full lg:w-auto">
+          <div className="border-l-0 lg:border-l border-outline-variant pl-0 lg:pl-6">
+            <div className="font-mono-sm text-mono-sm text-on-surface-variant mb-1">Current PCR0</div>
+            <div className="font-mono-data text-[13px] text-secondary">0x8f3c7d9e1a2b4c5d...b2a1</div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] text-left font-mono-sm text-mono-sm">
+          <div className="border-l-0 lg:border-l border-outline-variant pl-0 lg:pl-6">
+            <div className="font-mono-sm text-mono-sm text-on-surface-variant mb-1">Matching Window</div>
+            <div className="font-mono-sm text-mono-sm text-on-surface flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px] text-primary">schedule</span>
+              Next match in 08s
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Middle Row: Performance & Health */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-margin">
+        {/* Enclave Performance Chart */}
+        <section className="lg:col-span-8 glass-panel rounded border border-outline-variant p-6 flex flex-col min-h-[300px]">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+            <h2 className="font-body-base text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-on-surface-variant text-[18px]">bar_chart</span>
+              Enclave Performance
+            </h2>
+            <div className="flex gap-2">
+              <button className="px-3 py-1 font-mono-sm text-[11px] border border-outline-variant rounded bg-surface text-on-surface-variant hover:text-on-surface transition-colors">Latency</button>
+              <button className="px-3 py-1 font-mono-sm text-[11px] border border-primary/50 rounded bg-primary/10 text-primary transition-colors">Throughput</button>
+            </div>
+          </div>
+          
+          <div className="flex-1 flex items-end justify-between gap-1 mt-auto relative">
+            {/* Chart Grid Lines */}
+            <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+              <div className="border-t border-outline-variant/20 w-full h-0"></div>
+              <div className="border-t border-outline-variant/20 w-full h-0"></div>
+              <div className="border-t border-outline-variant/20 w-full h-0"></div>
+              <div className="border-t border-outline-variant/20 w-full h-0"></div>
+            </div>
+            {/* Bars */}
+            {[40, 50, 30, 60, 55, 75, 90, 80, 100, 70].map((height, i) => (
+              <div key={i} className="w-full bg-outline-variant/40 hover:bg-outline-variant/60 transition-colors relative z-10" style={{ height: `${height}%` }}></div>
+            ))}
+          </div>
+          <div className="flex justify-between font-mono-sm text-[10px] text-outline mt-3">
+            <span>10:00</span>
+            <span>10:05</span>
+            <span>10:10</span>
+            <span>10:15</span>
+            <span>10:20</span>
+          </div>
+        </section>
+
+        {/* Protocol Health */}
+        <section className="lg:col-span-4 glass-panel rounded border border-outline-variant p-6 flex flex-col">
+          <h2 className="font-body-base text-on-surface flex items-center gap-2 mb-6 border-b border-outline-variant pb-4">
+            <span className="material-symbols-outlined text-on-surface-variant text-[18px]">health_and_safety</span>
+            Protocol Health
+          </h2>
+          <div className="space-y-6 flex-1">
+            <div className="border-b border-outline-variant/50 pb-4">
+              <div className="font-mono-sm text-mono-sm text-on-surface-variant mb-2">Active Shared Objects</div>
+              <div className="font-headline-md text-headline-md text-on-surface">14,209</div>
+            </div>
+            <div className="border-b border-outline-variant/50 pb-4">
+              <div className="font-mono-sm text-mono-sm text-on-surface-variant mb-2">Treasury Balance</div>
+              <div className="font-headline-md text-headline-md text-primary">2.4M <span className="text-on-surface-variant font-mono-sm text-[14px]">SUI</span></div>
+            </div>
+            <div>
+              <div className="font-mono-sm text-mono-sm text-on-surface-variant mb-2">Gas Usage (1h)</div>
+              <div className="flex items-end justify-between">
+                <div className="font-headline-md text-[20px] text-on-surface">45.2 <span className="text-on-surface-variant font-mono-sm text-[14px]">SUI</span></div>
+                <span className="material-symbols-outlined text-error text-[18px]">trending_up</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* Bottom Row: Registry & Logs */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-margin">
+        {/* PCR Registry */}
+        <section className="lg:col-span-8 glass-panel rounded border border-outline-variant p-6 flex flex-col">
+          <div className="flex justify-between items-center mb-4 border-b border-outline-variant pb-4">
+            <h2 className="font-body-base text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-on-surface-variant text-[18px]">fact_check</span>
+              PCR Registry
+            </h2>
+            <span className="material-symbols-outlined text-on-surface-variant text-[18px] cursor-pointer">more_horiz</span>
+          </div>
+          <div className="overflow-x-auto flex-1">
+            <table className="w-full min-w-[600px] text-left">
               <thead>
-                <tr className="text-on-surface-variant border-b border-outline-variant">
-                  <th className="pb-2 font-normal">Index</th>
-                  <th className="pb-2 font-normal">Hash (SHA-384)</th>
-                  <th className="pb-2 font-normal">Component</th>
-                  <th className="pb-2 font-normal">Status</th>
+                <tr className="font-body-sm text-[13px] text-on-surface font-medium border-b border-outline-variant">
+                  <th className="pb-3 font-normal">Binary Version</th>
+                  <th className="pb-3 font-normal">Measurement (PCR0)</th>
+                  <th className="pb-3 font-normal">Status</th>
+                  <th className="pb-3 font-normal text-right">Registered At</th>
                 </tr>
               </thead>
-              <tbody>
-                <tr className="border-b border-[#1E293B] hover:bg-[#1A1D23] transition-colors">
-                  <td className="py-3 text-on-surface">PCR0</td>
-                  <td className="py-3 text-on-surface-variant truncate max-w-[200px]">e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</td>
-                  <td className="py-3 text-on-surface">Core Bios</td>
-                  <td className="py-3"><span className="text-primary border border-primary px-2 py-0.5 rounded text-[10px]">APPROVED</span></td>
+              <tbody className="font-mono-sm text-[13px] text-on-surface">
+                <tr className="border-b border-outline-variant/30 hover:bg-surface-container-high/30 transition-colors">
+                  <td className="py-4">v1.2.4-stable</td>
+                  <td className="py-4 text-secondary">0x8f3c...4c5d</td>
+                  <td className="py-4">
+                    <span className="text-primary border border-primary/40 bg-primary/10 px-2 py-0.5 rounded text-[10px]">APPROVED</span>
+                  </td>
+                  <td className="py-4 text-right text-on-surface-variant">2023-10-24 14:32Z</td>
                 </tr>
-                <tr className="border-b border-[#1E293B] hover:bg-[#1A1D23] transition-colors">
-                  <td className="py-3 text-on-surface">PCR1</td>
-                  <td className="py-3 text-on-surface-variant truncate max-w-[200px]">8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92</td>
-                  <td className="py-3 text-on-surface">Host Platform</td>
-                  <td className="py-3"><span className="text-primary border border-primary px-2 py-0.5 rounded text-[10px]">APPROVED</span></td>
+                <tr className="border-b border-outline-variant/30 hover:bg-surface-container-high/30 transition-colors">
+                  <td className="py-4">v1.2.3-stable</td>
+                  <td className="py-4 text-on-surface">0x4a2b9c1e7f3d8a5b</td>
+                  <td className="py-4">
+                    <span className="text-on-surface-variant border border-outline-variant bg-surface-container px-2 py-0.5 rounded text-[10px]">DEPRECATED</span>
+                  </td>
+                  <td className="py-4 text-right text-on-surface-variant">2023-10-15 09:11Z</td>
                 </tr>
-                <tr className="border-b border-[#1E293B] hover:bg-[#1A1D23] transition-colors">
-                  <td className="py-3 text-on-surface">PCR8</td>
-                  <td className="py-3 text-on-surface-variant truncate max-w-[200px]">ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad</td>
-                  <td className="py-3 text-on-surface">Matching Engine OS</td>
-                  <td className="py-3"><span className="text-tertiary-container border border-outline-variant px-2 py-0.5 rounded text-[10px]">PENDING</span></td>
-                </tr>
-                <tr className="hover:bg-[#1A1D23] transition-colors">
-                  <td className="py-3 text-on-surface">PCR16</td>
-                  <td className="py-3 text-outline-variant truncate max-w-[200px]">c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2</td>
-                  <td className="py-3 text-outline-variant">Legacy Runtime</td>
-                  <td className="py-3"><span className="text-error border border-error/50 px-2 py-0.5 rounded text-[10px] opacity-70">DEPRECATED</span></td>
+                <tr className="hover:bg-surface-container-high/30 transition-colors">
+                  <td className="py-4">v1.3.0-rc1</td>
+                  <td className="py-4 text-on-surface">0x1e5d9a2b4c7f3c8a</td>
+                  <td className="py-4">
+                    <span className="text-secondary border border-secondary/40 bg-secondary/10 px-2 py-0.5 rounded text-[10px]">PENDING</span>
+                  </td>
+                  <td className="py-4 text-right text-on-surface-variant">2023-10-26 18:45Z</td>
                 </tr>
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
 
-        {/* Side Panel Metrics & Alerts */}
-        <div className="col-span-12 xl:col-span-4 flex flex-col gap-margin">
-          {/* Performance Metrics */}
-          <div className="glass-panel rounded border border-outline-variant p-4 flex-1">
-            <h2 className="font-body-base text-on-surface font-medium border-b border-outline-variant pb-2 mb-4">Enclave Telemetry</h2>
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between font-mono-sm text-mono-sm mb-1">
-                  <span className="text-on-surface-variant">Matching Latency</span>
-                  <span className="text-primary">1.2ms</span>
-                </div>
-                <div className="h-1 bg-surface-container-high rounded overflow-hidden">
-                  <div className="h-full bg-primary w-1/4"></div>
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between font-mono-sm text-mono-sm mb-1">
-                  <span className="text-on-surface-variant">Throughput (TPS)</span>
-                  <span className="text-on-surface">14,205</span>
-                </div>
-                <div className="h-1 bg-surface-container-high rounded overflow-hidden">
-                  <div className="h-full bg-secondary w-3/4"></div>
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between font-mono-sm text-mono-sm mb-1">
-                  <span className="text-on-surface-variant">Batch Window</span>
-                  <span className="text-on-surface">50ms Fixed</span>
-                </div>
-                <div className="h-1 bg-surface-container-high rounded overflow-hidden">
-                  <div className="h-full bg-outline-variant w-full"></div>
-                </div>
-              </div>
+        {/* Alert Log */}
+        <section className="lg:col-span-4 glass-panel rounded border border-outline-variant p-6 flex flex-col">
+          <h2 className="font-body-base text-on-surface flex items-center justify-between mb-4 border-b border-outline-variant pb-4">
+            <span className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-on-surface-variant text-[18px]">terminal</span>
+              Alert Log
+            </span>
+            <span className="w-2 h-2 rounded-full bg-outline-variant"></span>
+          </h2>
+          <div className="flex-1 overflow-y-auto space-y-1 font-mono-sm text-[11px] max-h-[300px]">
+            <div className="flex gap-3 py-2">
+              <span className="text-outline-variant shrink-0">10:24:01</span>
+              <span className="text-primary shrink-0">[INFO]</span>
+              <span className="text-on-surface">Attestation quote verified successfully for enclave sgx-zone-alpha-992</span>
+            </div>
+            <div className="flex gap-3 py-2">
+              <span className="text-outline-variant shrink-0">10:24:00</span>
+              <span className="text-primary shrink-0">[INFO]</span>
+              <span className="text-on-surface">Initiating key release protocol...</span>
+            </div>
+            <div className="flex gap-3 py-2">
+              <span className="text-outline-variant shrink-0">10:23:45</span>
+              <span className="text-on-surface shrink-0">[MATCH]</span>
+              <span className="text-on-surface-variant">Batch #48291 sealed and executed. 142 orders matched.</span>
+            </div>
+            <div className="flex gap-3 py-2 bg-error/10 border border-error/20 rounded px-2 -mx-2 text-error">
+              <span className="text-error/70 shrink-0">10:15:22</span>
+              <span className="font-semibold shrink-0">[WARN]</span>
+              <span>High latency detected in RPC node connection (150ms).</span>
+            </div>
+            <div className="flex gap-3 py-2">
+              <span className="text-outline-variant shrink-0">10:10:05</span>
+              <span className="text-primary shrink-0">[INFO]</span>
+              <span className="text-on-surface">Heartbeat received from all active nodes.</span>
+            </div>
+            <div className="flex gap-3 py-2">
+              <span className="text-outline-variant shrink-0">10:05:00</span>
+              <span className="text-on-surface shrink-0">[MATCH]</span>
+              <span className="text-on-surface-variant">Batch #48290 sealed and executed. 89 orders matched.</span>
             </div>
           </div>
-
-          {/* Alert Log */}
-          <div className="glass-panel rounded border border-outline-variant p-4 flex-1 flex flex-col">
-            <h2 className="font-body-base text-on-surface font-medium border-b border-outline-variant pb-2 mb-4 flex justify-between">
-              Security Events
-              <span className="material-symbols-outlined text-on-surface-variant text-sm">filter_list</span>
-            </h2>
-            <div className="flex-1 overflow-y-auto space-y-3 font-mono-sm text-mono-sm">
-              <div className="flex gap-2">
-                <span className="text-primary">▶</span>
-                <div>
-                  <div className="text-on-surface">Quote Attestation Verified</div>
-                  <div className="text-outline-variant text-[10px]">10:42:01.005 UTC</div>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-primary">▶</span>
-                <div>
-                  <div className="text-on-surface">Sealed State Committed</div>
-                  <div className="text-outline-variant text-[10px]">10:41:59.120 UTC</div>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-secondary">▶</span>
-                <div>
-                  <div className="text-secondary">Key Exchange Rotated</div>
-                  <div className="text-outline-variant text-[10px]">10:15:00.000 UTC</div>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-outline-variant">▶</span>
-                <div>
-                  <div className="text-on-surface-variant">Heartbeat Ack</div>
-                  <div className="text-outline-variant text-[10px]">10:14:00.000 UTC</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        </section>
       </div>
     </div>
   );
