@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
-import { Transaction, coinWithBalance } from '@mysten/sui/transactions';
+import { Transaction } from '@mysten/sui/transactions';
 import { encryptOrder, submitOrderTx } from '@shell-finance/sdk';
 import type { OrderSide } from '@shell-finance/sdk';
 import { SHELL_PACKAGE_ID, DEFAULT_COLLATERAL_AMOUNT, QUOTE_SYMBOL, collateralTypeFor, getSealClient } from '@/lib/sui';
@@ -70,10 +70,27 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
       // Build and sign the transaction
       const tx = new Transaction();
       const collateralType = collateralTypeFor(side);
-      const collateral = coinWithBalance({
-        balance: DEFAULT_COLLATERAL_AMOUNT,
-        type: collateralType,
-      })(tx);
+      const SUI_TYPE = '0x2::sui::SUI';
+      let collateral;
+      if (collateralType === SUI_TYPE) {
+        [collateral] = tx.splitCoins(tx.gas, [tx.pure.u64(DEFAULT_COLLATERAL_AMOUNT)]);
+      } else {
+        const coins = await suiClient.getCoins({
+          owner: account.address,
+          coinType: collateralType,
+        });
+        if (coins.data.length === 0) {
+          throw new Error(`No ${collateralType.split('::').pop()} coins in wallet. Get testnet tokens from the DeepBook faucet.`);
+        }
+        const primary = tx.object(coins.data[0].coinObjectId);
+        if (coins.data.length > 1) {
+          tx.mergeCoins(
+            primary,
+            coins.data.slice(1).map(c => tx.object(c.coinObjectId)),
+          );
+        }
+        [collateral] = tx.splitCoins(primary, [tx.pure.u64(DEFAULT_COLLATERAL_AMOUNT)]);
+      }
       submitOrderTx({
         shellPackageId: SHELL_PACKAGE_ID,
         collateralType,
