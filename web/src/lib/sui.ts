@@ -21,6 +21,7 @@ interface NetworkConfig {
     weight: number;
   };
   verifyKeyServers: boolean;
+  deepbookIndexerUrl: string;
 }
 
 const TESTNET: NetworkConfig = {
@@ -37,6 +38,7 @@ const TESTNET: NetworkConfig = {
     weight: 1,
   },
   verifyKeyServers: false,
+  deepbookIndexerUrl: 'https://deepbook-indexer.testnet.mystenlabs.com',
 };
 
 const MAINNET: NetworkConfig = {
@@ -53,6 +55,7 @@ const MAINNET: NetworkConfig = {
     weight: 1,
   },
   verifyKeyServers: true,
+  deepbookIndexerUrl: 'https://deepbook-indexer.mainnet.mystenlabs.com',
 };
 
 export const NETWORK_CONFIG: NetworkConfig = NETWORK === 'mainnet' ? MAINNET : TESTNET;
@@ -64,6 +67,7 @@ export const ENCLAVE_CONFIG_ID = NETWORK_CONFIG.enclaveConfigId;
 export const DEEPBOOK_POOL_KEY = NETWORK_CONFIG.deepbookPoolKey;
 export const QUOTE_COIN_TYPE = NETWORK_CONFIG.quoteCoinType;
 export const QUOTE_SYMBOL = NETWORK_CONFIG.quoteSymbol;
+export const DEEPBOOK_INDEXER_URL = NETWORK_CONFIG.deepbookIndexerUrl;
 
 // Base coin is SUI on both networks for now.
 export const BASE_COIN_TYPE = '0x2::sui::SUI';
