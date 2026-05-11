@@ -32,7 +32,7 @@ fun submit_order_as<T>(s: &mut ts::Scenario, who: address, amount: u64, expiry: 
 #[test]
 fun settle_swaps_collateral_and_mints_two_receipts() {
     let mut s = ts::begin(MAKER);
-    pool::init_for_testing(s.ctx());
+    shell::shell::init_for_testing(s.ctx());
 
     let maker_id = submit_order_as<SUI>(&mut s, MAKER, 100, 10);
     let taker_id = submit_order_as<USDC>(&mut s, TAKER, 250, 10);
@@ -73,7 +73,7 @@ fun settle_swaps_collateral_and_mints_two_receipts() {
 #[test, expected_failure(abort_code = settlement::EOrderMismatch)]
 fun settle_rejects_wrong_maker_order_id() {
     let mut s = ts::begin(MAKER);
-    pool::init_for_testing(s.ctx());
+    shell::shell::init_for_testing(s.ctx());
 
     let _real_maker_id = submit_order_as<SUI>(&mut s, MAKER, 100, 10);
     let taker_id = submit_order_as<USDC>(&mut s, TAKER, 250, 10);
@@ -94,7 +94,7 @@ fun settle_rejects_wrong_maker_order_id() {
 #[test, expected_failure(abort_code = settlement::ETraderMismatch)]
 fun settle_rejects_wrong_trader_address() {
     let mut s = ts::begin(MAKER);
-    pool::init_for_testing(s.ctx());
+    shell::shell::init_for_testing(s.ctx());
 
     let maker_id = submit_order_as<SUI>(&mut s, MAKER, 100, 10);
     let taker_id = submit_order_as<USDC>(&mut s, TAKER, 250, 10);
