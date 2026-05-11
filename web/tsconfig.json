@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@shell-finance/sdk": ["../ts-sdk/dist/index.d.ts"],
+      "@shell-finance/sdk/*": ["../ts-sdk/dist/*"]
     }
   },
   "include": [

@@ -15,7 +15,10 @@ export default function ConnectWalletButton() {
   const { mutate: connect, isPending } = useConnectWallet();
   const { mutate: disconnect } = useDisconnectWallet();
   const [showMenu, setShowMenu] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setMounted(true); }, []);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -65,7 +68,7 @@ export default function ConnectWalletButton() {
           connect({ wallet: wallets[0] });
         }
       }}
-      disabled={isPending || wallets.length === 0}
+      disabled={mounted && (isPending || wallets.length === 0)}
       className="bg-primary text-on-primary px-3 md:px-4 py-1.5 md:py-2 rounded font-mono-sm text-[11px] md:text-mono-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 md:gap-2 cursor-pointer shadow-[0_0_8px_rgba(87,241,219,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {isPending ? (
