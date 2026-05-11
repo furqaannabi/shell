@@ -3,22 +3,14 @@ module shell::pool;
 use sui::balance::Balance;
 use sui::coin::{Self, Coin};
 use sui::event;
-use sui::vec_map::{Self, VecMap};
 
-const EPcrAlreadyRegistered: u64 = 0;
-const EPcrNotRegistered: u64 = 1;
-const EOrderExpired: u64 = 2;
-const EOrderNotExpired: u64 = 3;
-const EWrongTrader: u64 = 4;
-const EZeroCollateral: u64 = 5;
-
-public struct AdminCap has key, store {
-    id: UID,
-}
+const EOrderExpired: u64 = 0;
+const EOrderNotExpired: u64 = 1;
+const EWrongTrader: u64 = 2;
+const EZeroCollateral: u64 = 3;
 
 public struct Pool has key {
     id: UID,
-    enclaves: VecMap<vector<u8>, vector<u8>>,
     epoch_window_ms: u64,
     protocol_fee_bps: u64,
     treasury: address,
@@ -50,38 +42,13 @@ public struct OrderSubmitted has copy, drop {
     expiry_epoch: u64,
 }
 
-fun init(ctx: &mut TxContext) {
+public(package) fun create_pool(ctx: &mut TxContext) {
     transfer::share_object(Pool {
         id: object::new(ctx),
-        enclaves: vec_map::empty(),
         epoch_window_ms: 10_000,
         protocol_fee_bps: 10,
         treasury: ctx.sender(),
     });
-    transfer::transfer(AdminCap { id: object::new(ctx) }, ctx.sender());
-}
-
-public fun register_enclave(
-    pool: &mut Pool,
-    _: &AdminCap,
-    pcr: vector<u8>,
-    enclave_pubkey: vector<u8>,
-) {
-    assert!(!pool.enclaves.contains(&pcr), EPcrAlreadyRegistered);
-    pool.enclaves.insert(pcr, enclave_pubkey);
-}
-
-public fun deregister_enclave(pool: &mut Pool, _: &AdminCap, pcr: vector<u8>) {
-    assert!(pool.enclaves.contains(&pcr), EPcrNotRegistered);
-    pool.enclaves.remove(&pcr);
-}
-
-public fun is_pcr_registered(pool: &Pool, pcr: &vector<u8>): bool {
-    pool.enclaves.contains(pcr)
-}
-
-public fun enclave_pubkey(pool: &Pool, pcr: &vector<u8>): &vector<u8> {
-    pool.enclaves.get(pcr)
 }
 
 public fun submit_order<T>(
@@ -158,7 +125,3 @@ public(package) fun new_receipt(
     }
 }
 
-#[test_only]
-public fun init_for_testing(ctx: &mut TxContext) {
-    init(ctx)
-}

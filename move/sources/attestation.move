@@ -1,14 +1,28 @@
 module shell::attestation;
 
-use shell::pool::Pool;
-use sui::bcs;
-use sui::ed25519;
+use enclave::enclave::Enclave;
+use shell::shell::SHELL;
 
-const EUnknownPcr: u64 = 0;
-const EBadSignature: u64 = 1;
+const MATCH_INTENT: u8 = 0;
 
-/// Output of a verified enclave match. Hot-potato: no `key`, `store`, `copy`,
-/// or `drop` — it must be consumed by `shell::settlement` in the same PTB.
+const EBadSignature: u64 = 0;
+
+/// The exact struct the enclave BCS-encodes and signs (wrapped in
+/// `enclave::IntentMessage` with `MATCH_INTENT` and `timestamp_ms`).
+/// Must match the Rust signer in nautilus-server.
+public struct MatchPayload has copy, drop {
+    maker: address,
+    taker: address,
+    maker_order: ID,
+    taker_order: ID,
+    filled_size: u64,
+    filled_price: u64,
+    deepbook_tx_digest: vector<u8>,
+}
+
+/// Hot-potato: no `key`, `store`, `copy`, or `drop`. Only constructed by
+/// `verify` after a successful enclave signature check; only consumed by
+/// `shell::settlement::settle`. Cannot escape the PTB.
 public struct MatchInstruction {
     maker: address,
     taker: address,
@@ -20,31 +34,32 @@ public struct MatchInstruction {
     enclave_signature: vector<u8>,
 }
 
-/// Verify that `signature` is a valid Ed25519 signature over `payload`
-/// under the public key registered for `pcr`, then BCS-decode `payload`
-/// into a `MatchInstruction`.
-///
-/// Payload layout (BCS): maker:address, taker:address, maker_order:address,
-/// taker_order:address, filled_size:u64, filled_price:u64,
-/// deepbook_tx_digest:vector<u8>.
+/// Verify a match signed by a registered Shell enclave, returning a
+/// hot-potato that `shell::settlement::settle` must consume in the same
+/// PTB. Aborts if the signature does not check.
 public fun verify(
-    pool: &Pool,
-    pcr: vector<u8>,
+    enclave: &Enclave<SHELL>,
+    timestamp_ms: u64,
+    maker: address,
+    taker: address,
+    maker_order: ID,
+    taker_order: ID,
+    filled_size: u64,
+    filled_price: u64,
+    deepbook_tx_digest: vector<u8>,
     signature: vector<u8>,
-    payload: vector<u8>,
 ): MatchInstruction {
-    assert!(pool.is_pcr_registered(&pcr), EUnknownPcr);
-    let pubkey = *pool.enclave_pubkey(&pcr);
-    assert!(ed25519::ed25519_verify(&signature, &pubkey, &payload), EBadSignature);
-
-    let mut reader = bcs::new(payload);
-    let maker = reader.peel_address();
-    let taker = reader.peel_address();
-    let maker_order = object::id_from_address(reader.peel_address());
-    let taker_order = object::id_from_address(reader.peel_address());
-    let filled_size = reader.peel_u64();
-    let filled_price = reader.peel_u64();
-    let deepbook_tx_digest = reader.peel_vec_u8();
+    let payload = MatchPayload {
+        maker,
+        taker,
+        maker_order,
+        taker_order,
+        filled_size,
+        filled_price,
+        deepbook_tx_digest,
+    };
+    let ok = enclave.verify_signature(MATCH_INTENT, timestamp_ms, payload, &signature);
+    assert!(ok, EBadSignature);
 
     MatchInstruction {
         maker,
