@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import { SHELL_PACKAGE_ID, COLLATERAL_TYPE } from '@/lib/sui';
+import { SHELL_PACKAGE_ID, QUOTE_SYMBOL, collateralTypeFor } from '@/lib/sui';
 import type { SubmittedOrder } from './SealedOrderForm';
 import { useQuery } from '@tanstack/react-query';
 
@@ -50,7 +50,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
         return {
           orderId: obj.data!.objectId,
           commitHash: Array.from(fields.commit_hash as number[]).map(b => b.toString(16).padStart(2, '0')).join(''),
-          side: fields.side === 0 ? 'buy' : 'sell', // assuming enum mapping
+          side: (fields.side === 0 ? 'buy' : 'sell') as 'buy' | 'sell',
           timestamp: Number(fields.expiry_epoch), // placeholder for sorting
         };
       });
@@ -77,13 +77,13 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
     return () => clearInterval(interval);
   }, []);
 
-  async function handleCancel(orderId: string) {
+  async function handleCancel(orderId: string, side: 'buy' | 'sell') {
     if (!account) return;
     try {
       const tx = new Transaction();
       const [coin] = tx.moveCall({
         target: `${SHELL_PACKAGE_ID}::pool::cancel_expired`,
-        typeArguments: [COLLATERAL_TYPE],
+        typeArguments: [collateralTypeFor(side)],
         arguments: [tx.object(orderId)],
       });
       tx.transferObjects([coin], account.address);
@@ -162,7 +162,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                     {order.limitPrice === '?' ? (
                       <span className="text-[10px] text-on-surface-variant italic">ENCRYPTED</span>
                     ) : (
-                      `${order.limitPrice} USDC`
+                      `${order.limitPrice} ${QUOTE_SYMBOL}`
                     )}
                   </td>
                   <td className="py-3 text-right">
@@ -183,7 +183,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                         </button>
                       )}
                       <button 
-                        onClick={() => handleCancel(order.orderId)}
+                        onClick={() => handleCancel(order.orderId, order.side)}
                         className="text-on-surface-variant hover:text-error transition-colors cursor-pointer"
                         title="Cancel Order"
                       >

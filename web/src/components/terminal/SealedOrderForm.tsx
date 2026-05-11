@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
-import { Transaction } from '@mysten/sui/transactions';
+import { Transaction, coinWithBalance } from '@mysten/sui/transactions';
 import { encryptOrder, submitOrderTx } from '@shell-finance/sdk';
 import type { OrderSide } from '@shell-finance/sdk';
-import { SHELL_PACKAGE_ID, COLLATERAL_TYPE, DEFAULT_COLLATERAL_AMOUNT, getSealClient } from '@/lib/sui';
+import { SHELL_PACKAGE_ID, DEFAULT_COLLATERAL_AMOUNT, QUOTE_SYMBOL, collateralTypeFor, getSealClient } from '@/lib/sui';
 
 /** Result emitted after a successful order submission */
 export interface SubmittedOrder {
@@ -69,10 +69,14 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
 
       // Build and sign the transaction
       const tx = new Transaction();
-      const [collateral] = tx.splitCoins(tx.gas, [tx.pure.u64(DEFAULT_COLLATERAL_AMOUNT)]);
+      const collateralType = collateralTypeFor(side);
+      const collateral = coinWithBalance({
+        balance: DEFAULT_COLLATERAL_AMOUNT,
+        type: collateralType,
+      })(tx);
       submitOrderTx({
         shellPackageId: SHELL_PACKAGE_ID,
-        collateralType: COLLATERAL_TYPE,
+        collateralType,
         collateral,
         sealedEnvelope: enc.sealedEnvelope,
         commitHash: enc.commitHash,
@@ -136,7 +140,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         <div className="relative group">
           <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Asset</label>
           <div className="relative">
-            <input className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data pr-24" type="text" value="SUI/USDC" readOnly />
+            <input className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data pr-24" type="text" value={`SUI/${QUOTE_SYMBOL}`} readOnly />
             <span className="absolute right-2 top-2 text-primary font-mono-sm text-[10px] pointer-events-none select-none">ENCRYPTED</span>
           </div>
         </div>
@@ -198,7 +202,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
               onChange={(e) => setLimitPrice(e.target.value)}
               inputMode="decimal"
             />
-            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">USDC</span>
+            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">{QUOTE_SYMBOL}</span>
           </div>
         </div>
         
