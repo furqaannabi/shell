@@ -9,9 +9,11 @@
 //! that Move reconstructs there.
 
 pub mod match_payload;
+pub mod matcher;
 pub mod order;
 pub mod signer;
 
 pub use match_payload::{IntentMessage, MATCH_INTENT, MatchPayload, SuiBytes};
+pub use matcher::{DecryptedOrder, match_orders};
 pub use order::{OrderPlaintext, Side};
 pub use signer::{EnclaveSigner, SignedMatch, verify_signed_match};
