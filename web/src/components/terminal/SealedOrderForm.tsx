@@ -136,8 +136,8 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         <div className="relative group">
           <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Asset</label>
           <div className="relative">
-            <input className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data pr-10" type="text" value="SUI/USDC" readOnly />
-            <span className="absolute right-2 top-2 text-primary font-mono-sm text-[10px]">ENCRYPTED</span>
+            <input className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data pr-24" type="text" value="SUI/USDC" readOnly />
+            <span className="absolute right-2 top-2 text-primary font-mono-sm text-[10px] pointer-events-none select-none">ENCRYPTED</span>
           </div>
         </div>
         
@@ -172,14 +172,14 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
           <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Size</label>
           <div className="relative">
             <input
-              className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-12"
+              className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-16"
               placeholder="0.00"
               type="text"
               value={size}
               onChange={(e) => setSize(e.target.value)}
               inputMode="decimal"
             />
-            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm">SUI</span>
+            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">SUI</span>
           </div>
         </div>
         
@@ -191,14 +191,14 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
           </label>
           <div className="relative">
             <input
-              className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-12"
+              className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-20"
               placeholder="0.00"
               type="text"
               value={limitPrice}
               onChange={(e) => setLimitPrice(e.target.value)}
               inputMode="decimal"
             />
-            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm">USDC</span>
+            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">USDC</span>
           </div>
         </div>
         
@@ -221,13 +221,13 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
             <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Max Slippage</label>
             <div className="relative">
               <input
-                className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-6"
+                className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-10"
                 type="text"
                 value={slippage}
                 onChange={(e) => setSlippage(e.target.value)}
                 inputMode="decimal"
               />
-              <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm">%</span>
+              <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">%</span>
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import type { SubmittedOrder } from './SealedOrderForm';
 
 interface Props {
@@ -13,14 +14,22 @@ function truncateHash(hash: string, chars = 8): string {
 }
 
 /** Relative time since timestamp */
-function timeAgo(ts: number): string {
-  const diff = Math.floor((Date.now() - ts) / 1000);
+function timeAgo(ts: number, now: number): string {
+  const diff = Math.floor((now - ts) / 1000);
+  if (diff < 0) return 'Just now';
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
 export default function ActiveOrders({ orders }: Props) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="glass-panel rounded-lg p-4 flex flex-col h-full">
       <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#1E293B]">
@@ -71,7 +80,7 @@ export default function ActiveOrders({ orders }: Props) {
                     <span className="text-secondary text-[12px]">Sealed</span>
                   </td>
                   <td className="py-3 text-right text-on-surface-variant text-[12px]">
-                    {timeAgo(order.timestamp)}
+                    {timeAgo(order.timestamp, now)}
                   </td>
                 </tr>
               ))}
