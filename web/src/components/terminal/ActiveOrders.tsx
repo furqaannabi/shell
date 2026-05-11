@@ -118,6 +118,7 @@ export default function ActiveOrders({ orders }: Props) {
                 <th className="pb-2 font-normal">Fingerprint</th>
                 <th className="pb-2 font-normal">Side</th>
                 <th className="pb-2 font-normal text-right">Size</th>
+                <th className="pb-2 font-normal text-right">Price</th>
                 <th className="pb-2 font-normal text-right">Status</th>
                 <th className="pb-2 font-normal text-right">Submitted</th>
                 <th className="pb-2 font-normal text-right">Actions</th>
@@ -146,6 +147,7 @@ export default function ActiveOrders({ orders }: Props) {
                       {order.side.toUpperCase()}
                     </td>
                     <td className="py-3 text-right">{order.size} SUI</td>
+                    <td className="py-3 text-right">{order.limitPrice} USDC</td>
                     <td className="py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {isSettled ? (
