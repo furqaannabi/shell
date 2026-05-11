@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import LandingConnectButton from '@/components/wallet/LandingConnectButton';
 
 export default function LoginPage() {
   return (
@@ -77,10 +78,7 @@ export default function LoginPage() {
             
             <div className="space-y-4">
               {/* Primary Wallet Connect */}
-              <Link href="/terminal" className="w-full h-14 bg-primary text-on-primary font-body-base text-body-base font-semibold rounded hover:bg-primary-fixed transition-colors btn-glow flex items-center justify-center gap-3 hover:shadow-[0_0_8px_rgba(45,212,191,0.3)]">
-                <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>account_balance_wallet</span>
-                Connect Sui Wallet
-              </Link>
+              <LandingConnectButton />
               
               <div className="relative py-4 flex items-center">
                 <div className="flex-grow border-t border-outline-variant"></div>

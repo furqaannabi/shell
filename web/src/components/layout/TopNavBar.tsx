@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import ConnectWalletButton from '@/components/wallet/ConnectWalletButton';
 
 export default function TopNavBar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const pathname = usePathname();
@@ -50,11 +51,7 @@ export default function TopNavBar({ onMenuToggle }: { onMenuToggle?: () => void 
             <span className="material-symbols-outlined">notifications</span>
           </button>
         </div>
-        <button className="bg-primary text-on-primary px-3 md:px-4 py-1.5 md:py-2 rounded font-mono-sm text-[11px] md:text-mono-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 md:gap-2 cursor-pointer shadow-[0_0_8px_rgba(87,241,219,0.2)]">
-          <span className="material-symbols-outlined md:hidden" style={{ fontSize: '16px', lineHeight: '1' }}>account_balance_wallet</span>
-          <span className="hidden md:inline leading-none mt-0.5">Connect Wallet</span>
-          <span className="md:hidden leading-none mt-0.5">Connect</span>
-        </button>
+        <ConnectWalletButton />
         <div className="w-7 h-7 md:w-8 md:h-8 rounded-full border border-outline-variant bg-surface-container flex items-center justify-center overflow-hidden cursor-pointer flex-shrink-0">
           <span className="material-symbols-outlined text-[14px] md:text-sm text-on-surface">person</span>
         </div>
