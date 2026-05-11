@@ -4,6 +4,7 @@ import { useState } from 'react';
 import SealedOrderForm, { type SubmittedOrder } from '@/components/terminal/SealedOrderForm';
 import ActiveOrders from '@/components/terminal/ActiveOrders';
 import SettlementReceipts from '@/components/terminal/SettlementReceipts';
+import OrderBook from '@/components/terminal/OrderBook';
 
 export default function TerminalPage() {
   const [orders, setOrders] = useState<SubmittedOrder[]>([]);
@@ -26,47 +27,7 @@ export default function TerminalPage() {
 
       {/* Right Panel: Order Book & Receipts */}
       <section className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-4 min-h-[600px] lg:min-h-0">
-        {/* DeepBook Reference — static for now */}
-        <div className="glass-panel rounded-lg p-4 flex flex-col flex-1">
-          <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#1E293B]">
-            <h2 className="font-headline-md text-[14px] text-on-surface uppercase tracking-wider">DeepBook Reference</h2>
-          </div>
-          <div className="flex-1 overflow-auto flex flex-col text-[11px] font-mono-data text-on-surface-variant min-h-[200px]">
-            <div className="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
-              <div className="absolute right-0 top-0 bottom-0 bg-error-container/10 w-[80%] z-0"></div>
-              <span className="text-error relative z-10">3,452.10</span>
-              <span className="relative z-10">12.5</span>
-            </div>
-            <div className="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
-              <div className="absolute right-0 top-0 bottom-0 bg-error-container/10 w-[60%] z-0"></div>
-              <span className="text-error relative z-10">3,451.80</span>
-              <span className="relative z-10">4.2</span>
-            </div>
-            <div className="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
-              <div className="absolute right-0 top-0 bottom-0 bg-error-container/10 w-[20%] z-0"></div>
-              <span className="text-error relative z-10">3,451.20</span>
-              <span className="relative z-10">1.8</span>
-            </div>
-            
-            <div className="my-2 py-1 text-center font-bold text-on-surface border-y border-[#1E293B]">3,450.50 USDC</div>
-            
-            <div className="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
-              <div className="absolute right-0 top-0 bottom-0 bg-primary-container/10 w-[30%] z-0"></div>
-              <span className="text-primary relative z-10">3,449.90</span>
-              <span className="relative z-10">5.0</span>
-            </div>
-            <div className="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
-              <div className="absolute right-0 top-0 bottom-0 bg-primary-container/10 w-[50%] z-0"></div>
-              <span className="text-primary relative z-10">3,449.10</span>
-              <span className="relative z-10">8.5</span>
-            </div>
-            <div className="flex justify-between py-1 px-1 hover:bg-surface-container-low relative">
-              <div className="absolute right-0 top-0 bottom-0 bg-primary-container/10 w-[90%] z-0"></div>
-              <span className="text-primary relative z-10">3,448.00</span>
-              <span className="relative z-10">22.0</span>
-            </div>
-          </div>
-        </div>
+        <OrderBook />
         
         {/* Settlement Receipts — live from chain */}
         <SettlementReceipts />
