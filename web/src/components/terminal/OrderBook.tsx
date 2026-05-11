@@ -3,6 +3,7 @@
 import { useSuiClient, useCurrentAccount } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
 import { deepbook } from '@mysten/deepbook-v3';
+import { DEEPBOOK_POOL_KEY, QUOTE_SYMBOL } from '@/lib/sui';
 
 interface PriceLevel {
   price: string;
@@ -36,7 +37,7 @@ export default function OrderBook() {
 
       const safeFetch = async (isBid: boolean) => {
         try {
-          return await dbClient.deepbook.getLevel2Range('SUI_DBUSDC', 0, 10000, isBid);
+          return await dbClient.deepbook.getLevel2Range(DEEPBOOK_POOL_KEY, 0, 10000, isBid);
         } catch {
           return { prices: [], quantities: [] };
         }
@@ -115,7 +116,7 @@ export default function OrderBook() {
         
         {/* Mid Price */}
         <div className="my-2 py-1 text-center font-bold text-on-surface border-y border-[#1E293B] bg-surface-container-low/30">
-          {midPrice ? `${midPrice.toFixed(4)} USDC` : '---'}
+          {midPrice ? `${midPrice.toFixed(4)} ${QUOTE_SYMBOL}` : '---'}
         </div>
         
         {/* Bids (Buys) */}
@@ -140,7 +141,7 @@ export default function OrderBook() {
       </div>
       
       <div className="mt-2 pt-2 border-t border-[#1E293B] flex justify-between text-[9px] text-outline-variant uppercase">
-        <span>Price (USDC)</span>
+        <span>Price ({QUOTE_SYMBOL})</span>
         <span>Size (SUI)</span>
       </div>
     </div>
