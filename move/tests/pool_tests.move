@@ -12,6 +12,7 @@ const OTHER: address = @0xC;
 
 const PCR_A: vector<u8> = b"pcr-binary-a-32-bytes-padding---";
 const PCR_B: vector<u8> = b"pcr-binary-b-32-bytes-padding---";
+const PUBKEY: vector<u8> = b"ed25519-pubkey-32-bytes-padding-";
 const ENV: vector<u8> = b"sealed-ciphertext-bytes";
 const HASH: vector<u8> = b"commit-hash-32-bytes-padding----";
 
@@ -41,10 +42,12 @@ fun register_and_deregister_pcr() {
     let cap = s.take_from_address<AdminCap>(ADMIN);
 
     let pcr = PCR_A;
-    pool.register_pcr(&cap, pcr);
+    let pubkey = PUBKEY;
+    pool.register_enclave(&cap, pcr, pubkey);
     assert!(pool.is_pcr_registered(&pcr));
+    assert!(pool.enclave_pubkey(&pcr) == &pubkey);
 
-    pool.deregister_pcr(&cap, pcr);
+    pool.deregister_enclave(&cap, pcr);
     assert!(!pool.is_pcr_registered(&pcr));
 
     ts::return_shared(pool);
@@ -60,8 +63,8 @@ fun register_pcr_twice_aborts() {
 
     let mut pool = s.take_shared<Pool>();
     let cap = s.take_from_address<AdminCap>(ADMIN);
-    pool.register_pcr(&cap, PCR_A);
-    pool.register_pcr(&cap, PCR_A);
+    pool.register_enclave(&cap, PCR_A, PUBKEY);
+    pool.register_enclave(&cap, PCR_A, PUBKEY);
 
     abort 0
 }
@@ -74,7 +77,7 @@ fun deregister_unknown_pcr_aborts() {
 
     let mut pool = s.take_shared<Pool>();
     let cap = s.take_from_address<AdminCap>(ADMIN);
-    pool.deregister_pcr(&cap, PCR_B);
+    pool.deregister_enclave(&cap, PCR_B);
 
     abort 0
 }
