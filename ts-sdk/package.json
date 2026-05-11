@@ -1,0 +1,34 @@
+{
+  "name": "@shell-finance/sdk",
+  "version": "0.0.1",
+  "description": "Client SDK for Shell Finance: Seal-encrypted order envelopes + PTB builders.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mysten/bcs": "^2.0.5",
+    "@mysten/seal": "^1.1.3",
+    "@mysten/sui": "^2.16.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
