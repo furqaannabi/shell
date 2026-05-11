@@ -1,8 +1,10 @@
 import { SealClient } from "@mysten/seal";
 import { toHex } from "@mysten/sui/utils";
-import { webcrypto } from "node:crypto";
 
 import { encodeOrder, type OrderPlaintext } from "./order.js";
+
+// Use the universal Web Crypto API — works in browsers and Node 20+
+const webcrypto = globalThis.crypto;
 
 export interface EncryptOrderOptions {
   sealClient: SealClient;
@@ -31,7 +33,7 @@ export async function encryptOrder(opts: EncryptOrderOptions): Promise<Encrypted
   const plaintext = encodeOrder(opts.order);
   const id = opts.id ?? webcrypto.getRandomValues(new Uint8Array(32));
   const commitHash = new Uint8Array(
-    await webcrypto.subtle.digest("SHA-256", plaintext),
+    await webcrypto.subtle.digest("SHA-256", plaintext as ArrayBufferView<ArrayBuffer>),
   );
 
   const { encryptedObject, key } = await opts.sealClient.encrypt({
