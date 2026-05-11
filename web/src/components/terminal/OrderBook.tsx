@@ -19,32 +19,45 @@ export default function OrderBook() {
   const account = useCurrentAccount();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['deepbook-orderbook'],
+    queryKey: ['deepbook-orderbook', account?.address],
+    enabled: !!account?.address,
     queryFn: async (): Promise<OrderBookData> => {
-      // Extend the client with deepbook functionality
-      // The SDK requires an address even for read-only calls
-      const userAddress = account?.address || '0x0000000000000000000000000000000000000000000000000000000000000000';
-      const dbClient = (suiClient as any).$extend 
-        ? (suiClient as any).$extend(deepbook({ address: userAddress })) 
-        : (suiClient as any).extend(deepbook({ address: userAddress }));
-      
-      try {
-        // Fetch level 2 data for SUI_DBUSDC
-        // We use a wide range to ensure we capture the current book
-        const bids = await dbClient.deepbook.getLevel2Range('SUI_DBUSDC', 0, 10000, true);
-        const asks = await dbClient.deepbook.getLevel2Range('SUI_DBUSDC', 0, 10000, false);
-        
-        return {
-          bids: (bids || []).slice(0, 10),
-          asks: (asks || []).slice(0, 10),
-        };
-      } catch (err) {
-        console.error('DeepBook fetch error:', err);
-        throw err;
-      }
+      const dbClient = (suiClient as any).$extend
+        ? (suiClient as any).$extend(deepbook({ address: account!.address }))
+        : (suiClient as any).extend(deepbook({ address: account!.address }));
+
+      const toLevels = (r: { prices: number[]; quantities: number[] } | undefined): PriceLevel[] => {
+        if (!r?.prices) return [];
+        return r.prices.map((p, i) => ({
+          price: String(p),
+          quantity: String(r.quantities[i] ?? 0),
+        }));
+      };
+
+      const safeFetch = async (isBid: boolean) => {
+        try {
+          return await dbClient.deepbook.getLevel2Range('SUI_DBUSDC', 0, 10000, isBid);
+        } catch {
+          return { prices: [], quantities: [] };
+        }
+      };
+      const [bidsRaw, asksRaw] = await Promise.all([safeFetch(true), safeFetch(false)]);
+      return {
+        bids: toLevels(bidsRaw).slice(0, 10),
+        asks: toLevels(asksRaw).slice(0, 10),
+      };
     },
-    refetchInterval: 5000, // Refresh every 5s
+    refetchInterval: 5000,
   });
+
+  if (!account) {
+    return (
+      <div className="glass-panel rounded-lg p-4 flex flex-col flex-1 items-center justify-center">
+        <span className="material-symbols-outlined text-on-surface-variant opacity-50">account_balance_wallet</span>
+        <span className="text-[11px] text-on-surface-variant mt-2 text-center">Connect wallet to view order book.</span>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -68,8 +81,8 @@ export default function OrderBook() {
   }
 
   // Calculate mid price
-  const bestBid = data.bids[0]?.price;
-  const bestAsk = data.asks[0]?.price;
+  const bestBid = data.bids?.[0]?.price;
+  const bestAsk = data.asks?.[0]?.price;
   const midPrice = bestBid && bestAsk ? (parseFloat(bestBid) + parseFloat(bestAsk)) / 2 : null;
 
   return (
@@ -82,9 +95,9 @@ export default function OrderBook() {
       <div className="flex-1 overflow-auto flex flex-col text-[11px] font-mono-data text-on-surface-variant min-h-[200px]">
         {/* Asks (Sells) - Sorted descending so highest is at top */}
         <div className="flex flex-col-reverse">
-          {data.asks.map((level, i) => {
+          {(data.asks ?? []).map((level, i) => {
             const size = parseFloat(level.quantity);
-            const maxSize = Math.max(...data.asks.map(l => parseFloat(l.quantity)), 1);
+            const maxSize = Math.max(...(data.asks ?? []).map(l => parseFloat(l.quantity)), 1);
             const width = (size / maxSize) * 100;
             
             return (
@@ -107,9 +120,9 @@ export default function OrderBook() {
         
         {/* Bids (Buys) */}
         <div className="flex flex-col">
-          {data.bids.map((level, i) => {
+          {(data.bids ?? []).map((level, i) => {
             const size = parseFloat(level.quantity);
-            const maxSize = Math.max(...data.bids.map(l => parseFloat(l.quantity)), 1);
+            const maxSize = Math.max(...(data.bids ?? []).map(l => parseFloat(l.quantity)), 1);
             const width = (size / maxSize) * 100;
             
             return (

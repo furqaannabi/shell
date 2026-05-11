@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { encryptOrder, submitOrderTx } from '@shell-finance/sdk';
-import { SHELL_PACKAGE_ID, COLLATERAL_TYPE, DEFAULT_COLLATERAL_AMOUNT, getSealClient } from '@/lib/sui';
 import type { OrderSide } from '@shell-finance/sdk';
+import { SHELL_PACKAGE_ID, COLLATERAL_TYPE, DEFAULT_COLLATERAL_AMOUNT, getSealClient } from '@/lib/sui';
 
 /** Result emitted after a successful order submission */
 export interface SubmittedOrder {
