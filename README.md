@@ -1,8 +1,8 @@
 # Shell Finance
 
-> Confidential order flow on DeepBook. Seal-encrypted orders are matched inside a Nautilus enclave and settled against Sui's on-chain CLOB — only post-execution receipts are revealed.
+> Cryptographically trust-minimized institutional execution. Move enforces the rules, Seal + Nautilus enforce the privacy, DeepBook is the settlement venue — the composition exists nowhere else on-chain.
 
-Hackathon build for Sui Overflow 2026 (DeFi & Payments track). Full spec lives in [`product.md`](product.md). Honest threat model in [`product.md` §5](product.md).
+Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minimized Finance slot. Full spec lives in [`product.md`](product.md). Track positioning in [`product.md` §7.1](product.md). Honest threat model in [`product.md` §5](product.md).
 
 ## Status
 

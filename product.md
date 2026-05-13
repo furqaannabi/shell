@@ -295,32 +295,47 @@ The single most important decision is whether the Seal + Nautilus + DeepBook com
 
 # **7\. Judging Strategy**
 
-## **7.1 What Mysten judges actually score**
+## **7.1 Track alignment — DeFi & Payments**
+
+The published track problem statement (Sui Overflow 2026) frames DeFi & Payments around five idea-bank groups: Trust-Minimized Finance, Payments & Consumer Finance, Vaults & Capital Management, Financial Automation, and Infrastructure & Tooling. Shell sits primarily in the first and partially in the second.
+
+**Primary positioning: Trust-Minimized Finance.** The track description: *"systems that reduce or eliminate the need for trust between parties by enforcing financial logic programmatically. Focus on conditional execution, automated enforcement, transparent rules."* Shell hits every clause — Move enforces ownership and atomic settlement; Seal enforces pre-trade order privacy with cryptographic, not procedural, guarantees; Nautilus PCR-pinning means the operator is a known binary, not a trusted party. The hot-potato `MatchInstruction` makes settlement atomic-or-nothing at the type level.
+
+**Secondary positioning: Privacy-focused consumer payment rails.** The track lists this verbatim under Payments & Consumer Finance. The `web/` trader terminal is the retail-shaped surface; institutional usage is the same primitives at larger size.
+
+**What we explicitly do NOT pitch as.** Vaults, automation, structured products — those exist in the idea bank but aren't Shell. Pitching across categories dilutes.
+
+**Why this track, not DeepBook Predict.** Predict is a separate track with a hard minimum requirement ("Integrate deepbook predict contract on testnet"). Shell uses DeepBook v3 spot/margin, not Predict's vol-surface markets. Cross-pitching is two half-built projects.
+
+## **7.2 What Mysten judges score**
 
 - Working demo (highest weight). A 90-second flow showing trader → sealed order → match → settlement.
-- Sui-native primitive composition. Shell uses four: Seal, Nautilus, DeepBook, sponsored tx.
+- Sui-native primitive composition. Shell uses four: Seal, Nautilus, DeepBook v3, Enoki sponsored tx.
+- Novel PTB use. The hot-potato `MatchInstruction` consumed atomically with DeepBook trades is the explicit example.
 - Engineering quality. Public GitHub, clean Move, reproducible enclave build, README that runs.
 - Founder signal. ETH Global, QuickNode hackathon win, prior shipped projects on slide 1.
 - Distribution narrative. Who is the first 10 institutional users and why do they sign Monday?
 
-## **7.2 The one-line pitch**
+## **7.3 The one-line pitch**
 
-_"The first true on-chain dark pool: institutional execution privacy with cryptographic guarantees, settled on DeepBook."_
+_"Cryptographically trust-minimized institutional execution. Move enforces the rules, Seal + Nautilus enforce the privacy, DeepBook is the settlement venue — composition exists nowhere else on-chain."_
 
-## **7.3 The ten-slide deck**
+The previous "first true on-chain dark pool" framing leads with the feature, not the track-aligned thesis. Keep "dark pool" as a colour line in the deck; lead with trust-minimization in the pitch.
 
-- Cover. Shell Finance. One line. Team.
-- Problem. Order leak costs institutions basis points; existing solutions are partial.
-- Why Sui. The Seal + Nautilus + DeepBook composition exists nowhere else.
+## **7.4 The ten-slide deck**
+
+- Cover. Shell Finance. Trust-minimized institutional execution on Sui. Team.
+- Problem. Order leak is an execution tax; existing solutions either trust a venue (sFOX, dark pools) or accept AMM slippage (Shroud, Penumbra).
+- Track fit. Trust-Minimized Finance: cryptographic enforcement, not procedural trust. Quote the idea-bank verbatim.
+- Why Sui. The Seal + Nautilus + DeepBook composition exists nowhere else; show what each layer enforces.
 - Architecture diagram. The system flow from section 4.1.
-- Demo. 90-second video embedded.
+- Demo. 90-second video. Sealed order on testnet → enclave-signed match → settlement receipt.
+- Novel PTB. The hot-potato `MatchInstruction` is the type-level guarantee that a signed match must hit settlement in the same block or revert.
 - What's revealed / private. The table from section 3.2.
-- Threat model. Honest. Section 5.
-- Distribution. Three institutional design partners contacted; LOIs target.
-- Team. ETH Global, QuickNode winner, AWS Nitro depth, full-stack web3.
-- Ask. Win the DeFi & Payments track. Next: Mysten Moonshot grant.
+- Threat model. Honest. Section 5. Mysten judges have rewarded honesty about TEE caveats.
+- Ask. Win the DeFi & Payments track. Next: Mysten Moonshot grant, three design partners targeted.
 
-## **7.4 Sponsor bounty stack**
+## **7.5 Sponsor bounty stack**
 
 - OtterSec or OpenZeppelin (Infra & DevX): security writeup + audit credit ask.
 - Walrus: archive sealed-order ciphertexts to Walrus for permanent encrypted retention.
