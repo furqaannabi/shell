@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import { SHELL_PACKAGE_ID, QUOTE_SYMBOL, collateralTypeFor } from '@/lib/sui';
+import { SHELL_PACKAGE_ID, QUOTE_SYMBOL } from '@/lib/sui';
 import type { SubmittedOrder } from './SealedOrderForm';
 import { useQuery } from '@tanstack/react-query';
 
@@ -34,38 +34,80 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   const [now, setNow] = useState(Date.now());
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
-  // ── 1. Fetch live OrderCommitment objects from the chain ────────────────
+  // ── 1. Fetch the trader's OrderSubmitted events ─────────────────────────
+  // OrderCommitment is a *shared* object (transfer::share_object in
+  // shell::pool::submit_order), so getOwnedObjects returns nothing. Query
+  // OrderSubmitted events instead and prune any whose object is gone
+  // (cancelled or settled).
+  //
+  // The JSON-RPC event filter has no AND; the trader-address filter is
+  // applied client-side. Fine for testnet volume; if mainnet traffic
+  // grows this should page until the trader's last N orders are found.
   const { data: onChainOrders, isLoading } = useQuery({
     queryKey: ['active-commitments', account?.address],
     queryFn: async () => {
       if (!account) return [];
-      const res = await suiClient.getOwnedObjects({
-        owner: account.address,
-        filter: { StructType: `${SHELL_PACKAGE_ID}::pool::OrderCommitment` },
-        options: { showContent: true },
+      const events = await suiClient.queryEvents({
+        query: { MoveEventType: `${SHELL_PACKAGE_ID}::pool::OrderSubmitted` },
+        limit: 50,
+        order: 'descending',
       });
 
-      return res.data.map(obj => {
-        const fields = (obj.data!.content as any).fields;
-        return {
-          orderId: obj.data!.objectId,
-          commitHash: Array.from(fields.commit_hash as number[]).map(b => b.toString(16).padStart(2, '0')).join(''),
-          side: (fields.side === 0 ? 'buy' : 'sell') as 'buy' | 'sell',
-          timestamp: Number(fields.expiry_epoch), // placeholder for sorting
-        };
+      type SubmittedJson = {
+        order_id: string;
+        trader: string;
+        commit_hash: number[];
+        expiry_epoch: string;
+      };
+
+      const candidates = events.data
+        .map((e) => ({
+          json: e.parsedJson as SubmittedJson,
+          submittedAt: e.timestampMs ? Number(e.timestampMs) : 0,
+        }))
+        .filter((x) => x.json.trader === account.address)
+        .map(({ json, submittedAt }) => ({
+          orderId: json.order_id,
+          commitHash: json.commit_hash.map((b) => b.toString(16).padStart(2, '0')).join(''),
+          expiryEpoch: Number(json.expiry_epoch),
+          submittedAt,
+        }));
+
+      if (candidates.length === 0) return [];
+
+      // Prune cancelled/settled orders + recover the collateral type tag
+      // from the live object so cancel() doesn't need to guess.
+      const ids = candidates.map((c) => c.orderId);
+      const objs = await suiClient.multiGetObjects({
+        ids,
+        options: { showType: true },
       });
+      const typeByOrder = new Map<string, string | undefined>();
+      for (const o of objs) {
+        if (!o.data?.objectId) continue;
+        // type tag looks like `<pkg>::pool::OrderCommitment<0x2::sui::SUI>`
+        const m = o.data.type?.match(/OrderCommitment<(.+)>$/);
+        typeByOrder.set(o.data.objectId, m?.[1]);
+      }
+      return candidates
+        .filter((c) => typeByOrder.has(c.orderId))
+        .map((c) => ({ ...c, collateralType: typeByOrder.get(c.orderId)! }));
     },
     enabled: !!account,
     refetchInterval: 10_000,
   });
 
   // ── 2. Merge on-chain reality with local session metadata ────────────────
-  const mergedOrders = (onChainOrders || []).map(oc => {
-    const local = sessionOrders.find(s => s.orderId === oc.orderId);
+  // Side, size, and limit price are encrypted on-chain. We only know them
+  // for orders submitted in this browser session. A refresh wipes them
+  // until a backup-key-driven decrypt flow ships — those cells show "—".
+  const mergedOrders = (onChainOrders || []).map((oc) => {
+    const local = sessionOrders.find((s) => s.orderId === oc.orderId);
     return {
       ...oc,
-      size: local?.size || '?',
-      limitPrice: local?.limitPrice || '?',
+      side: local?.side as 'buy' | 'sell' | undefined,
+      size: local?.size,
+      limitPrice: local?.limitPrice,
       backupKey: local?.backupKey || '',
       isLocal: !!local,
     };
@@ -77,13 +119,13 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
     return () => clearInterval(interval);
   }, []);
 
-  async function handleCancel(orderId: string, side: 'buy' | 'sell') {
+  async function handleCancel(orderId: string, collateralType: string) {
     if (!account) return;
     try {
       const tx = new Transaction();
       const [coin] = tx.moveCall({
         target: `${SHELL_PACKAGE_ID}::pool::cancel_expired`,
-        typeArguments: [collateralTypeFor(side)],
+        typeArguments: [collateralType],
         arguments: [tx.object(orderId)],
       });
       tx.transferObjects([coin], account.address);
@@ -148,21 +190,23 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                       )}
                     </div>
                   </td>
-                  <td className={`py-3 ${order.side === 'buy' ? 'text-primary' : 'text-error'}`}>
-                    {order.side.toUpperCase()}
-                  </td>
-                  <td className="py-3 text-right">
-                    {order.size === '?' ? (
-                      <span className="text-[10px] text-on-surface-variant italic">ENCRYPTED</span>
-                    ) : (
-                      `${order.size} SUI`
+                  <td className={`py-3 ${order.side === 'buy' ? 'text-primary' : order.side === 'sell' ? 'text-error' : 'text-on-surface-variant'}`}>
+                    {order.side ? order.side.toUpperCase() : (
+                      <span className="text-[10px] italic">SEALED</span>
                     )}
                   </td>
                   <td className="py-3 text-right">
-                    {order.limitPrice === '?' ? (
-                      <span className="text-[10px] text-on-surface-variant italic">ENCRYPTED</span>
+                    {order.size ? (
+                      `${order.size} SUI`
                     ) : (
+                      <span className="text-[10px] text-on-surface-variant italic">ENCRYPTED</span>
+                    )}
+                  </td>
+                  <td className="py-3 text-right">
+                    {order.limitPrice ? (
                       `${order.limitPrice} ${QUOTE_SYMBOL}`
+                    ) : (
+                      <span className="text-[10px] text-on-surface-variant italic">ENCRYPTED</span>
                     )}
                   </td>
                   <td className="py-3 text-right">
@@ -182,8 +226,8 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                           <span className="material-symbols-outlined text-[18px]">key</span>
                         </button>
                       )}
-                      <button 
-                        onClick={() => handleCancel(order.orderId, order.side)}
+                      <button
+                        onClick={() => handleCancel(order.orderId, order.collateralType)}
                         className="text-on-surface-variant hover:text-error transition-colors cursor-pointer"
                         title="Cancel Order"
                       >
