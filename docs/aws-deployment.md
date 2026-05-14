@@ -37,32 +37,24 @@ Per [Using Nautilus § Prerequisites](https://docs.sui.io/concepts/cryptography/
 
 Already installed on this box: sui CLI 1.71, cargo 1.90, Node 24. Missing: AWS CLI v2 — install before starting.
 
-## Step 1 — Restructure code into the Nautilus app pattern
+## Step 1 — Assemble the Nautilus tree
 
-The Nautilus repo's layout expects:
+The overlay at [enclave-nitro/apps/shell/](../enclave-nitro/) drops into a Nautilus checkout. One command does it:
 
-```
-nautilus/
-  move/shell/                                  ← our Move package, copied/symlinked
-  src/nautilus-server/src/apps/shell/
-    mod.rs                                     ← Rust server hooks
-    allowed_endpoints.yaml                     ← outbound URLs the enclave may call
+```bash
+enclave-nitro/scripts/assemble.sh        # clones into ~/nautilus
+# or pick your own path:
+enclave-nitro/scripts/assemble.sh ~/work/nautilus
 ```
 
-For Shell's `mod.rs`, `process_data` becomes the matcher entry point: accepts a batch of decrypted orders + a list of OrderCommitment IDs, returns signed `MatchPayload`s. The existing [enclave/](../enclave/) crate stays in our repo as the offline-mode tool; the Nautilus app wraps the same `match_orders` + `EnclaveSigner` logic behind an HTTP endpoint.
+What it does (and what you'd otherwise do by hand — see [enclave-nitro/README.md](../enclave-nitro/README.md) for the manual recipe):
 
-`allowed_endpoints.yaml` for Shell needs:
-- `fullnode.testnet.sui.io` (Sui RPC for fetching OrderCommitment objects)
-- `seal-aggregator-testnet.mystenlabs.com` (Seal aggregator for fetch_key requests)
-- DeepBook indexer host once we wire the depth query
+1. Clones (or updates) `MystenLabs/nautilus`.
+2. Copies `apps/shell/mod.rs` + `allowed_endpoints.yaml` into `src/nautilus-server/src/apps/shell/`.
+3. Adds `shell = []` to `nautilus-server/Cargo.toml` `[features]`.
+4. Adds the two `cfg(feature = "shell")` blocks to `nautilus-server/src/lib.rs`.
 
-The two reasonable layouts:
-
-**A. Fork `MystenLabs/nautilus`** and add `apps/shell/`. Fast, canonical, matches Mysten's pattern. Recommended.
-
-**B. Vendor the Nautilus scaffold** into our repo (`Containerfile`, `Makefile`, `configure_enclave.sh`, `expose_enclave.sh`, `register_enclave.sh`). Cleaner ownership. More upfront work.
-
-Pick A for the spike.
+Idempotent — rerun-safe. The existing [enclave/](../enclave/) crate stays in our repo as the offline-mode tool (powers `spike-end-to-end.mjs`); the Nautilus app is the prod-mode wrapper of the same logic.
 
 ## Step 2 — Provision the EC2 instance
 

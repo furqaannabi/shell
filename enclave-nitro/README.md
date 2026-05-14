@@ -26,22 +26,23 @@ goes alongside it.
 
 ## Assembling the deployment tree
 
-The Nautilus repo is large and externally maintained — keep it cloned
-**outside** ours. Then symlink or rsync this overlay in:
+One command:
 
 ```bash
-# Sibling clone of Nautilus.
-git clone https://github.com/MystenLabs/nautilus.git ~/nautilus
-
-# Drop the overlay into the expected path.
-cp -r enclave-nitro/apps/shell ~/nautilus/src/nautilus-server/src/apps/shell
-
-# (or symlink, if your filesystem allows it)
-ln -s "$(pwd)/enclave-nitro/apps/shell" \
-      ~/nautilus/src/nautilus-server/src/apps/shell
+enclave-nitro/scripts/assemble.sh        # defaults to ~/nautilus
+# or
+enclave-nitro/scripts/assemble.sh ~/work/nautilus
 ```
 
-Register the app in three places inside the nautilus-server crate:
+The script clones `MystenLabs/nautilus` if missing, copies
+[`apps/shell`](apps/shell) into `src/nautilus-server/src/apps/shell`,
+adds the `shell = []` feature in `Cargo.toml`, and patches the two
+`cfg` blocks in `lib.rs`. Idempotent — rerun-safe.
+
+If you'd rather do it by hand, the three patches the script applies
+are documented below.
+
+### Manual patches (only if you skip assemble.sh)
 
 **1. `nautilus-server/Cargo.toml`** — add a feature flag matching the
    `--features` flag `make ENCLAVE_APP=shell` will pass:
