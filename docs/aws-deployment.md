@@ -1,191 +1,231 @@
 # Deploying the Shell matching enclave on AWS Nitro
 
-End-to-end runbook for standing up the Nautilus enclave on AWS, then wiring it onto Sui testnet so `shell::attestation::verify` and `shell::settlement::settle` can run against a real `Enclave<SHELL>` object.
+Shell-specific runbook for the AWS deployment. Follow the upstream [Using Nautilus](https://docs.sui.io/concepts/cryptography/nautilus/using-nautilus) guide for the generic steps (AWS SSO, EC2 key pairs, `configure_enclave.sh` flags, troubleshooting). This doc is the Shell-flavoured delta: what changes, what's already done, what to type with our specific object IDs.
 
-This guide is grounded in [MystenLabs/nautilus](https://github.com/MystenLabs/nautilus) — the `UsingNautilus.md`, `register_enclave.sh`, `expose_enclave.sh`, and `configure_enclave.sh` reference scripts. Cross-check there if any command here drifts.
+## What's already in place
 
-## What AWS gives us
+- Shell Move package: `0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd` (testnet)
+- Upstream `enclave` package (co-deployed): resolved in [`move/Move.lock`](../move/Move.lock); inspect the `Cap<SHELL>` object's type tag on testnet to confirm
+- `Cap<SHELL>`: `0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c` (owned by the deployer)
+- `EnclaveConfig<SHELL>`: `0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f` (shared, currently holds all-zero placeholder PCRs)
 
-The single thing we need from AWS is a verifiable attestation document. The four-stage flow:
+The all-zero PCRs are *intentional* — they make the debug-mode shortcut below trivial. Don't change them unless you're going prod-mode.
 
-1. We build the matcher into an Enclave Image File (EIF). The build is deterministic — same source, same bytes, same PCRs.
-2. We launch the EIF inside a Nitro Enclave on an EC2 host. The enclave generates an Ed25519 signing key *inside* the enclosure; the private key never leaves.
-3. The enclave can produce an attestation document on demand. The doc embeds the PCR set, the enclave's public key, and an AWS-rooted x509 chain.
-4. We ship the attestation doc to Sui. `enclave::register_enclave` checks the PCRs match our `EnclaveConfig`, validates the x509 chain on-chain via `sui::nitro_attestation`, extracts the pubkey, and mints a shared `Enclave<SHELL>` object.
+## Two paths
 
-From that point, any match the enclave signs verifies against the on-chain pubkey, and `shell::settlement::settle` runs.
+The Nautilus guide names two modes. For the hackathon, decide upfront:
+
+| | Debug / dev mode | Prod mode |
+| --- | --- | --- |
+| `make` target on EC2 | `make run-debug` | `make run` |
+| PCR values | all zeros | real measurements of the EIF |
+| Attestation guarantee | none (zeros) | real AWS-signed attestation |
+| Demo-only OK? | yes | required for any honest pitch |
+| EC2 cost | needed for the one-time attestation fetch | needed continuously |
+| Code path for matcher | inject deterministic key, run anywhere | runs only inside the enclave |
+
+**Recommended for the spike GO criterion**: dev mode. Spin up a Nitro instance briefly to fetch *one* debug-mode attestation doc with all-zero PCRs, run `register_enclave` once, then run the actual matcher locally with the same injected key. The on-chain side accepts the resulting signatures because the pubkey was registered correctly. Cost: a few cents. Caveat: the pitch must clearly say "dev-mode enclave, prod-mode is the next-day task" — Mysten judges reward honesty about TEE caveats.
+
+**For the real pitch demo video**: prod mode. The PCRs are non-zero, the AWS x509 chain is real, and the on-chain `nitro_attestation::load_nitro_attestation` verification is meaningful.
 
 ## Prerequisites
 
-**AWS account state**
-- Region with Nitro Enclaves available (us-east-1, us-west-2, eu-west-1, etc. — most major regions).
-- IAM permissions to launch EC2, create security groups, create instance profiles, and put objects in AWS Secrets Manager.
-- A keypair for SSH to the EC2 host.
+Per [Using Nautilus § Prerequisites](https://docs.sui.io/concepts/cryptography/nautilus/using-nautilus#prerequisites):
+- AWS CLI v2, Rust + cargo, Make, Sui CLI, clone of `MystenLabs/nautilus`
+- AWS SSO configured (`aws configure sso`), creds exported via `aws configure export-credentials --format env`
+- Region with Nitro Enclaves (us-east-1 is the default the upstream scripts assume; set `REGION` and `AMI_ID` env vars if elsewhere)
 
-**EC2 instance**
-- Must support Nitro Enclaves: m5n, m5dn, m6i, r5n, r5dn, c5n, c6i, c7i, etc. — Nitro-based families with vCPU allocations reservable for the enclave.
-- Minimum sane size: `m6i.xlarge` (4 vCPU / 16 GiB; allocate 2 vCPU / 4 GiB to the enclave). For testnet demo this is plenty.
-- Launch with `--enclave-options Enabled=true`.
-- Open the security group on TCP/3000 inbound (the Nautilus HTTP forwarder port) from your testing IP only. Restrict to the world only behind a fronting ALB/Cloudflare in real use.
-
-**Tooling on the EC2 host**
-- Amazon Linux 2023 or Ubuntu 22.04.
-- `nitro-cli`, `docker`, `socat`, `jq`. Install order: `dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel docker socat jq` (Amazon Linux) or the Ubuntu equivalents.
-- Add your user to `docker` and `ne` groups, then `sudo systemctl enable --now nitro-enclaves-allocator docker`.
-
-**Sui-side state (already in place from our testnet publish)**
-- Package: `0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd`
-- `EnclaveConfig<SHELL>`: `0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f`
-- `Cap<SHELL>` (owned by the deployer wallet): `0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c`
+Already installed on this box: sui CLI 1.71, cargo 1.90, Node 24. Missing: AWS CLI v2 — install before starting.
 
 ## Step 1 — Restructure code into the Nautilus app pattern
 
-This is the only step that requires code changes. The Nautilus framework expects an HTTP server with three endpoints (`/health_check`, `/get_attestation`, `/process_data`). The runnable matcher needs to live under `src/nautilus-server/src/apps/<app>/` per the upstream pattern.
+The Nautilus repo's layout expects:
 
-What that means for [enclave/](../enclave/):
+```
+nautilus/
+  move/shell/                                  ← our Move package, copied/symlinked
+  src/nautilus-server/src/apps/shell/
+    mod.rs                                     ← Rust server hooks
+    allowed_endpoints.yaml                     ← outbound URLs the enclave may call
+```
 
-- The existing `match-and-sign` binary stays as the offline-mode tool.
-- A new app at `src/nautilus-server/src/apps/shell/` wraps the matcher + signer as an HTTP `/process_data` handler that accepts incoming order batches, returns signed `MatchPayload`s.
-- `allowed_endpoints.yaml` lists which outbound URLs the enclave is allowed to call (Sui testnet RPC, Seal aggregator URL).
-- Existing tests stay in our crate; the Nautilus app re-exports the matcher.
+For Shell's `mod.rs`, `process_data` becomes the matcher entry point: accepts a batch of decrypted orders + a list of OrderCommitment IDs, returns signed `MatchPayload`s. The existing [enclave/](../enclave/) crate stays in our repo as the offline-mode tool; the Nautilus app wraps the same `match_orders` + `EnclaveSigner` logic behind an HTTP endpoint.
 
-Two practical options for laying this out:
+`allowed_endpoints.yaml` for Shell needs:
+- `fullnode.testnet.sui.io` (Sui RPC for fetching OrderCommitment objects)
+- `seal-aggregator-testnet.mystenlabs.com` (Seal aggregator for fetch_key requests)
+- DeepBook indexer host once we wire the depth query
 
-**A. Fork `MystenLabs/nautilus`** and drop the shell app inside. Fastest, matches Mysten's canonical scaffold. Repo cost: our code lives in a fork. Recommended for the hackathon.
+The two reasonable layouts:
 
-**B. Vendor the Nautilus scaffold** (`Containerfile`, `expose_enclave.sh`, `register_enclave.sh`, etc.) into our repo and keep the matcher where it is. More work upfront, cleaner ownership long-term.
+**A. Fork `MystenLabs/nautilus`** and add `apps/shell/`. Fast, canonical, matches Mysten's pattern. Recommended.
 
-Pick A for the demo. We can always migrate later.
+**B. Vendor the Nautilus scaffold** into our repo (`Containerfile`, `Makefile`, `configure_enclave.sh`, `expose_enclave.sh`, `register_enclave.sh`). Cleaner ownership. More upfront work.
 
-## Step 2 — Build the EIF, capture PCRs
+Pick A for the spike.
 
-On a dev box (Linux preferred; macOS via Docker also works):
+## Step 2 — Provision the EC2 instance
+
+From the cloned Nautilus repo root:
 
 ```bash
-git clone https://github.com/<you>/nautilus.git
+sh configure_enclave.sh shell
+```
+
+The script will prompt for an instance base name and offer to store secrets in AWS Secrets Manager (Shell doesn't need any for now — answer `n`). It launches the EC2, allocates the enclave, builds the EIF, configures the endpoint forwarding, and modifies `src/nautilus-server/run.sh` + `expose_enclave.sh` locally with the resolved domain routing.
+
+Output to capture:
+- Instance ID (for `stop-instances` later)
+- Public IP — this becomes `ENCLAVE_URL` on-chain
+
+Wait 2–3 minutes for first boot.
+
+## Step 3 — rsync, SSH, build, run
+
+The local file mutations from Step 2 need to land on the EC2 host:
+
+```bash
+rsync -avz -e "ssh -i ~/.ssh/<your-alias>.pem" ./ ec2-user@<public-ip>:~/nautilus/
+ssh -i ~/.ssh/<your-alias>.pem ec2-user@<public-ip>
+```
+
+On the host:
+
+```bash
 cd nautilus
-# Drop the shell app under src/nautilus-server/src/apps/shell/
-# Update Cargo.toml to feature-gate the app.
+make ENCLAVE_APP=shell
+make run-debug   # dev mode → all-zero PCRs
+# OR
+make run         # prod mode → real PCRs
 
-make build  # produces nautilus-server.eif
-nitro-cli describe-eif --eif-path nautilus-server.eif
+sh expose_enclave.sh
 ```
 
-The describe output lists `Measurements.PCR0/PCR1/PCR2` — three 48-byte hex strings. Capture all three; the rest of the flow depends on them.
-
-Reproducibility check: a second machine running the same git rev should produce the same PCRs. If they drift, something non-deterministic leaked in (timestamp, build user, env vars). Treat that as a blocker — non-reproducible PCRs mean we cannot trust the binary.
-
-## Step 3 — Provision EC2 and run the enclave
+Validate from your dev box:
 
 ```bash
-# Launch a Nitro-enabled instance with the host AMI of your choice.
-aws ec2 run-instances \
-  --image-id <amzn-linux-2023-ami> \
-  --instance-type m6i.xlarge \
-  --enclave-options 'Enabled=true' \
-  --key-name <your-key> \
-  --security-group-ids <sg-with-3000-open> \
-  --iam-instance-profile Name=<profile-with-secrets-read>
-
-# SSH in, install tooling (above), copy the .eif over, then:
-nitro-cli run-enclave \
-  --eif-path nautilus-server.eif \
-  --cpu-count 2 \
-  --memory 4096 \
-  --enclave-cid 16 \
-  --debug-mode   # drop --debug-mode for prod; debug-mode PCRs are different!
-
-./expose_enclave.sh    # bridges TCP:3000 → VSOCK using socat
+curl http://<public-ip>:3000/health_check
+curl http://<public-ip>:3000/get_attestation > attestation.hex
 ```
 
-`expose_enclave.sh` expects a `secrets.json` in the working directory — for Shell we don't need real secrets, but the script will pipe whatever's there into VSOCK:7777 at startup. Put an empty `{}` if nothing's needed.
-
-**Critical**: debug-mode (`--debug-mode`) produces *different* PCRs than production mode (PCR0 differs). For testnet you can run in debug mode while iterating, but registration will fail if the EnclaveConfig was set against prod-mode PCRs. Pick one mode and stick with it through the whole flow.
-
-Validate it's alive:
+For prod mode, capture the PCRs:
 
 ```bash
-curl http://<ec2-public-ip>:3000/health_check
-curl http://<ec2-public-ip>:3000/get_attestation > attestation.hex
+cat out/nitro.pcrs   # on the EC2 host
+export PCR0=...
+export PCR1=...
+export PCR2=...
 ```
 
-The attestation hex is what Step 5 will submit to Sui.
+Dev mode skips this — PCRs are already zeros in our `EnclaveConfig<SHELL>`.
 
-## Step 4 — Update PCRs on the Shell `EnclaveConfig`
+## Step 4 — Update PCRs (prod mode only)
 
-Our config currently holds placeholder all-zero PCRs. Update with the captured values:
+If you ran `make run-debug`, **skip this**. If you ran `make run`:
+
+```bash
+ENCLAVE_PACKAGE_ID=<from move/Move.lock or by inspecting Cap<SHELL>::type>
+APP_PACKAGE_ID=0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd
+CAP_OBJECT_ID=0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c
+ENCLAVE_CONFIG_OBJECT_ID=0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f
+
+sui client call \
+  --function update_pcrs \
+  --module enclave \
+  --package $ENCLAVE_PACKAGE_ID \
+  --type-args "$APP_PACKAGE_ID::shell::SHELL" \
+  --args $ENCLAVE_CONFIG_OBJECT_ID $CAP_OBJECT_ID \
+        0x$PCR0 0x$PCR1 0x$PCR2
+```
+
+Optional rename:
 
 ```bash
 sui client call \
-  --package <enclave-package-id-on-testnet> \
-  --module enclave \
-  --function update_pcrs \
-  --type-args "0x5a47e786…::shell::SHELL" \
-  --args \
-    0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f \
-    0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c \
-    "[<pcr0-hex>]" "[<pcr1-hex>]" "[<pcr2-hex>]"
+  --function update_name --module enclave --package $ENCLAVE_PACKAGE_ID \
+  --type-args "$APP_PACKAGE_ID::shell::SHELL" \
+  --args $ENCLAVE_CONFIG_OBJECT_ID $CAP_OBJECT_ID "shell enclave v1"
 ```
-
-`<enclave-package-id-on-testnet>` is the address `enclave` resolved to when we co-deployed (visible in [`move/Move.lock`](../move/Move.lock) or by inspecting `objectType` on the `Cap<SHELL>` object).
-
-After this call, `EnclaveConfig.version` bumps; old `Enclave<SHELL>` instances (if any) become invalid and can be cleaned up via `enclave::destroy_old_enclave`.
 
 ## Step 5 — Register the enclave on-chain
 
-The Nautilus `register_enclave.sh` does the heavy lifting. With the attestation hex from Step 3:
+Use the upstream `register_enclave.sh`. From the Nautilus repo:
 
 ```bash
-./register_enclave.sh \
-  <enclave-package-id> \
-  0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd \
-  0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f \
-  http://<ec2-public-ip>:3000 \
-  shell \
-  SHELL
+ENCLAVE_URL=http://<public-ip>:3000
+MODULE_NAME=shell
+OTW_NAME=SHELL
+
+sh register_enclave.sh \
+  $ENCLAVE_PACKAGE_ID \
+  $APP_PACKAGE_ID \
+  $ENCLAVE_CONFIG_OBJECT_ID \
+  $ENCLAVE_URL \
+  $MODULE_NAME \
+  $OTW_NAME
 ```
 
-The script fetches `/get_attestation` itself, BCS-encodes it as `vector<u8>`, and submits the PTB calling `nitro_attestation::load_nitro_attestation` → `enclave::register_enclave`. If everything matches, you get a shared `Enclave<SHELL>` object id back. **Save it** — every settlement PTB will reference this.
+Save the resulting `ENCLAVE_OBJECT_ID` — every settlement PTB will reference this.
 
-If the PTB aborts: the most common cause is PCR mismatch (debug-mode vs prod, or stale config). Re-derive the EIF and rerun Step 4.
+## Step 6 — Wire IDs into Shell clients
 
-## Step 6 — Wire the enclave URL into clients
+Update [ts-sdk/deployments/testnet.json](../ts-sdk/deployments/testnet.json):
 
-Add the EC2 URL to [ts-sdk/deployments/testnet.json](../ts-sdk/deployments/testnet.json) and to [web/src/lib/sui.ts](../web/src/lib/sui.ts) so the FE can:
-1. Display "matcher: online" health.
-2. Hand the settlement PTB the right `Enclave<SHELL>` object id when calling `attestation::verify`.
+```json
+"enclaveId": "0x…",
+"enclaveUrl": "http://<public-ip>:3000"
+```
 
-Also flip `seal_approve` from offline-mode test fixtures to the real `Enclave<SHELL>` ref in the decryption PTB the trader's wallet signs to recover their own order.
+Update [web/src/lib/sui.ts](../web/src/lib/sui.ts) to expose `ENCLAVE_ID` + `ENCLAVE_URL` alongside the other config. The frontend uses `enclaveId` in the decrypt-fetch PTB (the second positional arg of `shell::shell::seal_approve`); the offline-mode spike will switch to calling the live enclave URL.
 
-## Costs and timing
+## Step 7 — Stop EC2 when idle
 
-- `m6i.xlarge` on-demand: ~$0.19/hr in us-east-1. Spot is ~$0.07/hr. Leaving it running 24/7 is ~$4–$140/month depending on spot vs on-demand.
-- Build time for the EIF: 5–15 minutes on a cold Docker cache.
-- AWS Secrets Manager: optional, free tier covers our use.
-- Sui gas for `update_pcrs` + `register_enclave`: under 0.1 SUI total.
+```bash
+aws ec2 stop-instances --instance-ids <instance-id>
+```
 
-Plan: ~one full day of focused work, of which ~half is the code restructure in Step 1 and the other half is AWS infrastructure debugging (security groups, IAM, debug-mode-vs-prod PCRs).
+`m6i.xlarge` on-demand is ~$0.19/hr. Leave it stopped between demo runs and `aws ec2 start-instances` when needed.
 
-## What I (Claude Code) can do for you
+To return:
 
-In the repo, autonomously:
-- The Step 1 restructure — fork the Nautilus repo, drop in the Shell app, wire the matcher into `/process_data`.
-- Update the `Move.lock`-resolved enclave package id into [docs/aws-deployment.md](#) and the FE deployments JSON once the enclave URL is known.
-- Write the build/test commands you'll run on the host.
-
-Outside Claude (you must do hands-on):
-- Anything that touches the AWS console / CLI under your account.
-- SSH'ing into EC2 to run `nitro-cli`.
-- Producing the EIF and capturing PCRs (deterministic build means I could in principle, but it needs Docker + a specific toolchain that's awkward to set up here).
-
-If you want me to start on Step 1 (the fork + Shell-app restructure), say go and I'll do it as a parallel branch / worktree so the current `enclave/` layout stays unchanged until you flip the switch.
+```bash
+ssh -i ~/.ssh/<your-alias>.pem ec2-user@<public-ip>
+cd nautilus
+make ENCLAVE_APP=shell
+make run     # or run-debug
+sh expose_enclave.sh
+```
 
 ## When you'll know it worked
 
-The proof is a single end-to-end run:
+The single GO criterion ([product.md §6.2](../product.md)):
 
 1. Trader submits a Seal-encrypted order via the web app.
-2. The enclave (HTTP) fetches the ciphertext, requests Seal keys (gated by our `seal_approve`), decrypts, runs the matcher, signs a `MatchPayload`.
-3. A settlement PTB submitted on testnet calls `shell::attestation::verify` → `shell::settlement::settle`, succeeds, mints two `SettlementReceipt` objects.
+2. Enclave fetches the ciphertext, requests Seal keys (gated by `shell::shell::seal_approve`, which now succeeds because `Enclave<SHELL>` exists and its derived address matches `ctx.sender()`), decrypts, runs the matcher, signs.
+3. A settlement PTB on testnet calls `shell::attestation::verify` → `shell::settlement::settle` → two `SettlementReceipt`s minted.
 
-That's the GO criterion from [product.md §6.2](../product.md).
+That's the spike GO. Until then we're on offline-mode (the existing [`ts-sdk/scripts/spike-end-to-end.mjs`](../ts-sdk/scripts/spike-end-to-end.mjs)).
+
+## Honest dev-mode caveat
+
+Dev mode lets us check off the GO criterion *mechanically* — every layer runs, including the `nitro_attestation::load_nitro_attestation` step on-chain. But the PCRs are zero, which means the on-chain check that "this enclave is running the expected binary" is vacuous. The threat-model story in [product.md §5](../product.md) requires prod-mode PCRs to be honest. Plan one prod-mode run before submission; the pitch should explicitly note when the demo was recorded against dev vs prod.
+
+## Troubleshooting pointers
+
+These are in the [upstream guide](https://docs.sui.io/concepts/cryptography/nautilus/using-nautilus#troubleshooting); not duplicated here:
+- Traffic forwarder error → check `allowed_endpoints.yaml`
+- SSO expired → `aws sso login` + re-export creds
+- rsync permission denied → fix `~/.ssh/*.pem` perms to 400
+- Enclave endpoint unreachable → confirm `expose_enclave.sh` is running
+
+## What I (Claude Code) can do for you
+
+In-repo, autonomously:
+- Step 1 — fork [MystenLabs/nautilus](https://github.com/MystenLabs/nautilus), add `apps/shell/` wrapping our existing [`enclave/`](../enclave/) matcher + signer as an HTTP `/process_data` handler. Wire `allowed_endpoints.yaml` to Sui testnet + Seal aggregator.
+- Patch [ts-sdk/deployments/testnet.json](../ts-sdk/deployments/testnet.json) and [web/src/lib/sui.ts](../web/src/lib/sui.ts) once you have the URL + enclave object ID.
+- Convert the offline-mode `match-and-sign` binary into a `/process_data` handler that mirrors the Twitter example's pattern.
+
+Hands-on (your AWS console / EC2):
+- AWS SSO setup, EC2 key pair, `configure_enclave.sh`, rsync, `make run`, capturing PCRs, `register_enclave.sh`, `stop-instances`.
+
+Say go on Step 1 and I'll start the fork + `apps/shell/` restructure on a branch.
