@@ -22,6 +22,7 @@ use crate::AppState;
 use crate::EnclaveError;
 use axum::extract::State;
 use axum::Json;
+use fastcrypto::encoding::{Encoding, Hex};
 use fastcrypto::traits::{KeyPair, Signer, ToFromBytes};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -61,7 +62,7 @@ pub struct PlaintextInput {
     pub max_slippage_bps: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct ShellResponse {
     pub enclave_pubkey: String,
     pub intent: u8,
@@ -69,7 +70,7 @@ pub struct ShellResponse {
     pub matches: Vec<SignedMatch>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct SignedMatch {
     pub envelope: IntentMessage<MatchPayload>,
     pub signature: String,
@@ -110,12 +111,12 @@ pub async fn process_data(
         let sig = state.eph_kp.sign(&bytes);
         matches.push(SignedMatch {
             envelope,
-            signature: hex::encode(sig.as_bytes()),
+            signature: Hex::encode(sig.as_bytes()),
         });
     }
 
     Ok(Json(ShellResponse {
-        enclave_pubkey: hex::encode(state.eph_kp.public().as_bytes()),
+        enclave_pubkey: Hex::encode(state.eph_kp.public().as_bytes()),
         intent,
         timestamp_ms,
         matches,
@@ -161,7 +162,7 @@ fn decode_orders(input: &[OrderInput]) -> Result<Vec<DecryptedOrder>, EnclaveErr
 
 fn parse_hex32(s: &str) -> Result<[u8; 32], EnclaveError> {
     let stripped = s.strip_prefix("0x").unwrap_or(s);
-    let bytes = hex::decode(stripped)
+    let bytes = Hex::decode(stripped)
         .map_err(|e| EnclaveError::GenericError(format!("hex: {e}")))?;
     bytes
         .try_into()
