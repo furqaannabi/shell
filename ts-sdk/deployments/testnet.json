@@ -6,8 +6,12 @@
   "enclaveConfigId": "0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f",
   "shellCapId": "0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c",
   "upgradeCapId": "0x3343783ce5dfad095271001971e0c234179e6d708f3befeb047b36699a07b57a",
-  "enclaveId": "0xdf07cfd107e154ecbc6e5aa9292b2d2342c42fb978624456a4695924a20cf3da",
+  "enclaveId": "0x1b18a55393efa9378c11e4eac0ad94c3ec3759f85be6c92f71a7a3b074b871e1",
   "enclaveUrl": "http://54.80.82.200:3000",
-  "enclaveMode": "debug",
+  "enclaveMode": "prod",
+  "enclavePcr0": "0x619c75409481395d093fabe80991b428d2c5a39567eecea0dc464c7fcad9e2fe7b84ed5000224b5492b2b1dc6f52b56b",
+  "enclavePcr1": "0x619c75409481395d093fabe80991b428d2c5a39567eecea0dc464c7fcad9e2fe7b84ed5000224b5492b2b1dc6f52b56b",
+  "enclavePcr2": "0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a",
+  "previousDebugEnclaveId": "0xdf07cfd107e154ecbc6e5aa9292b2d2342c42fb978624456a4695924a20cf3da",
   "publishDigest": "see commit log; tx at checkpoint 335662593"
 }
