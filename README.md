@@ -4,6 +4,41 @@
 
 Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minimized Finance slot. Full spec lives in [`product.md`](product.md). Track positioning in [`product.md` §7.1](product.md). Honest threat model in [`product.md` §5](product.md).
 
+## Problem
+
+Every public order book on-chain — DeepBook included — exposes order intent before execution. For retail flow that's acceptable; for institutional size it's an execution tax: searchers front-run, market makers fade quotes, and large orders can't be worked without significant slippage. Existing on-chain attempts at hiding flow are each partial:
+
+- **Stealth-address payments** (PIVY, Umbra) hide recipients but not order flow.
+- **Privacy AMMs** (Shroud, Penumbra) hide swaps but pay AMM-curve slippage and can't serve institutional size.
+- **ZK rollups** (Aztec, Aleo) provide privacy but lose access to the host chain's deepest liquidity.
+- **Off-chain dark pools** (sFOX, ErisX) require trusting a single operator and lack on-chain settlement guarantees.
+
+An institutional venue needs four properties at once: pre-trade order privacy, post-trade auditability, settlement against the deepest available liquidity, and zero operator trust. No chain previously had the primitives to deliver all four.
+
+## Solution
+
+Shell composes three Sui-native primitives — and nothing else does it:
+
+| Layer    | What it enforces                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Seal**     | Threshold IBE seals each order envelope. Decryption only fires when an on-chain Move policy says yes.              |
+| **Nautilus** | The matching engine runs in an AWS Nitro Enclave. The binary is PCR-pinned on-chain — the operator can't tamper.   |
+| **DeepBook** | The on-chain CLOB is the settlement venue. Matches land as fait accompli via a hot-potato PTB that can't be split. |
+
+Pre-match the chain sees only ciphertext + a commit hash. Post-settlement the chain shows a `SettlementReceipt` per side and the swapped balances. Side, size, limit price, and slippage from the original order stay private forever.
+
+The threat-model honesty: there is an irreducible trust set (Sui consensus + Seal key-server quorum + AWS Nitro hardware), and we don't hide it. The full adversary-vs-mitigation table is in [`product.md` §5](product.md).
+
+## User flow
+
+End-to-end, against the live testnet deployment. Full walkthrough with file pointers in [`docs/user-flow.md`](docs/user-flow.md).
+
+1. **Connect wallet** — dapp-kit, Sui Wallet / Suiet / etc.
+2. **Place a sealed order** — pick side / size / limit / expiry / slippage. The SDK Seal-IBE-encrypts the BCS plaintext under a random per-order id, builds a PTB calling `shell::pool::submit_order`, the wallet signs. On-chain: a shared `OrderCommitment` lands with the sealed envelope as opaque bytes.
+3. **See it in active orders** — the row shows a commit-hash fingerprint, `SEALED` status. Cancel works after expiry.
+4. **Match (invisible)** — the Nautilus enclave decrypts plaintexts in-TEE, runs price-time matching, signs an `IntentMessage<MatchPayload>` envelope. A settlement PTB lands: `shell::attestation::verify` produces a `MatchInstruction` hot-potato, `shell::settlement::settle` consumes it atomically with both orders, swaps collateral.
+5. **See the receipt** — a `SettlementReceipt` per side appears under the trader's address, and the wallet shows the swapped coin balance. The trader's original limit price + slippage are never revealed on-chain.
+
 ## Status
 
 **Spike GO criterion met on testnet** ([product.md §6.2](product.md)). Full Seal → Nautilus → on-chain settle loop runs end-to-end against a real prod-mode `Enclave<SHELL>`. Real AWS-signed attestation, real PCRs registered on the `EnclaveConfig`, real `SettlementReceipt`s minted.
