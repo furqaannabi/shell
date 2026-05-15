@@ -21,7 +21,12 @@ import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { Transaction } from "@mysten/sui/transactions";
 
-import { encryptOrder, submitOrderTx } from "../dist/index.js";
+import {
+  encryptOrder,
+  submitOrderTx,
+  getOrderCollateralType,
+  settleMatchTx,
+} from "../dist/index.js";
 import deployments from "../deployments/testnet.json" with { type: "json" };
 
 const SEAL_TESTNET_KEY_SERVER =
@@ -84,34 +89,32 @@ function bytesFromHex(hex) {
 
 async function settleMatch(sui, kp, signedMatch, timestampMs) {
   const p = signedMatch.envelope.data;
-  const sigBytes = bytesFromHex(signedMatch.signature);
+  const makerOrderId = hexFromBytes(p.maker_order);
+  const takerOrderId = hexFromBytes(p.taker_order);
 
-  const tx = new Transaction();
+  // Derive each side's collateral type from the on-chain OrderCommitment<T>
+  // type tag. Lets buy/USDC vs sell/SUI crosses settle without hardcoding.
+  const [makerCollateralType, takerCollateralType] = await Promise.all([
+    getOrderCollateralType(sui, makerOrderId),
+    getOrderCollateralType(sui, takerOrderId),
+  ]);
+  console.log("  maker T:", makerCollateralType);
+  console.log("  taker T:", takerCollateralType);
 
-  const [instruction] = tx.moveCall({
-    target: `${deployments.packageId}::attestation::verify`,
-    arguments: [
-      tx.object(deployments.enclaveId),
-      tx.pure.u64(BigInt(timestampMs)),
-      tx.pure.address(hexFromBytes(p.maker)),
-      tx.pure.address(hexFromBytes(p.taker)),
-      tx.pure.id(hexFromBytes(p.maker_order)),
-      tx.pure.id(hexFromBytes(p.taker_order)),
-      tx.pure.u64(BigInt(p.filled_size)),
-      tx.pure.u64(BigInt(p.filled_price)),
-      tx.pure.vector("u8", Array.from(p.deepbook_tx_digest)),
-      tx.pure.vector("u8", Array.from(sigBytes)),
-    ],
-  });
-
-  tx.moveCall({
-    target: `${deployments.packageId}::settlement::settle`,
-    typeArguments: ["0x2::sui::SUI", "0x2::sui::SUI"],
-    arguments: [
-      instruction,
-      tx.object(hexFromBytes(p.maker_order)),
-      tx.object(hexFromBytes(p.taker_order)),
-    ],
+  const tx = settleMatchTx({
+    shellPackageId: deployments.packageId,
+    enclaveId: deployments.enclaveId,
+    timestampMs: BigInt(timestampMs),
+    maker: hexFromBytes(p.maker),
+    taker: hexFromBytes(p.taker),
+    makerOrderId,
+    takerOrderId,
+    makerCollateralType,
+    takerCollateralType,
+    filledSize: BigInt(p.filled_size),
+    filledPrice: BigInt(p.filled_price),
+    deepbookTxDigest: new Uint8Array(p.deepbook_tx_digest),
+    signature: bytesFromHex(signedMatch.signature),
   });
 
   const res = await sui.signAndExecuteTransaction({
