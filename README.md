@@ -31,8 +31,6 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 
 ## User flow
 
-End-to-end, against the live testnet deployment. Full walkthrough with file pointers in [`docs/user-flow.md`](docs/user-flow.md).
-
 1. **Connect wallet** — dapp-kit, Sui Wallet / Suiet / etc.
 2. **Place a sealed order** — pick side / size / limit / expiry / slippage. The SDK Seal-IBE-encrypts the BCS plaintext under a random per-order id, builds a PTB calling `shell::pool::submit_order`, the wallet signs. On-chain: a shared `OrderCommitment` lands with the sealed envelope as opaque bytes.
 3. **See it in active orders** — the row shows a commit-hash fingerprint, `SEALED` status. Cancel works after expiry.
