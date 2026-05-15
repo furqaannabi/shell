@@ -34,6 +34,15 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   const [now, setNow] = useState(Date.now());
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
+  const { data: currentEpoch } = useQuery({
+    queryKey: ['current-epoch'],
+    queryFn: async () => {
+      const state = await suiClient.getLatestSuiSystemState();
+      return Number(state.epoch);
+    },
+    refetchInterval: 30_000,
+  });
+
   // ── 1. Fetch the trader's OrderSubmitted events ─────────────────────────
   // OrderCommitment is a *shared* object (transfer::share_object in
   // shell::pool::submit_order), so getOwnedObjects returns nothing. Query
@@ -171,7 +180,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                 <th className="pb-2 font-normal">Side</th>
                 <th className="pb-2 font-normal text-right">Size</th>
                 <th className="pb-2 font-normal text-right">Price</th>
-                <th className="pb-2 font-normal text-right">Status</th>
+                <th className="pb-2 font-normal text-right">Expiry</th>
                 <th className="pb-2 font-normal text-right">Actions</th>
               </tr>
             </thead>
@@ -210,15 +219,25 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                     )}
                   </td>
                   <td className="py-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <span className="material-symbols-outlined text-[14px] text-secondary animate-pulse" style={{ fontVariationSettings: "'FILL' 1" }}>shield</span>
-                      <span className="text-secondary text-[11px]">Sealed</span>
-                    </div>
+                    {(() => {
+                      const epochsLeft = currentEpoch !== undefined ? order.expiryEpoch - currentEpoch : null;
+                      if (epochsLeft === null) return <span className="text-[10px] text-outline-variant">—</span>;
+                      if (epochsLeft <= 0) return (
+                        <span className="text-[10px] text-error font-bold uppercase tracking-wider">EXPIRED</span>
+                      );
+                      const days = Math.floor(epochsLeft);
+                      return (
+                        <div className="flex flex-col items-end">
+                          <span className="text-[11px] text-on-surface-variant">Ep {order.expiryEpoch}</span>
+                          <span className="text-[10px] text-outline-variant">~{days}d left</span>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="py-3 text-right">
                     <div className="flex justify-end gap-2">
                       {order.backupKey && (
-                        <button 
+                        <button
                           onClick={() => toggleKey(order.orderId)}
                           className="text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
                           title="View Recovery Key"
@@ -226,13 +245,18 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                           <span className="material-symbols-outlined text-[18px]">key</span>
                         </button>
                       )}
-                      <button
-                        onClick={() => handleCancel(order.orderId, order.collateralType)}
-                        className="text-on-surface-variant hover:text-error transition-colors cursor-pointer"
-                        title="Cancel Order"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">cancel</span>
-                      </button>
+                      {(() => {
+                        const expired = currentEpoch !== undefined && order.expiryEpoch <= currentEpoch;
+                        return (
+                          <button
+                            onClick={() => handleCancel(order.orderId, order.collateralType)}
+                            className={`transition-colors cursor-pointer ${expired ? 'text-error animate-pulse' : 'text-on-surface-variant hover:text-error'}`}
+                            title={expired ? 'Cancel & Reclaim Collateral' : 'Cancel (available after expiry)'}
+                          >
+                            <span className="material-symbols-outlined text-[18px]">cancel</span>
+                          </button>
+                        );
+                      })()}
                     </div>
                   </td>
                 </tr>
