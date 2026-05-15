@@ -11,10 +11,10 @@ Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minim
 | Layer    | What works                                                                              | Where                                                            |
 | -------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; 10/10 tests | [`move/`](move/)                                                 |
-| Move     | Published to testnet at `0x5a47e786…`                                                   | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
+| Move     | Published to testnet at `0x5a47e786…`; Enclave<SHELL> registered at `0xdf07cfd1…`      | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
-| Enclave  | BCS types matching Move byte-for-byte; Ed25519 signer; price-time-priority matcher      | [`enclave/`](enclave/)                                           |
-| Demo     | Crossing pair submitted on testnet → matched → signed locally                           | [`ts-sdk/scripts/spike-end-to-end.mjs`](ts-sdk/scripts/spike-end-to-end.mjs) |
+| Enclave  | Nautilus app: BCS-matched matcher + Ed25519 signer behind HTTP `/process_data`         | [`enclave-nitro/apps/shell/`](enclave-nitro/apps/shell/)         |
+| Demo     | Full Seal → Nautilus → on-chain settle loop on testnet                                 | [`ts-sdk/scripts/spike-end-to-end.mjs`](ts-sdk/scripts/spike-end-to-end.mjs) |
 
 ## Repo layout
 
@@ -31,9 +31,11 @@ ts-sdk/                    @shell-finance/sdk
   scripts/                 submit-test-order.mjs, spike-end-to-end.mjs
   docs/                    frontend-integration.md
   deployments/testnet.json Object IDs from testnet publish
-enclave/                   shell-enclave Rust crate
-  src/                     BCS types (order, match_payload), signer, matcher
-  src/bin/                 match-and-sign — stdin orders → stdout signed matches
+enclave-nitro/             Nautilus app overlay (drops into a MystenLabs/nautilus checkout)
+  apps/shell/              Rust /process_data handler + allowed_endpoints.yaml
+  scripts/assemble.sh      Clones nautilus, applies patches, copies the overlay
+web/                       Trader-facing Next.js app (dapp-kit wallet, sealed-order form, receipts)
+docs/                      aws-deployment.md walkthrough for the Nitro side
 ui-guide/                  Static HTML mockups (design intent, not code to import)
 ```
 
@@ -47,12 +49,13 @@ sui move build                # requires sui 1.71+
 sui move test                 # 10 tests pass
 ```
 
-### Rust enclave
+### Nautilus enclave overlay
+
+The Rust matcher + signer lives in [`enclave-nitro/apps/shell/`](enclave-nitro/apps/shell/) and drops into a clone of [`MystenLabs/nautilus`](https://github.com/MystenLabs/nautilus). See [`docs/aws-deployment.md`](docs/aws-deployment.md) for the full AWS deploy. Tldr:
 
 ```bash
-cd enclave
-cargo test                    # 12 tests pass
-cargo build --release --bin match-and-sign
+enclave-nitro/scripts/assemble.sh ~/nautilus   # idempotent
+# then on AWS: configure_enclave.sh shell, make ENCLAVE_APP=shell, register_enclave.sh
 ```
 
 ### TS SDK
@@ -65,17 +68,16 @@ npm run build
 
 ### End-to-end demo (testnet)
 
-Needs `sui client` configured for testnet with ~0.1 SUI in the active address.
+Needs `sui client` configured for testnet with ~0.1 SUI in the active address, plus the registered Nitro enclave at the URL stashed in `ts-sdk/deployments/testnet.json` reachable.
 
 ```bash
-# from repo root, prereqs first:
 ( cd ts-sdk && npm run build )
-( cd enclave && cargo build --release --bin match-and-sign )
-# run the spike:
 node ts-sdk/scripts/spike-end-to-end.mjs
 ```
 
-Submits two Seal-encrypted orders that cross, hands the plaintexts to the local enclave binary (offline mode — production decrypts via Seal inside Nitro), and prints the signed match the enclave would feed into `shell::attestation::verify`.
+Submits two Seal-encrypted orders that cross, posts the plaintexts to the live enclave's `POST /process_data`, receives a signed `IntentMessage<MatchPayload>` envelope, then submits the settlement PTB on testnet — `shell::attestation::verify` produces the hot-potato `MatchInstruction`, `shell::settlement::settle` consumes it atomically with both `OrderCommitment`s and mints two `SettlementReceipt`s.
+
+The Seal decryption step is still side-channeled (plaintexts ship over HTTP rather than the enclave fetching ciphertext and Seal key shares itself). The wire format of the signature is identical either way.
 
 ## Frontend integration
 
@@ -91,16 +93,15 @@ See [`ts-sdk/docs/frontend-integration.md`](ts-sdk/docs/frontend-integration.md)
 
 Full system diagram in [`product.md` §4.1](product.md).
 
-## Blocked on Nitro
+## Spike GO criterion — met
 
-The two final on-chain PTBs (`attestation::verify`, `settlement::settle`) require an `Enclave<SHELL>` object. That object is created only by `enclave::register_enclave`, which requires a real AWS Nitro attestation document whose PCRs match our registered `EnclaveConfig`. We don't have a running Nitro enclave yet.
+Reached on testnet. `Enclave<SHELL>` registered at `0xdf07cfd107e154ecbc6e5aa9292b2d2342c42fb978624456a4695924a20cf3da`; settlement PTB run digest `7USfM7tuiDipnL63wDaDS1hSZudSPgPZ12oPEVfsL97n` consumed the hot-potato + minted two `SettlementReceipt`s.
 
-Until then:
-- The signing path is exercised by [`enclave/src/signer.rs`](enclave/src/signer.rs) tests and verified at the wire level against the upstream `enclave::test_serde` reference vector.
-- The on-chain settlement path is exercised by [`move/tests/settlement_tests.move`](move/tests/settlement_tests.move) via a `#[test_only] attestation::new_for_testing` constructor that skips the signature check.
-- The crossing-pair demo runs end-to-end up to the signed-match artifact ([`spike-end-to-end.mjs`](ts-sdk/scripts/spike-end-to-end.mjs)).
+What's still side-channeled or stubbed (honest list):
 
-Next step is wrapping the matcher into a Nautilus / Marlin Oyster reproducible-build enclave on AWS Nitro. Mostly manual cloud work.
+- **Seal decryption inside Nitro.** Today the trader's SDK posts plaintexts to `/process_data`; the prod path is the enclave fetching `OrderCommitment` ciphertext + Seal key shares via `fetch_key` (gated by `shell::shell::seal_approve`) and decrypting in-TEE. Wire shape of the response is identical.
+- **Debug-mode PCRs.** The enclave was built and registered with `--debug-mode`; PCR0/1/2 stored on the `EnclaveConfig` are zeros, so the "this is the registered binary" check is vacuous. A `make run` (prod-mode) rebuild + `update_pcrs` + re-register is the cleanup.
+- **DeepBook v3 leg.** `shell::settlement::settle` currently does a direct collateral swap; the week-4 work is replacing that with `place_limit_order<Base, Quote>(pool, balance_manager, trade_proof, …)` against a real DeepBook pool.
 
 ## Conventions
 

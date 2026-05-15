@@ -157,10 +157,10 @@ That's still pending (#9, #10 in [`README.md`](../README.md)'s
 "Pending" list). The wire shape of the response is identical; only the
 input shape changes (caller sends an order-id list, not plaintexts).
 
-## Duplication with `enclave/`
+## BCS layout anchor
 
-The matcher + BCS types are reproduced here because the Nautilus tree
-is cloned independently and a path-dep would hard-code an absolute
-checkout location. Both implementations are pinned against the upstream
-[`enclave::test_serde`](https://github.com/MystenLabs/nautilus/blob/main/move/enclave/sources/enclave.move#L185)
-reference vector so drift trips a unit test on either side.
+The `match_payload_bcs_layout_pins_to_move` test in `mod.rs` pins the
+on-the-wire BCS layout against a hand-computed reference that matches
+`shell::attestation::MatchPayload`. Drift on either side trips the
+test — the Nautilus app's BCS bytes must reconstruct exactly the same
+input the Move side hashes inside `enclave::verify_signature`.

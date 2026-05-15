@@ -54,7 +54,7 @@ What it does (and what you'd otherwise do by hand — see [enclave-nitro/README.
 3. Adds `shell = []` to `nautilus-server/Cargo.toml` `[features]`.
 4. Adds the two `cfg(feature = "shell")` blocks to `nautilus-server/src/lib.rs`.
 
-Idempotent — rerun-safe. The existing [enclave/](../enclave/) crate stays in our repo as the offline-mode tool (powers `spike-end-to-end.mjs`); the Nautilus app is the prod-mode wrapper of the same logic.
+Idempotent — rerun-safe.
 
 ## Step 2 — Provision the EC2 instance
 
@@ -213,9 +213,8 @@ These are in the [upstream guide](https://docs.sui.io/concepts/cryptography/naut
 ## What I (Claude Code) can do for you
 
 In-repo, autonomously:
-- Step 1 — fork [MystenLabs/nautilus](https://github.com/MystenLabs/nautilus), add `apps/shell/` wrapping our existing [`enclave/`](../enclave/) matcher + signer as an HTTP `/process_data` handler. Wire `allowed_endpoints.yaml` to Sui testnet + Seal aggregator.
 - Patch [ts-sdk/deployments/testnet.json](../ts-sdk/deployments/testnet.json) and [web/src/lib/sui.ts](../web/src/lib/sui.ts) once you have the URL + enclave object ID.
-- Convert the offline-mode `match-and-sign` binary into a `/process_data` handler that mirrors the Twitter example's pattern.
+- Update the [enclave-nitro/apps/shell/mod.rs](../enclave-nitro/apps/shell/mod.rs) handler when the input shape changes (e.g. when Seal-in-Nitro lands and we switch from accepting plaintexts to accepting order IDs).
 
 Hands-on (your AWS console / EC2):
 - AWS SSO setup, EC2 key pair, `configure_enclave.sh`, rsync, `make run`, capturing PCRs, `register_enclave.sh`, `stop-instances`.
