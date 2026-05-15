@@ -75,6 +75,57 @@ function hexFromBytes(arr) {
   return "0x" + Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function bytesFromHex(hex) {
+  const s = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
+  return out;
+}
+
+async function settleMatch(sui, kp, signedMatch, timestampMs) {
+  const p = signedMatch.envelope.data;
+  const sigBytes = bytesFromHex(signedMatch.signature);
+
+  const tx = new Transaction();
+
+  const [instruction] = tx.moveCall({
+    target: `${deployments.packageId}::attestation::verify`,
+    arguments: [
+      tx.object(deployments.enclaveId),
+      tx.pure.u64(BigInt(timestampMs)),
+      tx.pure.address(hexFromBytes(p.maker)),
+      tx.pure.address(hexFromBytes(p.taker)),
+      tx.pure.id(hexFromBytes(p.maker_order)),
+      tx.pure.id(hexFromBytes(p.taker_order)),
+      tx.pure.u64(BigInt(p.filled_size)),
+      tx.pure.u64(BigInt(p.filled_price)),
+      tx.pure.vector("u8", Array.from(p.deepbook_tx_digest)),
+      tx.pure.vector("u8", Array.from(sigBytes)),
+    ],
+  });
+
+  tx.moveCall({
+    target: `${deployments.packageId}::settlement::settle`,
+    typeArguments: ["0x2::sui::SUI", "0x2::sui::SUI"],
+    arguments: [
+      instruction,
+      tx.object(hexFromBytes(p.maker_order)),
+      tx.object(hexFromBytes(p.taker_order)),
+    ],
+  });
+
+  const res = await sui.signAndExecuteTransaction({
+    signer: kp,
+    transaction: tx,
+    options: { showEffects: true, showEvents: true, showObjectChanges: true },
+  });
+
+  if (res.effects?.status?.status !== "success") {
+    throw new Error(`settle failed: ${JSON.stringify(res.effects?.status)}`);
+  }
+  return res;
+}
+
 async function main() {
   const enclaveUrl = deployments.enclaveUrl;
   if (!enclaveUrl) {
@@ -186,9 +237,28 @@ async function main() {
     console.log("  signature   :", m.signature.slice(0, 32) + "...");
   }
 
-  console.log("\nNEXT:");
-  console.log("  - Build settlement PTB: shell::attestation::verify(...) -> shell::settlement::settle<TMaker,TTaker>(...)");
-  console.log("  - Sign and submit to testnet to mint SettlementReceipt for each side.");
+  if (!deployments.enclaveId) {
+    console.log("\nSKIP: no Enclave<SHELL> registered; stopping after signing.");
+    return;
+  }
+  for (const m of signed.matches) {
+    console.log("\nsettling on testnet...");
+    const settled = await settleMatch(sui, kp, m, signed.timestamp_ms);
+    console.log("  digest:", settled.digest);
+    const receipts = (settled.objectChanges ?? []).filter(
+      (c) => c.type === "created" && c.objectType?.includes("SettlementReceipt"),
+    );
+    for (const r of receipts) {
+      console.log("  receipt:", r.objectId, "owner:", JSON.stringify(r.owner));
+    }
+    const swapped = (settled.objectChanges ?? []).filter(
+      (c) => c.type === "created" && c.objectType?.includes("Coin"),
+    );
+    for (const c of swapped) {
+      console.log("  coin   :", c.objectId, "owner:", JSON.stringify(c.owner));
+    }
+  }
+  console.log("\n🎯 SPIKE COMPLETE — full Seal → Nautilus → on-chain settle loop.");
 }
 
 main().catch((err) => {
