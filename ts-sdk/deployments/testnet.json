@@ -6,5 +6,8 @@
   "enclaveConfigId": "0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f",
   "shellCapId": "0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c",
   "upgradeCapId": "0x3343783ce5dfad095271001971e0c234179e6d708f3befeb047b36699a07b57a",
+  "enclaveId": "0xdf07cfd107e154ecbc6e5aa9292b2d2342c42fb978624456a4695924a20cf3da",
+  "enclaveUrl": "http://54.80.82.200:3000",
+  "enclaveMode": "debug",
   "publishDigest": "see commit log; tx at checkpoint 335662593"
 }
