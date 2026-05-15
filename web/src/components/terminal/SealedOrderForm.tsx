@@ -287,7 +287,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
           </button>
           {/* Collateral note */}
           <div className="mt-2 text-center font-mono-sm text-[10px] text-on-surface-variant">
-            Collateral: 0.01 SUI (testnet)
+            Collateral: {side === 'buy' ? '10 USDC' : '0.01 SUI'} (testnet)
           </div>
         </div>
       </form>
