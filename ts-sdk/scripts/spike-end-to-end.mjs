@@ -1,13 +1,16 @@
-// Offline-mode spike: submit a crossing pair to testnet, then exercise the
-// enclave matcher locally. The Seal decryption step is skipped — the
-// trader's SDK hands the plaintexts over a side channel.
+// HTTP-mode spike: submit a crossing pair to testnet, ask the registered
+// Nautilus enclave at deployments.enclaveUrl to match + sign.
 //
-// Prereqs: `npm run build` (this package) and
-//   `cargo build --release --bin match-and-sign` (../enclave).
+// Plaintexts are still handed to the enclave over a side channel — Seal
+// decryption inside Nitro is the next piece. Wire shape of the response
+// is the same either way.
+//
+// Prereqs: `npm run build` (this package). Requires the Nitro enclave
+// at deployments.enclaveUrl to be live with the secrets handshake done
+// — see docs/aws-deployment.md.
 //
 //   node scripts/spike-end-to-end.mjs
 
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -24,16 +27,6 @@ import deployments from "../deployments/testnet.json" with { type: "json" };
 const SEAL_TESTNET_KEY_SERVER =
   "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98";
 const SEAL_TESTNET_AGGREGATOR = "https://seal-aggregator-testnet.mystenlabs.com";
-
-const ENCLAVE_BIN = join(
-  import.meta.dirname,
-  "..",
-  "..",
-  "enclave",
-  "target",
-  "release",
-  process.platform === "win32" ? "match-and-sign.exe" : "match-and-sign",
-);
 
 function loadActiveKeypair() {
   const path = join(homedir(), ".sui", "sui_config", "sui.keystore");
@@ -78,10 +71,26 @@ async function submitOne(sui, seal, kp, order, expiry) {
   return { orderId: orderObj.objectId, digest: res.digest };
 }
 
+function hexFromBytes(arr) {
+  return "0x" + Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function main() {
+  const enclaveUrl = deployments.enclaveUrl;
+  if (!enclaveUrl) {
+    throw new Error(
+      "deployments/testnet.json has no enclaveUrl — register the enclave first per docs/aws-deployment.md",
+    );
+  }
+
   const kp = loadActiveKeypair();
   const trader = kp.toSuiAddress();
   console.log("sender:", trader);
+  console.log("enclave:", enclaveUrl, "(mode:", deployments.enclaveMode ?? "unknown", ")");
+
+  // Health probe before we burn gas.
+  const health = await fetch(`${enclaveUrl}/health_check`).then((r) => r.json());
+  console.log("enclave health pk:", health.pk);
 
   const sui = new SuiJsonRpcClient({ network: "testnet", url: getJsonRpcFullnodeUrl("testnet") });
   const seal = new SealClient({
@@ -96,9 +105,6 @@ async function main() {
   const expiry = BigInt(sys.epoch) + 5n;
   console.log("current epoch:", sys.epoch, "→ expiry:", expiry.toString());
 
-  // Crossing pair: buyer @ 12500, seller @ 12400, both size 100.
-  // Same trader on both sides (we only have one keypair). The enclave
-  // doesn't care — its job is to honor the BCS-encoded sides.
   const buy = {
     side: "buy",
     size: 100n,
@@ -124,61 +130,65 @@ async function main() {
   console.log("  order_id:", sellRes.orderId);
   await sui.waitForTransaction({ digest: sellRes.digest });
 
-  // Hand the plaintexts to the enclave via stdin. In production these would
-  // arrive via Seal decryption inside Nitro; here we use the side channel.
-  const enclaveInput = {
-    orders: [
-      {
-        order_id: buyRes.orderId,
-        trader,
-        plaintext: {
-          side: buy.side,
-          size: Number(buy.size),
-          limit_price: Number(buy.limitPrice),
-          expiry_epoch: Number(buy.expiryEpoch),
-          max_slippage_bps: buy.maxSlippageBps,
+  const enclaveRequest = {
+    payload: {
+      orders: [
+        {
+          order_id: buyRes.orderId,
+          trader,
+          plaintext: {
+            side: buy.side,
+            size: Number(buy.size),
+            limit_price: Number(buy.limitPrice),
+            expiry_epoch: Number(buy.expiryEpoch),
+            max_slippage_bps: buy.maxSlippageBps,
+          },
         },
-      },
-      {
-        order_id: sellRes.orderId,
-        trader,
-        plaintext: {
-          side: sell.side,
-          size: Number(sell.size),
-          limit_price: Number(sell.limitPrice),
-          expiry_epoch: Number(sell.expiryEpoch),
-          max_slippage_bps: sell.maxSlippageBps,
+        {
+          order_id: sellRes.orderId,
+          trader,
+          plaintext: {
+            side: sell.side,
+            size: Number(sell.size),
+            limit_price: Number(sell.limitPrice),
+            expiry_epoch: Number(sell.expiryEpoch),
+            max_slippage_bps: sell.maxSlippageBps,
+          },
         },
-      },
-    ],
+      ],
+    },
   };
 
-  console.log("\nspawning enclave...");
-  const result = spawnSync(ENCLAVE_BIN, [], {
-    input: JSON.stringify(enclaveInput),
-    encoding: "utf8",
+  console.log("\nposting /process_data...");
+  const res = await fetch(`${enclaveUrl}/process_data`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(enclaveRequest),
   });
-  if (result.status !== 0) {
-    console.error("enclave stderr:", result.stderr);
-    throw new Error(`enclave exited ${result.status}`);
+  if (!res.ok) {
+    throw new Error(`enclave HTTP ${res.status}: ${await res.text()}`);
   }
-  const signed = JSON.parse(result.stdout);
+  const signed = await res.json();
+
   console.log("enclave pubkey:", signed.enclave_pubkey);
+  console.log("timestamp_ms :", signed.timestamp_ms);
   console.log("signed matches:", signed.matches.length);
 
   for (const m of signed.matches) {
+    const p = m.envelope.data;
     console.log("\n--- match ---");
-    console.log("  maker_order:", m.maker_order);
-    console.log("  taker_order:", m.taker_order);
-    console.log("  filled_size:", m.filled_size);
-    console.log("  filled_price:", m.filled_price);
-    console.log("  signature  :", m.signature.slice(0, 32) + "...");
+    console.log("  maker_order:", hexFromBytes(p.maker_order));
+    console.log("  taker_order:", hexFromBytes(p.taker_order));
+    console.log("  maker      :", hexFromBytes(p.maker));
+    console.log("  taker      :", hexFromBytes(p.taker));
+    console.log("  filled_size :", p.filled_size);
+    console.log("  filled_price:", p.filled_price);
+    console.log("  signature   :", m.signature.slice(0, 32) + "...");
   }
 
-  console.log("\nNEXT (blocked on Nitro):");
-  console.log("  - Register a real Enclave<SHELL> via attestation document");
-  console.log("  - Call shell::attestation::verify(enclave, timestamp, ..., signature)");
-  console.log("  - Call shell::settlement::settle<SUI,SUI>(instruction, maker_order, taker_order)");
+  console.log("\nNEXT:");
+  console.log("  - Build settlement PTB: shell::attestation::verify(...) -> shell::settlement::settle<TMaker,TTaker>(...)");
+  console.log("  - Sign and submit to testnet to mint SettlementReceipt for each side.");
 }
 
 main().catch((err) => {
