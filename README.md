@@ -6,15 +6,17 @@ Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minim
 
 ## Status
 
-**Spike checkpoint reached.** Move package on testnet, SDK + enclave producing real artifacts. End-to-end settlement on-chain is blocked on AWS Nitro — see [§ Blocked on Nitro](#blocked-on-nitro).
+**Spike GO criterion met on testnet** ([product.md §6.2](product.md)). Full Seal → Nautilus → on-chain settle loop runs end-to-end against a real prod-mode `Enclave<SHELL>`. Real AWS-signed attestation, real PCRs registered on the `EnclaveConfig`, real `SettlementReceipt`s minted.
 
 | Layer    | What works                                                                              | Where                                                            |
 | -------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; 10/10 tests | [`move/`](move/)                                                 |
-| Move     | Published to testnet at `0x5a47e786…`; Enclave<SHELL> registered at `0xdf07cfd1…`      | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
+| Move     | Published to testnet at `0x5a47e786…`                                                  | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
+| Nitro    | Prod-mode `Enclave<SHELL>` registered at `0x1b18a55…` (PCRs `619c7540…`, `21b9efbc…`)  | running on `m5.xlarge`, HTTP `54.80.82.200:3000`                |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
 | Enclave  | Nautilus app: BCS-matched matcher + Ed25519 signer behind HTTP `/process_data`         | [`enclave-nitro/apps/shell/`](enclave-nitro/apps/shell/)         |
-| Demo     | Full Seal → Nautilus → on-chain settle loop on testnet                                 | [`ts-sdk/scripts/spike-end-to-end.mjs`](ts-sdk/scripts/spike-end-to-end.mjs) |
+| Demo     | Full Seal → Nautilus → on-chain settle loop (digest `CRumEFt7wuTn…`)                   | [`ts-sdk/scripts/spike-end-to-end.mjs`](ts-sdk/scripts/spike-end-to-end.mjs) |
+| Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | [`web/`](web/)                                                   |
 
 ## Repo layout
 
@@ -35,7 +37,9 @@ enclave-nitro/             Nautilus app overlay (drops into a MystenLabs/nautilu
   apps/shell/              Rust /process_data handler + allowed_endpoints.yaml
   scripts/assemble.sh      Clones nautilus, applies patches, copies the overlay
 web/                       Trader-facing Next.js app (dapp-kit wallet, sealed-order form, receipts)
-docs/                      aws-deployment.md walkthrough for the Nitro side
+docs/
+  aws-deployment.md        Nitro provisioning runbook (assemble → configure → register)
+  seal-in-nitro.md         Scope for closing the side-channel (port apps/seal-example, ~3-5 days)
 ui-guide/                  Static HTML mockups (design intent, not code to import)
 ```
 
@@ -93,21 +97,31 @@ See [`ts-sdk/docs/frontend-integration.md`](ts-sdk/docs/frontend-integration.md)
 
 Full system diagram in [`product.md` §4.1](product.md).
 
-## Spike GO criterion — met
+## On-chain testnet artifacts
 
-Reached on testnet. `Enclave<SHELL>` registered at `0xdf07cfd107e154ecbc6e5aa9292b2d2342c42fb978624456a4695924a20cf3da`; settlement PTB run digest `7USfM7tuiDipnL63wDaDS1hSZudSPgPZ12oPEVfsL97n` consumed the hot-potato + minted two `SettlementReceipt`s.
+| Object | ID |
+| --- | --- |
+| Shell package | `0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd` |
+| `EnclaveConfig<SHELL>` | `0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f` |
+| `Cap<SHELL>` (deployer) | `0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c` |
+| `Enclave<SHELL>` (prod-mode) | `0x1b18a55393efa9378c11e4eac0ad94c3ec3759f85be6c92f71a7a3b074b871e1` |
+| Latest settlement digest | `CRumEFt7wuTn7uPHJghtbnjdsS5LKnE35Kqdka3zMPDP` |
 
-What's still side-channeled or stubbed (honest list):
+PCRs registered on-chain:
+- PCR0 / PCR1: `0x619c75409481395d093fabe80991b428d2c5a39567eecea0dc464c7fcad9e2fe7b84ed5000224b5492b2b1dc6f52b56b`
+- PCR2: `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a`
 
-- **Seal decryption inside Nitro.** Today the trader's SDK posts plaintexts to `/process_data`; the prod path is the enclave fetching `OrderCommitment` ciphertext + Seal key shares via `fetch_key` (gated by `shell::shell::seal_approve`) and decrypting in-TEE. Wire shape of the response is identical.
-- **Debug-mode PCRs.** The enclave was built and registered with `--debug-mode`; PCR0/1/2 stored on the `EnclaveConfig` are zeros, so the "this is the registered binary" check is vacuous. A `make run` (prod-mode) rebuild + `update_pcrs` + re-register is the cleanup.
-- **DeepBook v3 leg.** `shell::settlement::settle` currently does a direct collateral swap; the week-4 work is replacing that with `place_limit_order<Base, Quote>(pool, balance_manager, trade_proof, …)` against a real DeepBook pool.
+## Honest list — what's not shipped
+
+- **Seal decryption inside Nitro.** Today the trader's SDK posts plaintexts to `/process_data`; the prod path is the enclave fetching `OrderCommitment` ciphertext + Seal key shares via `fetch_key` (gated by `shell::shell::seal_approve`) and decrypting in-TEE. Wire shape of the response is identical. Scope + plan in [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md) — 3–5 days; Mysten's `apps/seal-example` is the reference implementation.
+- **DeepBook v3 settlement leg.** `shell::settlement::settle` currently does a direct collateral swap. Week-4 work per spec: replace with `place_limit_order<Base, Quote>(pool, balance_manager, trade_proof, …)` against a real DeepBook pool with a funded `BalanceManager` per trader.
+- **Partial fills in the matcher.** v1 is whole-fill only.
 
 ## Conventions
 
 - Spec is the source of truth — design changes belong in [`product.md`](product.md) before code.
 - Privacy invariants are non-negotiable: side, size, limit price, slippage are private pre-match and the original limit + max slippage stay private post-settlement. Anything that risks exposing these gets flagged explicitly.
-- Move tests via `sui move test`, Rust via `cargo test`, TS via `npm run build` (no test runner wired up yet).
+- Move tests via `sui move test`; TS via `npm run build` (no test runner wired up yet); Nitro app tests run inside the nautilus tree once assembled.
 - Commit per meaningful unit. Short imperative subject. The why goes in the body if it isn't obvious from the diff.
 
 ## Threat model
