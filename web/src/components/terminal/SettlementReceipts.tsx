@@ -2,24 +2,22 @@
 
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
-import { SHELL_PACKAGE_ID } from '@/lib/sui';
+import { SHELL_PACKAGE_ID, QUOTE_SYMBOL } from '@/lib/sui';
+import { getReceipts } from '@/lib/shell-sdk';
 
-interface SettlementReceiptFields {
-  filled_size: string;
-  filled_price: string;
-  counterparty: string;
-  side?: string;
-}
-
-interface ReceiptData {
-  objectId: string;
-  fields: SettlementReceiptFields;
-}
-
-/** Truncate a Sui address/hash for display */
 function truncateAddr(addr: string, chars = 4): string {
   if (addr.length <= chars * 2 + 2) return addr;
   return `${addr.slice(0, chars + 2)}...${addr.slice(-chars)}`;
+}
+
+/** Format a raw u64 Move value into a human-readable decimal string. */
+function formatU64(raw: string, decimals: number): string {
+  const n = BigInt(raw);
+  const scale = BigInt(10 ** decimals);
+  const whole = n / scale;
+  const frac = n % scale;
+  if (frac === BigInt(0)) return whole.toString();
+  return `${whole}.${frac.toString().padStart(decimals, '0').replace(/0+$/, '')}`;
 }
 
 export default function SettlementReceipts() {
@@ -28,24 +26,13 @@ export default function SettlementReceipts() {
 
   const { data: receipts, isLoading } = useQuery({
     queryKey: ['settlement-receipts', account?.address],
-    queryFn: async (): Promise<ReceiptData[]> => {
-      if (!account) return [];
-
-      const res = await suiClient.getOwnedObjects({
-        owner: account.address,
-        filter: { StructType: `${SHELL_PACKAGE_ID}::pool::SettlementReceipt` },
-        options: { showContent: true },
-      });
-
-      return res.data
-        .filter((obj) => obj.data?.content?.dataType === 'moveObject')
-        .map((obj) => ({
-          objectId: obj.data!.objectId,
-          fields: (obj.data!.content as unknown as { fields: SettlementReceiptFields }).fields,
-        }));
-    },
+    queryFn: () =>
+      getReceipts(suiClient, {
+        shellPackageId: SHELL_PACKAGE_ID,
+        owner: account!.address,
+      }),
     enabled: !!account,
-    refetchInterval: 15_000, // poll every 15s for new settlements
+    refetchInterval: 15_000,
   });
 
   return (
@@ -69,10 +56,12 @@ export default function SettlementReceipts() {
             >
               <div className="flex justify-between font-mono-data text-[12px]">
                 <span className="text-primary">FILLED</span>
-                <span className="text-on-surface">{receipt.fields.filled_price}</span>
+                <span className="text-on-surface">
+                  {formatU64(receipt.fields.filled_price, 6)} {QUOTE_SYMBOL}
+                </span>
               </div>
               <div className="flex justify-between font-mono-sm text-[10px] text-on-surface-variant">
-                <span>Size: {receipt.fields.filled_size}</span>
+                <span>Size: {formatU64(receipt.fields.filled_size, 9)} SUI</span>
                 <span>CP: {truncateAddr(receipt.fields.counterparty)}</span>
               </div>
               <div className="font-mono-sm text-[9px] text-secondary truncate">
