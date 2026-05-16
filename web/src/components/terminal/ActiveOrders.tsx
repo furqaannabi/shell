@@ -192,14 +192,21 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                       )}
                       {(() => {
                         const expired = currentEpoch !== undefined && order.expiryEpoch <= currentEpoch;
-                        return (
+                        return expired ? (
                           <button
                             onClick={() => handleCancel(order.orderId, order.collateralType)}
-                            className={`transition-colors cursor-pointer ${expired ? 'text-error animate-pulse' : 'text-on-surface-variant hover:text-error'}`}
-                            title={expired ? 'Cancel & Reclaim Collateral' : 'Cancel (available after expiry)'}
+                            className="text-error animate-pulse transition-colors cursor-pointer"
+                            title="Cancel & Reclaim Collateral"
                           >
                             <span className="material-symbols-outlined text-[18px]">cancel</span>
                           </button>
+                        ) : (
+                          <span
+                            className="text-outline-variant opacity-30 cursor-not-allowed"
+                            title="Cancel only available after expiry"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">cancel</span>
+                          </span>
                         );
                       })()}
                     </div>
