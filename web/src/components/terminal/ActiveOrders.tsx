@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
-import { Transaction } from '@mysten/sui/transactions';
 import { SHELL_PACKAGE_ID, QUOTE_SYMBOL } from '@/lib/sui';
+import { getActiveOrders, cancelOrderTx } from '@/lib/shell-sdk';
 import type { SubmittedOrder } from './SealedOrderForm';
 import { useQuery } from '@tanstack/react-query';
 
@@ -11,13 +11,11 @@ interface Props {
   orders: SubmittedOrder[];
 }
 
-/** Truncate a hex string for display */
 function truncateHash(hash: string, chars = 6): string {
   if (hash.length <= chars * 2 + 2) return hash;
   return `${hash.slice(0, chars)}...${hash.slice(-chars)}`;
 }
 
-/** Relative time since timestamp */
 function timeAgo(ts: number, now: number): string {
   const diff = Math.floor((now - ts) / 1000);
   if (diff < 0) return 'Just now';
@@ -30,7 +28,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
-  
+
   const [now, setNow] = useState(Date.now());
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
@@ -43,73 +41,19 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
     refetchInterval: 30_000,
   });
 
-  // ── 1. Fetch the trader's OrderSubmitted events ─────────────────────────
-  // OrderCommitment is a *shared* object (transfer::share_object in
-  // shell::pool::submit_order), so getOwnedObjects returns nothing. Query
-  // OrderSubmitted events instead and prune any whose object is gone
-  // (cancelled or settled).
-  //
-  // The JSON-RPC event filter has no AND; the trader-address filter is
-  // applied client-side. Fine for testnet volume; if mainnet traffic
-  // grows this should page until the trader's last N orders are found.
   const { data: onChainOrders, isLoading } = useQuery({
     queryKey: ['active-commitments', account?.address],
-    queryFn: async () => {
-      if (!account) return [];
-      const events = await suiClient.queryEvents({
-        query: { MoveEventType: `${SHELL_PACKAGE_ID}::pool::OrderSubmitted` },
-        limit: 50,
-        order: 'descending',
-      });
-
-      type SubmittedJson = {
-        order_id: string;
-        trader: string;
-        commit_hash: number[];
-        expiry_epoch: string;
-      };
-
-      const candidates = events.data
-        .map((e) => ({
-          json: e.parsedJson as SubmittedJson,
-          submittedAt: e.timestampMs ? Number(e.timestampMs) : 0,
-        }))
-        .filter((x) => x.json.trader === account.address)
-        .map(({ json, submittedAt }) => ({
-          orderId: json.order_id,
-          commitHash: json.commit_hash.map((b) => b.toString(16).padStart(2, '0')).join(''),
-          expiryEpoch: Number(json.expiry_epoch),
-          submittedAt,
-        }));
-
-      if (candidates.length === 0) return [];
-
-      // Prune cancelled/settled orders + recover the collateral type tag
-      // from the live object so cancel() doesn't need to guess.
-      const ids = candidates.map((c) => c.orderId);
-      const objs = await suiClient.multiGetObjects({
-        ids,
-        options: { showType: true },
-      });
-      const typeByOrder = new Map<string, string | undefined>();
-      for (const o of objs) {
-        if (!o.data?.objectId) continue;
-        // type tag looks like `<pkg>::pool::OrderCommitment<0x2::sui::SUI>`
-        const m = o.data.type?.match(/OrderCommitment<(.+)>$/);
-        typeByOrder.set(o.data.objectId, m?.[1]);
-      }
-      return candidates
-        .filter((c) => typeByOrder.has(c.orderId))
-        .map((c) => ({ ...c, collateralType: typeByOrder.get(c.orderId)! }));
-    },
+    queryFn: () =>
+      getActiveOrders(suiClient, {
+        shellPackageId: SHELL_PACKAGE_ID,
+        trader: account!.address,
+      }),
     enabled: !!account,
     refetchInterval: 10_000,
   });
 
-  // ── 2. Merge on-chain reality with local session metadata ────────────────
-  // Side, size, and limit price are encrypted on-chain. We only know them
-  // for orders submitted in this browser session. A refresh wipes them
-  // until a backup-key-driven decrypt flow ships — those cells show "—".
+  // Side, size, limit price are encrypted on-chain — only known for orders
+  // submitted this session. A refresh wipes them until decrypt flow ships.
   const mergedOrders = (onChainOrders || []).map((oc) => {
     const local = sessionOrders.find((s) => s.orderId === oc.orderId);
     return {
@@ -122,7 +66,6 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
     };
   });
 
-  // Timer for relative timestamps
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
@@ -131,13 +74,12 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   async function handleCancel(orderId: string, collateralType: string) {
     if (!account) return;
     try {
-      const tx = new Transaction();
-      const [coin] = tx.moveCall({
-        target: `${SHELL_PACKAGE_ID}::pool::cancel_expired`,
-        typeArguments: [collateralType],
-        arguments: [tx.object(orderId)],
+      const tx = cancelOrderTx({
+        shellPackageId: SHELL_PACKAGE_ID,
+        collateralType,
+        orderId,
+        recipient: account.address,
       });
-      tx.transferObjects([coin], account.address);
       await signAndExecute({ transaction: tx });
     } catch (e) {
       console.error('Failed to cancel order:', e);

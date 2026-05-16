@@ -133,8 +133,6 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
       setSize('');
       setLimitPrice('');
     } catch (err) {
-      console.error('[DEBUG-a4f2] submit failed:', err);
-      if (err instanceof Error) console.error('[DEBUG-a4f2] stack:', err.stack);
       setError(err instanceof Error ? err.message : 'Order submission failed');
     } finally {
       setIsSubmitting(false);
@@ -287,7 +285,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
           </button>
           {/* Collateral note */}
           <div className="mt-2 text-center font-mono-sm text-[10px] text-on-surface-variant">
-            Collateral: {side === 'buy' ? '10 USDC' : '0.01 SUI'} (testnet)
+            Collateral: {side === 'buy' ? `10 ${QUOTE_SYMBOL}` : '0.01 SUI'} (testnet)
           </div>
         </div>
       </form>
