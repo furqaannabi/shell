@@ -28,3 +28,32 @@ export function submitOrderTx(opts: SubmitOrderTxOptions): Transaction {
   });
   return tx;
 }
+
+export interface CancelOrderTxOptions {
+  shellPackageId: string;
+  /** Move type of the collateral coin originally posted with the order.
+   *  Use `getOrderCollateralType()` to derive this from the on-chain object. */
+  collateralType: string;
+  /** OrderCommitment<T> object id to cancel. */
+  orderId: string;
+  /** Sui address to receive the reclaimed coin. Usually the trader. */
+  recipient: string;
+  /** Existing transaction to append to; a new one is created if omitted. */
+  tx?: Transaction;
+}
+
+/// Builds a PTB calling `shell::pool::cancel_expired<T>` and transferring
+/// the reclaimed coin to `recipient`. Aborts on-chain with
+/// `EOrderNotExpired` if `ctx.epoch() < order.expiry_epoch` — Shell has no
+/// pre-expiry cancel by design (prevents trader/enclave races during a
+/// pending settle).
+export function cancelOrderTx(opts: CancelOrderTxOptions): Transaction {
+  const tx = opts.tx ?? new Transaction();
+  const [coin] = tx.moveCall({
+    target: `${opts.shellPackageId}::pool::cancel_expired`,
+    typeArguments: [opts.collateralType],
+    arguments: [tx.object(opts.orderId)],
+  });
+  tx.transferObjects([coin as TransactionObjectArgument], opts.recipient);
+  return tx;
+}
