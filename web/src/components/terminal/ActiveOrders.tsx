@@ -5,7 +5,7 @@ import { useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@
 import { SHELL_PACKAGE_ID, QUOTE_SYMBOL } from '@/lib/sui';
 import { getActiveOrders, cancelOrderTx } from '@/lib/shell-sdk';
 import type { SubmittedOrder } from './SealedOrderForm';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface Props {
   orders: SubmittedOrder[];
@@ -29,6 +29,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   const suiClient = useSuiClient();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
 
+  const queryClient = useQueryClient();
   const [now, setNow] = useState(Date.now());
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
@@ -80,7 +81,9 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
         orderId,
         recipient: account.address,
       });
-      await signAndExecute({ transaction: tx });
+      const res = await signAndExecute({ transaction: tx });
+      await suiClient.waitForTransaction({ digest: res.digest });
+      queryClient.invalidateQueries({ queryKey: ['active-commitments', account.address] });
     } catch (e) {
       console.error('Failed to cancel order:', e);
       alert('Cancel failed: Order might not be expired yet or already matched.');
