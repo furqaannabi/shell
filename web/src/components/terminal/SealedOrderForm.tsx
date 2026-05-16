@@ -156,7 +156,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
       if (orderId) {
         setStatus('Triggering matching...');
         try {
-          const enclaveRes = await fetch(`${ENCLAVE_URL}/process_data`, {
+          const enclaveRes = await fetch('/api/enclave/process_data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
