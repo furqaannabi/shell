@@ -19,10 +19,13 @@ export interface SubmittedOrder {
   size: string;
   limitPrice: string;
   timestamp: number;
+  expiryEpoch: number;
+  maxSlippageBps: number;
 }
 
 interface Props {
   onOrderSubmitted: (order: SubmittedOrder) => void;
+  sessionOrders: SubmittedOrder[];
 }
 
 function hexFromBytes(arr: number[]): string {
@@ -36,7 +39,7 @@ function bytesFromHex(hex: string): Uint8Array {
   return out;
 }
 
-export default function SealedOrderForm({ onOrderSubmitted }: Props) {
+export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Props) {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
@@ -150,6 +153,8 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         size,
         limitPrice,
         timestamp: Date.now(),
+        expiryEpoch: Number(expiryEpoch),
+        maxSlippageBps,
       });
 
       // ── Trigger enclave matching ─────────────────────────────────────────
@@ -161,17 +166,33 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               payload: {
-                orders: [{
-                  order_id: orderId,
-                  trader: account.address,
-                  plaintext: {
-                    side,
-                    size: Number(sizeBase),
-                    limit_price: Number(priceBase),
-                    expiry_epoch: Number(expiryEpoch),
-                    max_slippage_bps: maxSlippageBps,
+                orders: [
+                  // Include all previous session orders so enclave can match across them
+                  ...sessionOrders
+                    .filter((o) => o.orderId)
+                    .map((o) => ({
+                      order_id: o.orderId!,
+                      trader: account.address,
+                      plaintext: {
+                        side: o.side,
+                        size: Math.round(parseFloat(o.size) * 1_000_000_000),
+                        limit_price: Math.round(parseFloat(o.limitPrice) * 1_000_000),
+                        expiry_epoch: o.expiryEpoch,
+                        max_slippage_bps: o.maxSlippageBps,
+                      },
+                    })),
+                  {
+                    order_id: orderId,
+                    trader: account.address,
+                    plaintext: {
+                      side,
+                      size: Number(sizeBase),
+                      limit_price: Number(priceBase),
+                      expiry_epoch: Number(expiryEpoch),
+                      max_slippage_bps: maxSlippageBps,
+                    },
                   },
-                }],
+                ],
               },
             }),
           });

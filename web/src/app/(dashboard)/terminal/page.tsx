@@ -17,7 +17,7 @@ export default function TerminalPage() {
     <div className="flex flex-col lg:flex-row gap-4 h-full w-full overflow-y-auto lg:overflow-hidden pb-8 lg:pb-0 pr-2 lg:pr-0">
       {/* Left Panel: Sealed Order Entry */}
       <section className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-4">
-        <SealedOrderForm onOrderSubmitted={handleOrderSubmitted} />
+        <SealedOrderForm onOrderSubmitted={handleOrderSubmitted} sessionOrders={orders} />
       </section>
 
       {/* Center Panel: Active Orders */}
