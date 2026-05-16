@@ -65,8 +65,8 @@ export default function OrderBook() {
 
   return (
     <div className="glass-panel rounded-lg p-4 flex flex-col flex-1">
-      <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#1E293B]">
-        <h2 className="font-headline-md text-[14px] text-on-surface uppercase tracking-wider">DeepBook Reference</h2>
+      <div className="flex justify-between items-center mb-1 pb-2 border-b border-[#1E293B]">
+        <h2 className="font-headline-md text-[14px] text-on-surface uppercase tracking-wider">Price Reference</h2>
         <span
           className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded border border-primary/20"
           title={`DeepBook ${NETWORK} reference data`}
@@ -74,6 +74,7 @@ export default function OrderBook() {
           {NETWORK.toUpperCase()}
         </span>
       </div>
+      <p className="text-[9px] text-outline-variant mb-2">SUI/DBUSDC pool · indicative prices only</p>
 
       <div className="flex-1 overflow-auto flex flex-col text-[11px] font-mono-data text-on-surface-variant min-h-[200px]">
         <div className="flex flex-col-reverse">
