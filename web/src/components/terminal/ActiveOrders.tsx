@@ -6,6 +6,7 @@ import { SHELL_PACKAGE_ID, QUOTE_SYMBOL } from '@/lib/sui';
 import { getActiveOrders, cancelOrderTx } from '@/lib/shell-sdk';
 import type { SubmittedOrder } from './SealedOrderForm';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 interface Props {
   orders: SubmittedOrder[];
@@ -86,7 +87,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
       queryClient.invalidateQueries({ queryKey: ['active-commitments', account.address] });
     } catch (e) {
       console.error('Failed to cancel order:', e);
-      alert('Cancel failed: Order might not be expired yet or already matched.');
+      toast.error(e instanceof Error ? e.message : 'Cancel failed');
     }
   }
 
