@@ -7,6 +7,7 @@ import { getActiveOrders, cancelOrderTx } from '@/lib/shell-sdk';
 import type { SubmittedOrder } from './SealedOrderForm';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { friendlyError } from '@/lib/errors';
 
 interface Props {
   orders: SubmittedOrder[];
@@ -87,7 +88,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
       queryClient.invalidateQueries({ queryKey: ['active-commitments', account.address] });
     } catch (e) {
       console.error('Failed to cancel order:', e);
-      toast.error(e instanceof Error ? e.message : 'Cancel failed');
+      toast.error(friendlyError(e, 'Cancel failed — please try again'));
     }
   }
 

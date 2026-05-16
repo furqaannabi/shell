@@ -9,6 +9,7 @@ import {
   SHELL_PACKAGE_ID, QUOTE_SYMBOL, ENCLAVE_URL, ENCLAVE_ID,
   collateralTypeFor, getSealClient,
 } from '@/lib/sui';
+import { friendlyError } from '@/lib/errors';
 
 export interface SubmittedOrder {
   orderId?: string;
@@ -238,7 +239,7 @@ export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Pro
       setSize('');
       setLimitPrice('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Order submission failed');
+      setError(friendlyError(err, 'Order submission failed — please try again'));
     } finally {
       setIsSubmitting(false);
       setStatus('');
