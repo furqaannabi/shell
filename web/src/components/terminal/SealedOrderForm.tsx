@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import { encryptOrder, submitOrderTx } from '@/lib/shell-sdk';
+import { encryptOrder, submitOrderTx, getOrderCollateralType, settleMatchTx } from '@/lib/shell-sdk';
 import type { OrderSide } from '@/lib/shell-sdk';
-import { SHELL_PACKAGE_ID, DEFAULT_COLLATERAL_AMOUNT, QUOTE_SYMBOL, collateralTypeFor, getSealClient } from '@/lib/sui';
+import {
+  SHELL_PACKAGE_ID, QUOTE_SYMBOL, ENCLAVE_URL, ENCLAVE_ID,
+  collateralTypeFor, getSealClient,
+} from '@/lib/sui';
 
-/** Result emitted after a successful order submission */
 export interface SubmittedOrder {
   orderId?: string;
   digest: string;
@@ -23,6 +25,17 @@ interface Props {
   onOrderSubmitted: (order: SubmittedOrder) => void;
 }
 
+function hexFromBytes(arr: number[]): string {
+  return '0x' + arr.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function bytesFromHex(hex: string): Uint8Array {
+  const s = hex.startsWith('0x') ? hex.slice(2) : hex;
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
+  return out;
+}
+
 export default function SealedOrderForm({ onOrderSubmitted }: Props) {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
@@ -32,9 +45,19 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
   const [size, setSize] = useState('');
   const [limitPrice, setLimitPrice] = useState('');
   const [slippage, setSlippage] = useState('0.5');
-  const [expiry, setExpiry] = useState('5'); // epochs
+  const [expiry, setExpiry] = useState('5');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Collateral the user will escrow:
+  //   sell → the SUI being sold (= size)
+  //   buy  → the DUSDC being paid (= size × limitPrice)
+  const displayCollateral = (() => {
+    if (side === 'sell') return size ? `${size} SUI` : '? SUI';
+    if (!size || !limitPrice) return `? ${QUOTE_SYMBOL}`;
+    return `${(parseFloat(size) * parseFloat(limitPrice)).toFixed(2)} ${QUOTE_SYMBOL}`;
+  })();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,53 +67,55 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
 
     try {
       const seal = getSealClient(suiClient);
-
-      // Resolve current epoch for expiry calculation
       const { epoch } = await suiClient.getLatestSuiSystemState();
       const expiryEpoch = BigInt(epoch) + BigInt(expiry);
 
-      // Encrypt the order under Seal
+      // size in mist (SUI 9 decimals), price in µDUSDC (6 decimals)
+      const sizeBase = BigInt(Math.round(parseFloat(size) * 1_000_000_000));
+      const priceBase = BigInt(Math.round(parseFloat(limitPrice) * 1_000_000));
+      const maxSlippageBps = Math.round(parseFloat(slippage) * 100);
+
+      setStatus('Encrypting...');
       const enc = await encryptOrder({
         sealClient: seal,
         shellPackageId: SHELL_PACKAGE_ID,
         threshold: 1,
         order: {
           side,
-          size: BigInt(Math.round(parseFloat(size) * 1e9)), // normalize to base units
-          limitPrice: BigInt(Math.round(parseFloat(limitPrice) * 1e9)),
+          size: sizeBase,
+          limitPrice: priceBase,
           expiryEpoch,
-          maxSlippageBps: Math.round(parseFloat(slippage) * 100), // % → bps
+          maxSlippageBps,
         },
       });
 
-      // Persist backup key for recovery — localStorage is fine for testnet
       const backupKeyHex = Array.from(enc.backupKey).map(b => b.toString(16).padStart(2, '0')).join('');
       localStorage.setItem(`shell_backup_${Date.now()}`, backupKeyHex);
 
-      // Build and sign the transaction
       const tx = new Transaction();
       const collateralType = collateralTypeFor(side);
       const SUI_TYPE = '0x2::sui::SUI';
+
+      // sell escrows SUI (= size), buy escrows DUSDC (= size × price / 1e9)
+      const collateralAmount = side === 'sell'
+        ? sizeBase
+        : (sizeBase * priceBase) / BigInt(1_000_000_000);
+
       let collateral;
       if (collateralType === SUI_TYPE) {
-        [collateral] = tx.splitCoins(tx.gas, [tx.pure.u64(DEFAULT_COLLATERAL_AMOUNT)]);
+        [collateral] = tx.splitCoins(tx.gas, [tx.pure.u64(collateralAmount)]);
       } else {
-        const coins = await suiClient.getCoins({
-          owner: account.address,
-          coinType: collateralType,
-        });
+        const coins = await suiClient.getCoins({ owner: account.address, coinType: collateralType });
         if (coins.data.length === 0) {
-          throw new Error(`No ${collateralType.split('::').pop()} coins in wallet. Get testnet tokens from the DeepBook faucet.`);
+          throw new Error(`No ${collateralType.split('::').pop()} coins in wallet.`);
         }
         const primary = tx.object(coins.data[0].coinObjectId);
         if (coins.data.length > 1) {
-          tx.mergeCoins(
-            primary,
-            coins.data.slice(1).map(c => tx.object(c.coinObjectId)),
-          );
+          tx.mergeCoins(primary, coins.data.slice(1).map(c => tx.object(c.coinObjectId)));
         }
-        [collateral] = tx.splitCoins(primary, [tx.pure.u64(DEFAULT_COLLATERAL_AMOUNT)]);
+        [collateral] = tx.splitCoins(primary, [tx.pure.u64(collateralAmount)]);
       }
+
       submitOrderTx({
         shellPackageId: SHELL_PACKAGE_ID,
         collateralType,
@@ -101,25 +126,23 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         tx,
       });
 
-      const res = await signAndExecute({
-        transaction: tx,
-      });
+      setStatus('Signing...');
+      const res = await signAndExecute({ transaction: tx });
 
-      // Wait for the transaction to be indexed to get object changes
       const txResult = await suiClient.waitForTransaction({
         digest: res.digest,
         options: { showObjectChanges: true },
       });
 
-      // Find the created OrderCommitment
       const created = txResult.objectChanges?.find(
-        (c: { type: string; objectType?: string }) => c.type === 'created' && c.objectType?.includes('OrderCommitment'),
+        (c: { type: string; objectType?: string }) =>
+          c.type === 'created' && c.objectType?.includes('OrderCommitment'),
       );
-
+      const orderId = (created as { objectId?: string })?.objectId;
       const commitHashHex = Array.from(enc.commitHash).map(b => b.toString(16).padStart(2, '0')).join('');
 
       onOrderSubmitted({
-        orderId: (created as { objectId?: string })?.objectId,
+        orderId,
         digest: res.digest,
         commitHash: commitHashHex,
         backupKey: backupKeyHex,
@@ -129,13 +152,75 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         timestamp: Date.now(),
       });
 
-      // Reset form
+      // ── Trigger enclave matching ─────────────────────────────────────────
+      if (orderId) {
+        setStatus('Triggering matching...');
+        try {
+          const enclaveRes = await fetch(`${ENCLAVE_URL}/process_data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              payload: {
+                orders: [{
+                  order_id: orderId,
+                  trader: account.address,
+                  plaintext: {
+                    side,
+                    size: Number(sizeBase),
+                    limit_price: Number(priceBase),
+                    expiry_epoch: Number(expiryEpoch),
+                    max_slippage_bps: maxSlippageBps,
+                  },
+                }],
+              },
+            }),
+          });
+
+          if (enclaveRes.ok) {
+            const signed = await enclaveRes.json();
+            for (const match of signed.matches ?? []) {
+              setStatus('Settling match...');
+              const p = match.envelope.data;
+              const makerOrderId = hexFromBytes(p.maker_order);
+              const takerOrderId = hexFromBytes(p.taker_order);
+
+              const [makerT, takerT] = await Promise.all([
+                getOrderCollateralType(suiClient, makerOrderId),
+                getOrderCollateralType(suiClient, takerOrderId),
+              ]);
+
+              const settleTx = settleMatchTx({
+                shellPackageId: SHELL_PACKAGE_ID,
+                enclaveId: ENCLAVE_ID,
+                timestampMs: BigInt(signed.timestamp_ms),
+                maker: hexFromBytes(p.maker),
+                taker: hexFromBytes(p.taker),
+                makerOrderId,
+                takerOrderId,
+                makerCollateralType: makerT,
+                takerCollateralType: takerT,
+                filledSize: BigInt(p.filled_size),
+                filledPrice: BigInt(p.filled_price),
+                deepbookTxDigest: new Uint8Array(p.deepbook_tx_digest),
+                signature: bytesFromHex(match.signature),
+              });
+
+              await signAndExecute({ transaction: settleTx });
+            }
+          }
+        } catch (enclaveErr) {
+          // Order is on-chain regardless; enclave errors are non-fatal
+          console.error('Enclave trigger failed:', enclaveErr);
+        }
+      }
+
       setSize('');
       setLimitPrice('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Order submission failed');
     } finally {
       setIsSubmitting(false);
+      setStatus('');
     }
   }
 
@@ -153,7 +238,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         )}
       </div>
       <form className="flex flex-col gap-4 flex-1" onSubmit={handleSubmit}>
-        {/* Asset — hardcoded for testnet */}
+        {/* Asset */}
         <div className="relative group">
           <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Asset</label>
           <div className="relative">
@@ -161,7 +246,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
             <span className="absolute right-2 top-2 text-primary font-mono-sm text-[10px] pointer-events-none select-none">ENCRYPTED</span>
           </div>
         </div>
-        
+
         {/* Side */}
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -187,7 +272,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
             Sell
           </button>
         </div>
-        
+
         {/* Size */}
         <div className="relative group">
           <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Size</label>
@@ -203,7 +288,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
             <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">SUI</span>
           </div>
         </div>
-        
+
         {/* Limit Price */}
         <div className="relative group">
           <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1 flex justify-between">
@@ -222,7 +307,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
             <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">{QUOTE_SYMBOL}</span>
           </div>
         </div>
-        
+
         <div className="grid grid-cols-2 gap-4">
           {/* Expiry */}
           <div className="relative group">
@@ -253,13 +338,12 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
           </div>
         </div>
 
-        {/* Error display */}
         {error && (
           <div className="p-2 bg-error/10 border border-error/30 rounded font-mono-sm text-mono-sm text-error">
             {error}
           </div>
         )}
-        
+
         <div className="mt-auto pt-4">
           <button
             className="w-full bg-primary text-on-primary py-3 rounded font-mono-sm text-mono-sm font-bold uppercase tracking-wider hover:opacity-90 transition-opacity shadow-[0_0_8px_rgba(87,241,219,0.3)] flex justify-center items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
@@ -269,7 +353,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
             {isSubmitting ? (
               <>
                 <span className="material-symbols-outlined text-[18px] animate-spin">sync</span>
-                Encrypting & Signing...
+                {status || 'Processing...'}
               </>
             ) : !account ? (
               <>
@@ -283,9 +367,8 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
               </>
             )}
           </button>
-          {/* Collateral note */}
           <div className="mt-2 text-center font-mono-sm text-[10px] text-on-surface-variant">
-            Collateral: {side === 'buy' ? `10 ${QUOTE_SYMBOL}` : '0.01 SUI'} (testnet)
+            Collateral: {displayCollateral} (testnet)
           </div>
         </div>
       </form>
