@@ -14,7 +14,7 @@ interface NetworkConfig {
   enclaveId: string;                // shared Enclave<SHELL> object (empty if not registered)
   enclaveUrl: string;               // base URL of the matching enclave's HTTP server
   deepbookPoolKey: string;          // key used by @mysten/deepbook-v3
-  quoteCoinType: string;            // USDC or DBUSDC type tag
+  quoteCoinType: string;            // USDC / DUSDC type tag (depends on network)
   quoteCoinScalar: bigint;          // 1e6 for both
   quoteSymbol: string;              // shown in UI
   sealKeyServer: {
@@ -33,9 +33,9 @@ const TESTNET: NetworkConfig = {
   enclaveId: '0x1b18a55393efa9378c11e4eac0ad94c3ec3759f85be6c92f71a7a3b074b871e1',
   enclaveUrl: 'http://54.80.82.200:3000',
   deepbookPoolKey: 'SUI_DBUSDC',
-  quoteCoinType: '0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC',
+  quoteCoinType: '0xe95040085976bfd54a1a07225cd46c8a2b4e8e2b6732f140a0fc49850ba73e1a::dusdc::DUSDC',
   quoteCoinScalar: BigInt(1_000_000),
-  quoteSymbol: 'USDC',
+  quoteSymbol: 'DUSDC',
   sealKeyServer: {
     objectId: '0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98',
     aggregatorUrl: 'https://seal-aggregator-testnet.mystenlabs.com',
