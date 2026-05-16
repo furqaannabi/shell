@@ -1,7 +1,7 @@
 {
   "name": "@shell-finance/sdk",
-  "version": "0.0.1",
-  "description": "Client SDK for Shell Finance: Seal-encrypted order envelopes + PTB builders.",
+  "version": "0.1.0",
+  "description": "Client SDK for Shell Finance: Seal-encrypted order envelopes + PTB builders for a confidential order flow layer on DeepBook (Sui).",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,11 +13,14 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@mysten/bcs": "^2.0.5",
@@ -30,5 +33,27 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "keywords": [
+    "sui",
+    "seal",
+    "nautilus",
+    "deepbook",
+    "dark-pool",
+    "confidential-orders",
+    "shell-finance"
+  ],
+  "license": "MIT",
+  "author": "Shell Finance",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/furqaannabi/shell.git"
+  },
+  "homepage": "https://github.com/furqaannabi/shell#readme",
+  "bugs": {
+    "url": "https://github.com/furqaannabi/shell/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
