@@ -144,6 +144,11 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                           Key: {truncateHash(order.backupKey, 12)}
                         </span>
                       )}
+                      {currentEpoch !== undefined && order.expiryEpoch > currentEpoch && (
+                        <span className="text-[8px] text-secondary/70 uppercase tracking-wider animate-pulse">
+                          awaiting match
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className={`py-3 ${order.side === 'buy' ? 'text-primary' : order.side === 'sell' ? 'text-error' : 'text-on-surface-variant'}`}>

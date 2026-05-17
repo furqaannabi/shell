@@ -32,7 +32,7 @@ export default function SettlementReceipts() {
         owner: account!.address,
       }),
     enabled: !!account,
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
   });
 
   return (
