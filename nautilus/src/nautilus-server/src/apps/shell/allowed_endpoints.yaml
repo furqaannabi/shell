@@ -1,0 +1,9 @@
+# External endpoints the Shell matching enclave is allowed to call.
+# Updated to whichever network the enclave is built for.
+endpoints:
+  # Sui RPC — fetch OrderCommitment shared objects and broadcast txs.
+  - fullnode.testnet.sui.io
+  # Seal aggregator — request decryption-key shares.
+  - seal-aggregator-testnet.mystenlabs.com
+  # DeepBook indexer — query CLOB depth for fair-mid reference pricing.
+  - deepbook-indexer.testnet.mystenlabs.com
