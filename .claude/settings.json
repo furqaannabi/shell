@@ -3,6 +3,9 @@
     "allow": [
       "Bash(*)",
       "Curl(*)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\furka\\nautilus\\src\\nautilus-server"
     ]
   }
 }
