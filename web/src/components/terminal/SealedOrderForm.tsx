@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
-import { encryptOrder, submitOrderTx, getOrderCollateralType, settleMatchTx } from '@/lib/shell-sdk';
+import { encryptOrder, submitOrderTx } from '@/lib/shell-sdk';
 import type { OrderSide } from '@/lib/shell-sdk';
 import {
-  SHELL_PACKAGE_ID, QUOTE_SYMBOL, ENCLAVE_URL, ENCLAVE_ID,
+  SHELL_PACKAGE_ID, QUOTE_SYMBOL,
   collateralTypeFor, getSealClient,
 } from '@/lib/sui';
 import { friendlyError } from '@/lib/errors';
@@ -20,27 +20,13 @@ export interface SubmittedOrder {
   size: string;
   limitPrice: string;
   timestamp: number;
-  expiryEpoch: number;
-  maxSlippageBps: number;
 }
 
 interface Props {
   onOrderSubmitted: (order: SubmittedOrder) => void;
-  sessionOrders: SubmittedOrder[];
 }
 
-function hexFromBytes(arr: number[]): string {
-  return '0x' + arr.map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function bytesFromHex(hex: string): Uint8Array {
-  const s = hex.startsWith('0x') ? hex.slice(2) : hex;
-  const out = new Uint8Array(s.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
-  return out;
-}
-
-export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Props) {
+export default function SealedOrderForm({ onOrderSubmitted }: Props) {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
@@ -51,7 +37,6 @@ export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Pro
   const [slippage, setSlippage] = useState('0.5');
   const [expiry, setExpiry] = useState('5');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   // Collateral the user will escrow:
@@ -74,12 +59,10 @@ export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Pro
       const { epoch } = await suiClient.getLatestSuiSystemState();
       const expiryEpoch = BigInt(epoch) + BigInt(expiry);
 
-      // size in mist (SUI 9 decimals), price in µDUSDC (6 decimals)
       const sizeBase = BigInt(Math.round(parseFloat(size) * 1_000_000_000));
       const priceBase = BigInt(Math.round(parseFloat(limitPrice) * 1_000_000));
       const maxSlippageBps = Math.round(parseFloat(slippage) * 100);
 
-      setStatus('Encrypting...');
       const enc = await encryptOrder({
         sealClient: seal,
         shellPackageId: SHELL_PACKAGE_ID,
@@ -99,8 +82,6 @@ export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Pro
       const tx = new Transaction();
       const collateralType = collateralTypeFor(side);
       const SUI_TYPE = '0x2::sui::SUI';
-
-      // sell escrows SUI (= size), buy escrows DUSDC (= size × price / 1e9)
       const collateralAmount = side === 'sell'
         ? sizeBase
         : (sizeBase * priceBase) / BigInt(1_000_000_000);
@@ -130,7 +111,6 @@ export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Pro
         tx,
       });
 
-      setStatus('Signing...');
       const res = await signAndExecute({ transaction: tx });
 
       const txResult = await suiClient.waitForTransaction({
@@ -154,87 +134,7 @@ export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Pro
         size,
         limitPrice,
         timestamp: Date.now(),
-        expiryEpoch: Number(expiryEpoch),
-        maxSlippageBps,
       });
-
-      // ── Trigger enclave matching ─────────────────────────────────────────
-      if (orderId) {
-        setStatus('Triggering matching...');
-        try {
-          const enclaveRes = await fetch('/api/enclave/process_data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              payload: {
-                orders: [
-                  // Include all previous session orders so enclave can match across them
-                  ...sessionOrders
-                    .filter((o) => o.orderId)
-                    .map((o) => ({
-                      order_id: o.orderId!,
-                      trader: account.address,
-                      plaintext: {
-                        side: o.side,
-                        size: Math.round(parseFloat(o.size) * 1_000_000_000),
-                        limit_price: Math.round(parseFloat(o.limitPrice) * 1_000_000),
-                        expiry_epoch: o.expiryEpoch,
-                        max_slippage_bps: o.maxSlippageBps,
-                      },
-                    })),
-                  {
-                    order_id: orderId,
-                    trader: account.address,
-                    plaintext: {
-                      side,
-                      size: Number(sizeBase),
-                      limit_price: Number(priceBase),
-                      expiry_epoch: Number(expiryEpoch),
-                      max_slippage_bps: maxSlippageBps,
-                    },
-                  },
-                ],
-              },
-            }),
-          });
-
-          if (enclaveRes.ok) {
-            const signed = await enclaveRes.json();
-            for (const match of signed.matches ?? []) {
-              setStatus('Settling match...');
-              const p = match.envelope.data;
-              const makerOrderId = hexFromBytes(p.maker_order);
-              const takerOrderId = hexFromBytes(p.taker_order);
-
-              const [makerT, takerT] = await Promise.all([
-                getOrderCollateralType(suiClient, makerOrderId),
-                getOrderCollateralType(suiClient, takerOrderId),
-              ]);
-
-              const settleTx = settleMatchTx({
-                shellPackageId: SHELL_PACKAGE_ID,
-                enclaveId: ENCLAVE_ID,
-                timestampMs: BigInt(signed.timestamp_ms),
-                maker: hexFromBytes(p.maker),
-                taker: hexFromBytes(p.taker),
-                makerOrderId,
-                takerOrderId,
-                makerCollateralType: makerT,
-                takerCollateralType: takerT,
-                filledSize: BigInt(p.filled_size),
-                filledPrice: BigInt(p.filled_price),
-                deepbookTxDigest: new Uint8Array(p.deepbook_tx_digest),
-                signature: bytesFromHex(match.signature),
-              });
-
-              await signAndExecute({ transaction: settleTx });
-            }
-          }
-        } catch (enclaveErr) {
-          // Order is on-chain regardless; enclave errors are non-fatal
-          console.error('Enclave trigger failed:', enclaveErr);
-        }
-      }
 
       setSize('');
       setLimitPrice('');
@@ -242,7 +142,6 @@ export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Pro
       setError(friendlyError(err, 'Order submission failed — please try again'));
     } finally {
       setIsSubmitting(false);
-      setStatus('');
     }
   }
 
@@ -375,7 +274,7 @@ export default function SealedOrderForm({ onOrderSubmitted, sessionOrders }: Pro
             {isSubmitting ? (
               <>
                 <span className="material-symbols-outlined text-[18px] animate-spin">sync</span>
-                {status || 'Processing...'}
+                Encrypting & Signing...
               </>
             ) : !account ? (
               <>
