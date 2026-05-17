@@ -18,9 +18,7 @@ use crate::AppState;
 use crate::EnclaveError;
 use axum::extract::State;
 use axum::Json;
-use fastcrypto::aes::{AesGcm256, Cipher};
 use fastcrypto::encoding::{Base64, Encoding, Hex};
-use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::hash::{HashFunction, Sha256};
 use fastcrypto::traits::{KeyPair, Signer, ToFromBytes};
 use serde::{Deserialize, Serialize};
@@ -53,11 +51,35 @@ pub enum IntentScope {
 
 // ── Wire shapes: /process_data (now accepts order IDs only) ─────────
 
+/// Hybrid request — accepts EITHER full plaintexts (side-channel mode, used by
+/// the existing TS spike scripts) OR bare order IDs (autonomous mode, looks
+/// each up in the in-enclave decrypted order book). Side-channel mode bypasses
+/// Seal-in-Nitro decrypt entirely so the demo path keeps working while Phase
+/// 2 of the autonomous decrypt is still under construction.
 #[derive(Debug, Deserialize)]
 pub struct ShellRequest {
-    /// Order IDs to match. Enclave looks each up in its decrypted order book.
-    /// Returns empty matches for IDs not yet decrypted (caller can retry).
+    #[serde(default)]
+    pub orders: Vec<OrderInput>,
+    #[serde(default)]
     pub order_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OrderInput {
+    pub order_id: String,
+    pub trader: String,
+    pub plaintext: PlaintextInput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlaintextInput {
+    pub side: String,
+    pub size: u64,
+    pub limit_price: u64,
+    #[serde(default)]
+    pub expiry_epoch: u64,
+    #[serde(default)]
+    pub max_slippage_bps: u32,
 }
 
 #[derive(Serialize)]
@@ -118,36 +140,106 @@ pub struct ShellState {
     pub http: reqwest::Client,
 }
 
+impl ShellState {
+    pub fn new() -> Self {
+        Self {
+            order_book: Arc::new(RwLock::new(HashMap::new())),
+            http: reqwest::Client::new(),
+        }
+    }
+}
+
+impl Default for ShellState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ── Handler: /process_data ──────────────────────────────────────────
 
 pub async fn process_data(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ProcessDataRequest<ShellRequest>>,
 ) -> Result<Json<ShellResponse>, EnclaveError> {
-    // Acquire a snapshot of orders that are already decrypted
-    let book = state
-        .shell
-        .order_book
-        .read()
-        .await;
+    // ── Side-channel mode: caller ships plaintexts ──────────────────────
+    if !request.payload.orders.is_empty() {
+        let orders = decode_side_channel_orders(&request.payload.orders)?;
+        let payloads = match_orders(&orders);
+        let response = sign_envelopes(&state, payloads).await?;
+        return Ok(Json(response));
+    }
 
-    let ids: Vec<[u8; 32]> = request
+    // ── Autonomous mode: look up order_ids in the in-enclave book ──────
+    let book = state.shell.order_book.read().await;
+    let orders: Vec<DecryptedOrder> = request
         .payload
         .order_ids
         .iter()
         .filter_map(|s| parse_hex32(s).ok())
+        .filter_map(|id| book.get(&id).cloned())
         .collect();
-
-    let orders: Vec<DecryptedOrder> = ids
-        .iter()
-        .filter_map(|id| book.get(id).cloned())
-        .collect();
-
     drop(book);
 
     let payloads = match_orders(&orders);
     let response = sign_and_settle(&state, payloads).await?;
     Ok(Json(response))
+}
+
+fn decode_side_channel_orders(input: &[OrderInput]) -> Result<Vec<DecryptedOrder>, EnclaveError> {
+    input
+        .iter()
+        .map(|o| {
+            let side = match o.plaintext.side.as_str() {
+                "buy" => Side::Buy,
+                "sell" => Side::Sell,
+                other => return Err(EnclaveError::GenericError(format!("bad side: {other}"))),
+            };
+            Ok(DecryptedOrder {
+                order_id: parse_hex32(&o.order_id)?,
+                trader: parse_hex32(&o.trader)?,
+                side,
+                size: o.plaintext.size,
+                limit_price: o.plaintext.limit_price,
+                expiry_epoch: o.plaintext.expiry_epoch,
+                // Caller orchestrates settle in side-channel mode; collateral
+                // type is recovered from the on-chain OrderCommitment<T> tag
+                // by the spike script itself, not by us.
+                collateral_type: "0x2::sui::SUI".to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Sign each match payload without attempting auto-settle. Used by the
+/// side-channel handler — caller submits the settlement PTB themselves.
+async fn sign_envelopes(
+    state: &Arc<AppState>,
+    payloads: Vec<MatchPayload>,
+) -> Result<ShellResponse, EnclaveError> {
+    let timestamp_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| EnclaveError::GenericError(format!("clock: {e}")))?
+        .as_millis() as u64;
+    let intent = IntentScope::ProcessData as u8;
+
+    let mut matches = Vec::with_capacity(payloads.len());
+    for payload in payloads {
+        let envelope = IntentMessage::new(payload, timestamp_ms, intent);
+        let bytes = bcs::to_bytes(&envelope)
+            .map_err(|e| EnclaveError::GenericError(format!("bcs: {e}")))?;
+        let sig = state.eph_kp.sign(&bytes);
+        matches.push(SignedMatch {
+            envelope,
+            signature: Hex::encode(sig.as_bytes()),
+        });
+    }
+
+    Ok(ShellResponse {
+        enclave_pubkey: Hex::encode(state.eph_kp.public().as_bytes()),
+        intent,
+        timestamp_ms,
+        matches,
+    })
 }
 
 // ── Autonomous poller ───────────────────────────────────────────────
@@ -350,15 +442,16 @@ async fn decrypt_order(
     let seal_id: [u8; 32] = envelope_bytes[..32].try_into().unwrap();
     let ciphertext = &envelope_bytes[32..];
 
-    // Fetch Seal IBE key shares and combine into a symmetric key
-    let symmetric_key = fetch_seal_key(state, http, &seal_id).await?;
-
-    // AES-GCM-256 decrypt
-    let aes = AesGcm256::new(&symmetric_key)
-        .map_err(|e| EnclaveError::GenericError(format!("aes init: {e}")))?;
-    let plaintext_bytes = aes
-        .decrypt(ciphertext)
-        .map_err(|e| EnclaveError::GenericError(format!("aes decrypt: {e}")))?;
+    // PHASE 2 TODO: real Seal-in-Nitro decrypt — use seal_sdk::seal_decrypt_object
+    // with cached IBE keys (see apps/seal-example/endpoints.rs pattern). Until then,
+    // surface a clean error so /process_data + the poller fail loudly instead of
+    // silently signing matches over fake data.
+    let _ = (state, http, seal_id, ciphertext);
+    return Err(EnclaveError::GenericError(
+        "Seal-in-Nitro decrypt not yet implemented (Phase 2)".into(),
+    ));
+    #[allow(unreachable_code)]
+    let plaintext_bytes: Vec<u8> = Vec::new();
 
     // Verify SHA-256(plaintext) == commit_hash
     let digest = Sha256::digest(&plaintext_bytes);
