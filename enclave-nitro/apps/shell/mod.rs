@@ -18,14 +18,28 @@ use crate::AppState;
 use crate::EnclaveError;
 use axum::extract::State;
 use axum::Json;
+use fastcrypto::ed25519::Ed25519KeyPair;
 use fastcrypto::encoding::{Base64, Encoding, Hex};
 use fastcrypto::hash::{HashFunction, Sha256};
 use fastcrypto::traits::{KeyPair, Signer, ToFromBytes};
+use rand::thread_rng;
+use seal_sdk::types::{ElGamalPublicKey, ElgamalVerificationKey, FetchKeyRequest, FetchKeyResponse};
+use seal_sdk::{
+    decrypt_seal_responses, genkey, seal_decrypt_object, signed_message, signed_request,
+    Certificate, ElGamalSecretKey, EncryptedObject, IBEPublicKey,
+};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use sui_crypto::ed25519::Ed25519PrivateKey;
+use sui_crypto::SuiSigner;
+use sui_sdk_types::{
+    Address, Argument, Command, Identifier, Input, MoveCall, PersonalMessage,
+    ProgrammableTransaction,
+};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 
@@ -35,12 +49,31 @@ const SHELL_PACKAGE_ID: &str =
 const ENCLAVE_CONFIG_ID: &str =
     "0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f";
 const ENCLAVE_ID: &str =
-    "0x1b18a55393efa9378c11e4eac0ad94c3ec3759f85be6c92f71a7a3b074b871e1";
+    "0x8a1f40fed530cc486b3fb555806eb25c546da8ffb327f7b9c7306db019106796";
+const SEAL_TESTNET_KEY_SERVER: &str =
+    "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98";
 const SUI_FULLNODE: &str = "https://fullnode.testnet.sui.io";
 const SEAL_AGGREGATOR: &str = "https://seal-aggregator-testnet.mystenlabs.com";
 const ORDER_SUBMITTED_EVENT: &str =
     "0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd::pool::OrderSubmitted";
 const POLL_INTERVAL_SECS: u64 = 5;
+const SEAL_CERT_TTL_MIN: u16 = 30;
+
+// ── Seal-in-Nitro persistent state ───────────────────────────────────
+// ElGamal keypair generated once at enclave boot, used to receive
+// per-order IBE shares from the Seal key server. Static so the
+// pubkey is stable across requests.
+//
+// SERVER_PK_MAP is filled lazily on the first decrypt; it holds the
+// key server's IBE public key fetched from on-chain so we can verify
+// the share decryption.
+lazy_static::lazy_static! {
+    static ref ENCRYPTION_KEYS: (ElGamalSecretKey, ElGamalPublicKey, ElgamalVerificationKey) = {
+        genkey(&mut thread_rng())
+    };
+    static ref SERVER_PK_MAP: std::sync::RwLock<HashMap<Address, IBEPublicKey>> =
+        std::sync::RwLock::new(HashMap::new());
+}
 
 // ── Intent scope ────────────────────────────────────────────────────
 #[derive(Serialize_repr, Deserialize_repr, Debug)]
@@ -269,7 +302,7 @@ async fn poll_once(
     // ── Fetch current epoch for expiry pruning ──────────────────────
     let sys_state = sui_rpc(
         http,
-        "sui_getLatestSuiSystemState",
+        "suix_getLatestSuiSystemState",
         serde_json::json!([]),
     )
     .await?;
@@ -279,11 +312,12 @@ async fn poll_once(
         .unwrap_or(0);
 
     // ── Query new OrderSubmitted events ─────────────────────────────
+    // queryEvents signature: (query, cursor, limit, descending_order: bool)
     let query_params = serde_json::json!([
         { "MoveEventType": ORDER_SUBMITTED_EVENT },
         cursor,
         50,
-        "ascending"
+        false
     ]);
     let result = sui_rpc(http, "suix_queryEvents", query_params).await?;
 
@@ -376,6 +410,30 @@ async fn poll_once(
 
 // ── Seal decryption ─────────────────────────────────────────────────
 
+/// Parse a Move `vector<u8>` field from a Sui RPC `content.fields` blob.
+/// Returns lowercase hex (no `0x` prefix). Accepts either:
+///   - a JSON string (already hex), or
+///   - a JSON array of numbers (raw bytes).
+fn parse_bytes_field(v: &serde_json::Value, name: &str) -> Result<String, EnclaveError> {
+    if let Some(s) = v.as_str() {
+        return Ok(s.strip_prefix("0x").unwrap_or(s).to_string());
+    }
+    if let Some(arr) = v.as_array() {
+        let mut bytes: Vec<u8> = Vec::with_capacity(arr.len());
+        for n in arr {
+            let b = n
+                .as_u64()
+                .ok_or_else(|| EnclaveError::GenericError(format!("{name}: non-numeric byte")))?;
+            if b > 255 {
+                return Err(EnclaveError::GenericError(format!("{name}: byte > 255")));
+            }
+            bytes.push(b as u8);
+        }
+        return Ok(Hex::encode(bytes));
+    }
+    Err(EnclaveError::GenericError(format!("missing {name}")))
+}
+
 struct CommitmentFields {
     sealed_envelope: String, // hex
     commit_hash: String,     // hex
@@ -394,14 +452,8 @@ async fn fetch_order_commitment(
     .await?;
 
     let content = &result["data"]["content"]["fields"];
-    let sealed_envelope = content["sealed_envelope"]
-        .as_str()
-        .ok_or_else(|| EnclaveError::GenericError("missing sealed_envelope".into()))?
-        .to_string();
-    let commit_hash = content["commit_hash"]
-        .as_str()
-        .ok_or_else(|| EnclaveError::GenericError("missing commit_hash".into()))?
-        .to_string();
+    let sealed_envelope = parse_bytes_field(&content["sealed_envelope"], "sealed_envelope")?;
+    let commit_hash = parse_bytes_field(&content["commit_hash"], "commit_hash")?;
 
     // Extract collateral type T from OrderCommitment<T> type tag
     let type_tag = result["data"]["type"]
@@ -440,18 +492,113 @@ async fn decrypt_order(
 
     // First 32 bytes = Seal IBE identity (nonce chosen by the client during encryptOrder)
     let seal_id: [u8; 32] = envelope_bytes[..32].try_into().unwrap();
-    let ciphertext = &envelope_bytes[32..];
+    let raw_seal_bytes = &envelope_bytes[32..];
 
-    // PHASE 2 TODO: real Seal-in-Nitro decrypt — use seal_sdk::seal_decrypt_object
-    // with cached IBE keys (see apps/seal-example/endpoints.rs pattern). Until then,
-    // surface a clean error so /process_data + the poller fail loudly instead of
-    // silently signing matches over fake data.
-    let _ = (state, http, seal_id, ciphertext);
-    return Err(EnclaveError::GenericError(
-        "Seal-in-Nitro decrypt not yet implemented (Phase 2)".into(),
-    ));
-    #[allow(unreachable_code)]
-    let plaintext_bytes: Vec<u8> = Vec::new();
+    // BCS-decode the EncryptedObject the trader's SDK produced.
+    let encrypted_object: EncryptedObject = bcs::from_bytes(raw_seal_bytes)
+        .map_err(|e| EnclaveError::GenericError(format!("EncryptedObject decode: {e}")))?;
+
+    // Ensure we have the Seal key server's IBE pubkey cached.
+    ensure_server_pubkey(http).await?;
+
+    // Build PTB: shell::shell::seal_approve(id, &Enclave<SHELL>, ctx)
+    let enclave_shared_version = fetch_initial_shared_version(http, ENCLAVE_ID).await?;
+    let ptb = build_seal_approve_ptb(&seal_id, enclave_shared_version)?;
+
+    // Per-request session keypair (TS SDK calls these "session keys").
+    let session_kp = Ed25519KeyPair::generate(&mut thread_rng());
+    let session_vk = session_kp.public().clone();
+    let creation_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| EnclaveError::GenericError(format!("clock: {e}")))?
+        .as_millis() as u64;
+
+    // The enclave's signing key doubles as its Sui wallet. seal_approve
+    // checks ctx.sender() == enclave_address(enclave) — so the cert user
+    // must be the same address derived from this keypair.
+    // `.private()` consumes, but state.eph_kp lives in an Arc. `.copy()` from
+    // the KeyPair trait clones it; then we take the secret bytes off the copy.
+    let secret_bytes: [u8; 32] = state
+        .eph_kp
+        .copy()
+        .private()
+        .as_ref()
+        .try_into()
+        .map_err(|_| EnclaveError::GenericError("eph_kp secret wrong size".into()))?;
+    let wallet = Ed25519PrivateKey::new(secret_bytes);
+
+    let message = signed_message(
+        SHELL_PACKAGE_ID.to_string(),
+        &session_vk,
+        creation_time,
+        SEAL_CERT_TTL_MIN,
+    );
+    let signature = wallet
+        .sign_personal_message(&PersonalMessage(message.as_bytes().into()))
+        .map_err(|e| EnclaveError::GenericError(format!("sign cert: {e}")))?;
+
+    let certificate = Certificate {
+        user: wallet.public_key().derive_address(),
+        session_vk,
+        creation_time,
+        ttl_min: SEAL_CERT_TTL_MIN,
+        signature,
+        mvr_name: None,
+    };
+
+    let (enc_secret, enc_key, enc_verification_key) = &*ENCRYPTION_KEYS;
+
+    let request_message = signed_request(&ptb, enc_key, enc_verification_key);
+    let request_signature = session_kp.sign(&request_message);
+
+    let fetch_request = FetchKeyRequest {
+        ptb: Base64::encode(
+            bcs::to_bytes(&ptb)
+                .map_err(|e| EnclaveError::GenericError(format!("ptb bcs: {e}")))?,
+        ),
+        enc_key: enc_key.clone(),
+        enc_verification_key: enc_verification_key.clone(),
+        request_signature,
+        certificate,
+    };
+
+    let body = fetch_request
+        .to_json_string()
+        .map_err(|e| EnclaveError::GenericError(format!("request json: {e}")))?;
+
+    let resp = http
+        .post(format!("{SEAL_AGGREGATOR}/v1/fetch_key"))
+        .header("Content-Type", "application/json")
+        .header("Client-Sdk-Type", "rust")
+        .header("Client-Sdk-Version", "0.1.0")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| EnclaveError::GenericError(format!("fetch_key http: {e}")))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(EnclaveError::GenericError(format!(
+            "fetch_key {status}: {text}"
+        )));
+    }
+
+    let fetch_response: FetchKeyResponse = resp
+        .json()
+        .await
+        .map_err(|e| EnclaveError::GenericError(format!("fetch_key parse: {e}")))?;
+
+    let server_id = Address::from_str(SEAL_TESTNET_KEY_SERVER)
+        .map_err(|e| EnclaveError::GenericError(format!("server id: {e}")))?;
+
+    let server_pk_map = SERVER_PK_MAP.read().unwrap().clone();
+    let cached_keys =
+        decrypt_seal_responses(enc_secret, &[(server_id, fetch_response)], &server_pk_map)
+            .map_err(|e| EnclaveError::GenericError(format!("decrypt responses: {e}")))?;
+
+    let plaintext_bytes = seal_decrypt_object(&encrypted_object, &cached_keys, &server_pk_map)
+        .map_err(|e| EnclaveError::GenericError(format!("seal_decrypt: {e}")))?;
 
     // Verify SHA-256(plaintext) == commit_hash
     let digest = Sha256::digest(&plaintext_bytes);
@@ -561,6 +708,8 @@ async fn fetch_seal_key(
 
     let resp = http
         .post(format!("{SEAL_AGGREGATOR}/v1/fetch_key"))
+        .header("Client-Sdk-Type", "rust")
+        .header("Client-Sdk-Version", "0.1.0")
         .json(&body)
         .send()
         .await
@@ -811,6 +960,128 @@ async fn sui_rpc(
     }
 
     Ok(resp["result"].clone())
+}
+
+/// Construct the PTB the Seal aggregator dry-runs to authorise key release:
+/// `shell::shell::seal_approve(id, &Enclave<SHELL>, ctx)`.
+fn build_seal_approve_ptb(
+    seal_id: &[u8; 32],
+    enclave_shared_version: u64,
+) -> Result<ProgrammableTransaction, EnclaveError> {
+    let pkg = Address::from_str(SHELL_PACKAGE_ID)
+        .map_err(|e| EnclaveError::GenericError(format!("pkg id: {e}")))?;
+    let enclave_obj = Address::from_str(ENCLAVE_ID)
+        .map_err(|e| EnclaveError::GenericError(format!("enclave id: {e}")))?;
+
+    let id_input = Input::Pure {
+        value: bcs::to_bytes(&seal_id.to_vec())
+            .map_err(|e| EnclaveError::GenericError(format!("id bcs: {e}")))?,
+    };
+    let enclave_input = Input::Shared {
+        object_id: enclave_obj,
+        initial_shared_version: enclave_shared_version,
+        mutable: false,
+    };
+
+    let module = Identifier::new("shell")
+        .map_err(|e| EnclaveError::GenericError(format!("module ident: {e}")))?;
+    let function = Identifier::new("seal_approve")
+        .map_err(|e| EnclaveError::GenericError(format!("function ident: {e}")))?;
+
+    let move_call = MoveCall {
+        package: pkg,
+        module,
+        function,
+        type_arguments: vec![],
+        arguments: vec![Argument::Input(0), Argument::Input(1)],
+    };
+
+    Ok(ProgrammableTransaction {
+        inputs: vec![id_input, enclave_input],
+        commands: vec![Command::MoveCall(move_call)],
+    })
+}
+
+/// Fetch a shared object's `initial_shared_version` from Sui RPC. Required
+/// to build a PTB that passes the shared object as an input.
+async fn fetch_initial_shared_version(
+    http: &reqwest::Client,
+    object_id: &str,
+) -> Result<u64, EnclaveError> {
+    let result = sui_rpc(
+        http,
+        "sui_getObject",
+        serde_json::json!([object_id, { "showOwner": true }]),
+    )
+    .await?;
+
+    let raw = &result["data"]["owner"]["Shared"]["initial_shared_version"];
+    let v = raw
+        .as_u64()
+        .or_else(|| raw.as_str().and_then(|s| s.parse().ok()))
+        .ok_or_else(|| {
+            EnclaveError::GenericError(format!(
+                "initial_shared_version not found for {object_id}"
+            ))
+        })?;
+    Ok(v)
+}
+
+/// Idempotent: fetches and caches the Seal key server's IBE public key from
+/// its on-chain KeyServer object. Needed by `decrypt_seal_responses` and
+/// `seal_decrypt_object` to verify per-server shares.
+async fn ensure_server_pubkey(http: &reqwest::Client) -> Result<(), EnclaveError> {
+    if !SERVER_PK_MAP.read().unwrap().is_empty() {
+        return Ok(());
+    }
+
+    // Parent KeyServer object only carries `first_version` / `last_version`.
+    // The actual per-version `KeyServerVN { pk, .. }` lives in a dynamic field
+    // keyed by `u64` (the version). Walk dynamic fields → pick the one whose
+    // objectType matches `key_server::KeyServerV*`, then read its `pk`.
+    let dyn_fields = sui_rpc(
+        http,
+        "suix_getDynamicFields",
+        serde_json::json!([SEAL_TESTNET_KEY_SERVER]),
+    )
+    .await?;
+
+    let entries = dyn_fields["data"]
+        .as_array()
+        .ok_or_else(|| EnclaveError::GenericError("KeyServer dyn fields: no data".into()))?;
+    let child_id = entries
+        .iter()
+        .find(|f| {
+            f["objectType"]
+                .as_str()
+                .map(|t| t.contains("::key_server::KeyServerV"))
+                .unwrap_or(false)
+        })
+        .and_then(|f| f["objectId"].as_str())
+        .ok_or_else(|| EnclaveError::GenericError("KeyServer: no KeyServerV* child".into()))?
+        .to_string();
+
+    let child = sui_rpc(
+        http,
+        "sui_getObject",
+        serde_json::json!([child_id, { "showContent": true }]),
+    )
+    .await?;
+
+    let pk_hex = parse_bytes_field(
+        &child["data"]["content"]["fields"]["value"]["fields"]["pk"],
+        "KeyServerV*.pk",
+    )?;
+    let pk_bytes = Hex::decode(&pk_hex)
+        .map_err(|e| EnclaveError::GenericError(format!("KeyServer pk hex: {e}")))?;
+    let pk: IBEPublicKey = bcs::from_bytes(&pk_bytes)
+        .map_err(|e| EnclaveError::GenericError(format!("KeyServer pk bcs: {e}")))?;
+
+    let server_id = Address::from_str(SEAL_TESTNET_KEY_SERVER)
+        .map_err(|e| EnclaveError::GenericError(format!("server id: {e}")))?;
+
+    SERVER_PK_MAP.write().unwrap().insert(server_id, pk);
+    Ok(())
 }
 
 fn enclave_sui_address(state: &AppState) -> String {
