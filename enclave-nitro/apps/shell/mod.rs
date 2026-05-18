@@ -49,7 +49,7 @@ const SHELL_PACKAGE_ID: &str =
 const ENCLAVE_CONFIG_ID: &str =
     "0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f";
 const ENCLAVE_ID: &str =
-    "0x8a1f40fed530cc486b3fb555806eb25c546da8ffb327f7b9c7306db019106796";
+    "0xd23f96fa99218490f86724acd1d0059b9adb5f73701630cabe0d741191309745";
 const SEAL_TESTNET_KEY_SERVER: &str =
     "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98";
 const SUI_FULLNODE: &str = "https://fullnode.testnet.sui.io";

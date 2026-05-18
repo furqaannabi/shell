@@ -3,7 +3,11 @@
 
 use anyhow::Result;
 use axum::{routing::get, routing::post, Router};
-use fastcrypto::{ed25519::Ed25519KeyPair, traits::KeyPair};
+use fastcrypto::{
+    ed25519::Ed25519KeyPair,
+    encoding::{Encoding, Hex},
+    traits::{KeyPair, ToFromBytes},
+};
 use nautilus_server::app::process_data;
 use nautilus_server::common::{get_attestation, health_check};
 use nautilus_server::AppState;
@@ -13,7 +17,30 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let eph_kp = Ed25519KeyPair::generate(&mut rand::thread_rng());
+    // Derive eph_kp from `ENCLAVE_KEY_SEED` (32-byte hex, pushed via the
+    // host secrets blob) so the enclave's signing identity survives
+    // reboots and the on-chain `Enclave<T>` registration stays valid. Falls
+    // back to a fresh random keypair when the seed is unset, preserving the
+    // original demo-app behavior.
+    let eph_kp = match std::env::var("ENCLAVE_KEY_SEED") {
+        Ok(hex) => {
+            let bytes = Hex::decode(hex.strip_prefix("0x").unwrap_or(&hex))
+                .map_err(|e| anyhow::anyhow!("ENCLAVE_KEY_SEED hex decode: {e}"))?;
+            if bytes.len() != 32 {
+                return Err(anyhow::anyhow!(
+                    "ENCLAVE_KEY_SEED must be 32 bytes, got {}",
+                    bytes.len()
+                ));
+            }
+            Ed25519KeyPair::from_bytes(&bytes)
+                .map_err(|e| anyhow::anyhow!("ENCLAVE_KEY_SEED → keypair: {e}"))?
+        }
+        Err(_) => Ed25519KeyPair::generate(&mut rand::thread_rng()),
+    };
+    info!(
+        "enclave pubkey: 0x{}",
+        Hex::encode(eph_kp.public().as_bytes())
+    );
 
     // This API_KEY value can be stored with secret-manager. To do that, follow the prompt `sh configure_enclave.sh`
     // Answer `y` to `Do you want to use a secret?` and finish. Otherwise, uncomment this code to use a hardcoded value.
