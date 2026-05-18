@@ -37,8 +37,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use sui_crypto::ed25519::Ed25519PrivateKey;
 use sui_crypto::SuiSigner;
 use sui_sdk_types::{
-    Address, Argument, Command, Identifier, Input, MoveCall, PersonalMessage,
-    ProgrammableTransaction,
+    Address, Argument, Command, Digest, GasPayment, Identifier, Input, MoveCall,
+    ObjectReference, PersonalMessage, ProgrammableTransaction, Transaction,
+    TransactionExpiration, TransactionKind, TypeTag,
 };
 use tokio::sync::RwLock;
 use tokio::time::sleep;
@@ -823,7 +824,7 @@ async fn submit_settlement(
 ) -> Result<(), EnclaveError> {
     let http = &state.shell.http;
 
-    // Look up collateral types from order book (still present at call site)
+    // 1. Resolve collateral types from the local order book.
     let book = state.shell.order_book.read().await;
     let maker_type = book
         .get(&payload.maker_order)
@@ -835,87 +836,84 @@ async fn submit_settlement(
         .ok_or_else(|| EnclaveError::GenericError("taker order not in book".into()))?;
     drop(book);
 
-    let enclave_addr = enclave_sui_address(state);
     let maker_order_hex = format!("0x{}", Hex::encode(&payload.maker_order));
     let taker_order_hex = format!("0x{}", Hex::encode(&payload.taker_order));
-    let maker_hex = format!("0x{}", Hex::encode(&payload.maker));
-    let taker_hex = format!("0x{}", Hex::encode(&payload.taker));
     let sig_bytes: Vec<u8> = Hex::decode(sig_hex)
         .map_err(|e| EnclaveError::GenericError(format!("sig hex: {e}")))?;
 
-    // Build PTB: attestation::verify → settlement::settle<MakerT, TakerT>
-    let ptb = serde_json::json!({
-        "version": 2,
-        "sender": enclave_addr,
-        "gasData": { "budget": "50000000", "owner": enclave_addr, "payment": [], "price": "1000" },
-        "inputs": [
-            { "type": "object", "objectType": "sharedObject", "objectId": ENCLAVE_ID,
-              "initialSharedVersion": "1", "mutable": false },
-            { "type": "pure", "valueType": "u64", "value": timestamp_ms.to_string() },
-            { "type": "pure", "valueType": "address", "value": maker_hex },
-            { "type": "pure", "valueType": "address", "value": taker_hex },
-            { "type": "pure", "valueType": "address", "value": maker_order_hex },
-            { "type": "pure", "valueType": "address", "value": taker_order_hex },
-            { "type": "pure", "valueType": "u64", "value": payload.filled_size.to_string() },
-            { "type": "pure", "valueType": "u64", "value": payload.filled_price.to_string() },
-            { "type": "pure", "valueType": "vector<u8>", "value": payload.deepbook_tx_digest },
-            { "type": "pure", "valueType": "vector<u8>", "value": sig_bytes },
-            { "type": "object", "objectType": "sharedObject", "objectId": maker_order_hex,
-              "initialSharedVersion": "1", "mutable": true },
-            { "type": "object", "objectType": "sharedObject", "objectId": taker_order_hex,
-              "initialSharedVersion": "1", "mutable": true },
-        ],
-        "commands": [
-            {
-                "MoveCall": {
-                    "package": SHELL_PACKAGE_ID,
-                    "module": "attestation",
-                    "function": "verify",
-                    "typeArguments": [],
-                    "arguments": [
-                        {"Input":0},{"Input":1},{"Input":2},{"Input":3},
-                        {"Input":4},{"Input":5},{"Input":6},{"Input":7},
-                        {"Input":8},{"Input":9}
-                    ]
-                }
-            },
-            {
-                "MoveCall": {
-                    "package": SHELL_PACKAGE_ID,
-                    "module": "settlement",
-                    "function": "settle",
-                    "typeArguments": [maker_type, taker_type],
-                    "arguments": [
-                        {"Result":0},{"Input":10},{"Input":11}
-                    ]
-                }
-            }
-        ]
-    });
+    // 2. Sender = the enclave's own Sui address (derived from eph_kp).
+    let enclave_addr_str = enclave_sui_address(state);
+    let sender = Address::from_str(&enclave_addr_str)
+        .map_err(|e| EnclaveError::GenericError(format!("sender addr: {e}")))?;
 
-    let ptb_bytes = serde_json::to_vec(&ptb)
-        .map_err(|e| EnclaveError::GenericError(format!("ptb serialise: {e}")))?;
-    let sig = state.eph_kp.sign(&ptb_bytes);
-    let tx_sig = format!(
-        "0x{}{}{}",
-        "00", // Ed25519 flag
-        Hex::encode(sig.as_bytes()),
-        Hex::encode(state.eph_kp.public().as_bytes()),
-    );
+    // 3. Look up the initial_shared_version for every shared input.
+    let enclave_isv = fetch_initial_shared_version(http, ENCLAVE_ID).await?;
+    let maker_isv = fetch_initial_shared_version(http, &maker_order_hex).await?;
+    let taker_isv = fetch_initial_shared_version(http, &taker_order_hex).await?;
+
+    // 4. Build the ProgrammableTransaction.
+    let ptb = build_settle_ptb(
+        enclave_isv,
+        maker_isv,
+        taker_isv,
+        timestamp_ms,
+        payload,
+        &sig_bytes,
+        &maker_type,
+        &taker_type,
+        &maker_order_hex,
+        &taker_order_hex,
+    )?;
+
+    // 5. Fetch a gas coin owned by the enclave + current RGP.
+    let gas_ref = fetch_gas_coin(http, &enclave_addr_str).await?;
+    let rgp = fetch_reference_gas_price(http).await?;
+
+    // 6. Assemble the Transaction.
+    let tx = Transaction {
+        kind: TransactionKind::ProgrammableTransaction(ptb),
+        sender,
+        gas_payment: GasPayment {
+            objects: vec![gas_ref],
+            owner: sender,
+            price: rgp,
+            budget: 50_000_000,
+        },
+        expiration: TransactionExpiration::None,
+    };
+
+    // 7. Sign — SuiSigner handles the IntentMessage wrapping + blake2b hash.
+    let secret_bytes: [u8; 32] = state
+        .eph_kp
+        .copy()
+        .private()
+        .as_ref()
+        .try_into()
+        .map_err(|_| EnclaveError::GenericError("eph_kp secret wrong size".into()))?;
+    let wallet = Ed25519PrivateKey::new(secret_bytes);
+    let user_sig = wallet
+        .sign_transaction(&tx)
+        .map_err(|e| EnclaveError::GenericError(format!("sign tx: {e}")))?;
+
+    // 8. BCS-serialize the transaction and submit.
+    let tx_bytes = bcs::to_bytes(&tx)
+        .map_err(|e| EnclaveError::GenericError(format!("tx bcs: {e}")))?;
 
     let result = sui_rpc(
         http,
         "sui_executeTransactionBlock",
         serde_json::json!([
-            Base64::encode(&ptb_bytes),
-            [tx_sig],
+            Base64::encode(&tx_bytes),
+            [user_sig.to_base64()],
             { "showEffects": true },
             "WaitForLocalExecution"
         ]),
     )
     .await?;
 
-    let status = result["effects"]["status"]["status"].as_str().unwrap_or("unknown");
+    let status = result["effects"]["status"]["status"]
+        .as_str()
+        .unwrap_or("unknown");
     if status != "success" {
         return Err(EnclaveError::GenericError(format!(
             "settlement tx status: {status} — {}",
@@ -929,6 +927,145 @@ async fn submit_settlement(
     );
 
     Ok(())
+}
+
+fn pure_bcs<T: ?Sized + serde::Serialize>(
+    v: &T,
+    label: &str,
+) -> Result<Input, EnclaveError> {
+    let bytes = bcs::to_bytes(v)
+        .map_err(|e| EnclaveError::GenericError(format!("{label} bcs: {e}")))?;
+    Ok(Input::Pure { value: bytes })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_settle_ptb(
+    enclave_isv: u64,
+    maker_isv: u64,
+    taker_isv: u64,
+    timestamp_ms: u64,
+    payload: &MatchPayload,
+    signature: &[u8],
+    maker_type: &str,
+    taker_type: &str,
+    maker_order_hex: &str,
+    taker_order_hex: &str,
+) -> Result<ProgrammableTransaction, EnclaveError> {
+    let pkg = Address::from_str(SHELL_PACKAGE_ID)
+        .map_err(|e| EnclaveError::GenericError(format!("pkg id: {e}")))?;
+    let enclave_obj = Address::from_str(ENCLAVE_ID)
+        .map_err(|e| EnclaveError::GenericError(format!("enclave id: {e}")))?;
+    let maker_obj = Address::from_str(maker_order_hex)
+        .map_err(|e| EnclaveError::GenericError(format!("maker obj id: {e}")))?;
+    let taker_obj = Address::from_str(taker_order_hex)
+        .map_err(|e| EnclaveError::GenericError(format!("taker obj id: {e}")))?;
+    let maker_addr = Address::new(payload.maker);
+    let taker_addr = Address::new(payload.taker);
+
+    let inputs = vec![
+        Input::Shared {
+            object_id: enclave_obj,
+            initial_shared_version: enclave_isv,
+            mutable: false,
+        },
+        pure_bcs(&timestamp_ms, "timestamp_ms")?,
+        pure_bcs(&maker_addr, "maker")?,
+        pure_bcs(&taker_addr, "taker")?,
+        pure_bcs(&maker_obj, "maker_order_id")?,
+        pure_bcs(&taker_obj, "taker_order_id")?,
+        pure_bcs(&payload.filled_size, "filled_size")?,
+        pure_bcs(&payload.filled_price, "filled_price")?,
+        pure_bcs(&payload.deepbook_tx_digest, "deepbook_tx_digest")?,
+        pure_bcs(&signature.to_vec(), "signature")?,
+        Input::Shared {
+            object_id: maker_obj,
+            initial_shared_version: maker_isv,
+            mutable: true,
+        },
+        Input::Shared {
+            object_id: taker_obj,
+            initial_shared_version: taker_isv,
+            mutable: true,
+        },
+    ];
+
+    let verify_call = MoveCall {
+        package: pkg,
+        module: Identifier::new("attestation")
+            .map_err(|e| EnclaveError::GenericError(format!("module: {e}")))?,
+        function: Identifier::new("verify")
+            .map_err(|e| EnclaveError::GenericError(format!("function: {e}")))?,
+        type_arguments: vec![],
+        arguments: (0..10).map(Argument::Input).collect(),
+    };
+    let settle_call = MoveCall {
+        package: pkg,
+        module: Identifier::new("settlement")
+            .map_err(|e| EnclaveError::GenericError(format!("module: {e}")))?,
+        function: Identifier::new("settle")
+            .map_err(|e| EnclaveError::GenericError(format!("function: {e}")))?,
+        type_arguments: vec![
+            TypeTag::from_str(maker_type)
+                .map_err(|e| EnclaveError::GenericError(format!("maker_type: {e}")))?,
+            TypeTag::from_str(taker_type)
+                .map_err(|e| EnclaveError::GenericError(format!("taker_type: {e}")))?,
+        ],
+        arguments: vec![
+            Argument::Result(0),
+            Argument::Input(10),
+            Argument::Input(11),
+        ],
+    };
+
+    Ok(ProgrammableTransaction {
+        inputs,
+        commands: vec![
+            Command::MoveCall(verify_call),
+            Command::MoveCall(settle_call),
+        ],
+    })
+}
+
+async fn fetch_gas_coin(
+    http: &reqwest::Client,
+    owner: &str,
+) -> Result<ObjectReference, EnclaveError> {
+    let result = sui_rpc(
+        http,
+        "suix_getCoins",
+        serde_json::json!([owner, "0x2::sui::SUI", null, 1]),
+    )
+    .await?;
+    let coin = result["data"]
+        .as_array()
+        .and_then(|a| a.first())
+        .ok_or_else(|| EnclaveError::GenericError(format!("no SUI coins for {owner}")))?;
+    let id = coin["coinObjectId"]
+        .as_str()
+        .ok_or_else(|| EnclaveError::GenericError("coin: missing coinObjectId".into()))?;
+    let version_str = coin["version"]
+        .as_str()
+        .ok_or_else(|| EnclaveError::GenericError("coin: missing version".into()))?;
+    let digest_b58 = coin["digest"]
+        .as_str()
+        .ok_or_else(|| EnclaveError::GenericError("coin: missing digest".into()))?;
+    let version: u64 = version_str
+        .parse()
+        .map_err(|e| EnclaveError::GenericError(format!("coin version: {e}")))?;
+    let object_id = Address::from_str(id)
+        .map_err(|e| EnclaveError::GenericError(format!("coin id: {e}")))?;
+    let digest = Digest::from_base58(digest_b58)
+        .map_err(|e| EnclaveError::GenericError(format!("coin digest: {e}")))?;
+    Ok(ObjectReference::new(object_id, version, digest))
+}
+
+async fn fetch_reference_gas_price(http: &reqwest::Client) -> Result<u64, EnclaveError> {
+    let result = sui_rpc(http, "suix_getReferenceGasPrice", serde_json::json!([])).await?;
+    result
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .or_else(|| result.as_u64())
+        .ok_or_else(|| EnclaveError::GenericError("rgp: missing".into()))
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
