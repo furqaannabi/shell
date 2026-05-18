@@ -26,11 +26,14 @@ export default function SettlementReceipts() {
 
   const { data: receipts, isLoading } = useQuery({
     queryKey: ['settlement-receipts', account?.address],
-    queryFn: () =>
-      getReceipts(suiClient, {
+    queryFn: async () => {
+      const receipts = await getReceipts(suiClient, {
         shellPackageId: SHELL_PACKAGE_ID,
         owner: account!.address,
-      }),
+      });
+      // Sort newest-first by objectId (Sui IDs embed tx digest — higher = newer)
+      return receipts.sort((a, b) => b.objectId.localeCompare(a.objectId));
+    },
     enabled: !!account,
     refetchInterval: 5_000,
   });
