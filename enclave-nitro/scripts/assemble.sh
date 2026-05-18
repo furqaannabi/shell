@@ -16,6 +16,7 @@ NAUTILUS_REPO="https://github.com/MystenLabs/nautilus.git"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OVERLAY="$SCRIPT_DIR/../apps/shell"
+FRAMEWORK_PATCHES="$SCRIPT_DIR/../framework-patches"
 
 # ── Step 1: clone or update nautilus ──────────────────────────────────
 if [[ ! -d "$NAUTILUS_DIR" ]]; then
@@ -29,29 +30,42 @@ NAUTILUS_DIR="$(cd "$NAUTILUS_DIR" && pwd)"
 SHELL_APP_DIR="$NAUTILUS_DIR/src/nautilus-server/src/apps/shell"
 CARGO_TOML="$NAUTILUS_DIR/src/nautilus-server/Cargo.toml"
 LIB_RS="$NAUTILUS_DIR/src/nautilus-server/src/lib.rs"
+MAIN_RS="$NAUTILUS_DIR/src/nautilus-server/src/main.rs"
 
-for f in "$CARGO_TOML" "$LIB_RS"; do
+for f in "$CARGO_TOML" "$LIB_RS" "$MAIN_RS"; do
   if [[ ! -f "$f" ]]; then
     echo "[assemble] FATAL: expected file $f not found — is this really a nautilus checkout?" >&2
     exit 1
   fi
 done
 
-# ── Step 2: copy overlay ──────────────────────────────────────────────
-echo "[assemble] copying overlay into $SHELL_APP_DIR"
+# ── Step 2: copy app overlay ──────────────────────────────────────────
+echo "[assemble] copying app overlay into $SHELL_APP_DIR"
 mkdir -p "$SHELL_APP_DIR"
 cp "$OVERLAY/mod.rs" "$SHELL_APP_DIR/mod.rs"
 cp "$OVERLAY/allowed_endpoints.yaml" "$SHELL_APP_DIR/allowed_endpoints.yaml"
 
-# ── Step 3: patch Cargo.toml — add `shell = []` feature ───────────────
-if grep -qE '^shell\s*=\s*\[\]' "$CARGO_TOML"; then
-  echo "[assemble] Cargo.toml: shell feature already present"
+# ── Step 3: patch Cargo.toml — add shell feature with deps ────────────
+if grep -qE '^shell = \["sui-crypto"' "$CARGO_TOML"; then
+  echo "[assemble] Cargo.toml: shell feature already has full deps"
+elif grep -qE '^shell\s*=\s*\[\]' "$CARGO_TOML"; then
+  echo "[assemble] Cargo.toml: enabling sui-crypto + sui-sdk-types + seal-sdk for shell"
+  awk '
+    /^shell = \[\]/ {
+      print "shell = [\"sui-crypto\", \"sui-sdk-types\", \"seal-sdk\"]"
+      next
+    }
+    { print }
+  ' "$CARGO_TOML" > "$CARGO_TOML.tmp"
+  mv "$CARGO_TOML.tmp" "$CARGO_TOML"
+elif grep -qE '^shell = ' "$CARGO_TOML"; then
+  echo "[assemble] Cargo.toml: shell feature present in unrecognised form — leaving alone"
 else
-  echo "[assemble] patching Cargo.toml: adding shell = []"
+  echo "[assemble] Cargo.toml: adding shell = [\"sui-crypto\", \"sui-sdk-types\", \"seal-sdk\"]"
   awk '
     /^\[features\]/ {
       print
-      print "shell = []"
+      print "shell = [\"sui-crypto\", \"sui-sdk-types\", \"seal-sdk\"]"
       next
     }
     { print }
@@ -59,31 +73,15 @@ else
   mv "$CARGO_TOML.tmp" "$CARGO_TOML"
 fi
 
-# ── Step 4: patch lib.rs — add cfg blocks ─────────────────────────────
-if grep -q 'feature = "shell"' "$LIB_RS"; then
-  echo "[assemble] lib.rs: shell cfg blocks already present"
-else
-  echo "[assemble] patching lib.rs"
-  awk '
-    /^mod apps \{/ {
-      print
-      print "    #[cfg(feature = \"shell\")]"
-      print "    #[path = \"shell/mod.rs\"]"
-      print "    pub mod shell;"
-      print ""
-      next
-    }
-    /^pub mod app \{/ {
-      print
-      print "    #[cfg(feature = \"shell\")]"
-      print "    pub use crate::apps::shell::*;"
-      print ""
-      next
-    }
-    { print }
-  ' "$LIB_RS" > "$LIB_RS.tmp"
-  mv "$LIB_RS.tmp" "$LIB_RS"
-fi
+# ── Step 4: overlay patched lib.rs + main.rs ──────────────────────────
+# We replace these files wholesale rather than in-place patch because the
+# additions (AppState shell field, ShellState construction, start_poller
+# spawn) need precise positioning. The vendored versions in
+# framework-patches/ track upstream nautilus@main; if upstream drifts the
+# overlay still works but you should re-verify against new upstream.
+echo "[assemble] overlaying patched lib.rs + main.rs"
+cp "$FRAMEWORK_PATCHES/lib.rs" "$LIB_RS"
+cp "$FRAMEWORK_PATCHES/main.rs" "$MAIN_RS"
 
 echo
 echo "[assemble] ✔ Nautilus checkout ready at $NAUTILUS_DIR"
