@@ -105,11 +105,16 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
         </div>
         <div className="flex items-center gap-2">
           {isLoading && <span className="material-symbols-outlined text-[14px] animate-spin text-primary">sync</span>}
-          {mergedOrders.length > 0 && (
-            <span className="font-mono-sm text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
-              {mergedOrders.length} live
-            </span>
-          )}
+          {(() => {
+            const liveCount = mergedOrders.filter(o =>
+              currentEpoch === undefined || o.expiryEpoch > currentEpoch
+            ).length;
+            return liveCount > 0 ? (
+              <span className="font-mono-sm text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
+                {liveCount} live
+              </span>
+            ) : null;
+          })()}
         </div>
       </div>
       <div className="overflow-auto flex-1 w-full">
@@ -177,7 +182,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                       if (epochsLeft <= 0) return (
                         <span className="text-[10px] text-error font-bold uppercase tracking-wider">EXPIRED</span>
                       );
-                      const days = Math.floor(epochsLeft);
+                      const days = Math.max(1, Math.floor(epochsLeft));
                       return (
                         <div className="flex flex-col items-end">
                           <span className="text-[11px] text-on-surface-variant">Ep {order.expiryEpoch}</span>
