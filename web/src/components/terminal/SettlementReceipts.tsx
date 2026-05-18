@@ -39,7 +39,7 @@ export default function SettlementReceipts() {
   });
 
   return (
-    <div className="glass-panel rounded-lg p-4 flex flex-col flex-1">
+    <div className="glass-panel rounded-lg p-4 flex flex-col flex-1 overflow-hidden">
       <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#1E293B]">
         <h2 className="font-headline-md text-[14px] text-on-surface uppercase tracking-wider">Settlement Receipts</h2>
         {isLoading && (
