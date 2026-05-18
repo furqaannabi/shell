@@ -14,15 +14,20 @@ deployment runbook this overlay plugs into.
 
 ```
 enclave-nitro/
-└── apps/
-    └── shell/
-        ├── mod.rs                 ← /process_data handler
-        └── allowed_endpoints.yaml ← outbound URL allowlist
+├── apps/shell/
+│   ├── mod.rs                 ← autonomous matcher + /process_data
+│   └── allowed_endpoints.yaml ← outbound URL allowlist
+├── framework-patches/
+│   ├── lib.rs                 ← AppState shell field + cfg gating
+│   └── main.rs                ← persistent eph_kp via ENCLAVE_KEY_SEED
+└── scripts/
+    └── assemble.sh            ← stitches the above into a Nautilus checkout
 ```
 
-`mod.rs` is the Rust file Nautilus expects at
-`src/nautilus-server/src/apps/shell/mod.rs`. `allowed_endpoints.yaml`
-goes alongside it.
+The framework-patches are overlaid wholesale (not in-place patches): the
+autonomous poller needs an `AppState.shell` field and a `start_poller`
+call from `main`, and the persistent eph_kp lives in the framework's
+`main.rs` ahead of `AppState` construction.
 
 ## Assembling the deployment tree
 
@@ -36,46 +41,35 @@ enclave-nitro/scripts/assemble.sh ~/work/nautilus
 
 The script clones `MystenLabs/nautilus` if missing, copies
 [`apps/shell`](apps/shell) into `src/nautilus-server/src/apps/shell`,
-adds the `shell = []` feature in `Cargo.toml`, and patches the two
-`cfg` blocks in `lib.rs`. Idempotent — rerun-safe.
+patches `Cargo.toml`'s `shell` feature to pull `sui-crypto`,
+`sui-sdk-types`, and `seal-sdk`, and overlays the patched `lib.rs` +
+`main.rs` from [`framework-patches/`](framework-patches/). Idempotent —
+rerun-safe.
 
-If you'd rather do it by hand, the three patches the script applies
-are documented below.
+## Persistent enclave key
 
-### Manual patches (only if you skip assemble.sh)
+The matcher signs settlement transactions with `eph_kp`. The on-chain
+`Enclave<SHELL>.pk` is bound to that pubkey during `register_enclave`,
+and `shell::shell::seal_approve` enforces that only this pubkey can
+request Seal key shares. If `eph_kp` changed on every boot, the on-chain
+registration would invalidate immediately.
 
-**1. `nautilus-server/Cargo.toml`** — add a feature flag matching the
-   `--features` flag `make ENCLAVE_APP=shell` will pass:
+The patched `main.rs` reads `ENCLAVE_KEY_SEED` (32-byte hex) from env,
+derives `eph_kp` deterministically, and falls back to a random keypair
+when the seed is unset (preserving the upstream demo apps' behavior).
 
-```toml
-[features]
-shell = []
+The host stores the seed at `/home/ec2-user/enclave-seed.hex` (mode 600)
+and pushes it through the existing secrets-blob VSOCK channel —
+[`nautilus/expose_enclave.sh`](../nautilus/expose_enclave.sh) handles
+this:
+
+```bash
+openssl rand -hex 32 > /home/ec2-user/enclave-seed.hex
+chmod 600 /home/ec2-user/enclave-seed.hex
 ```
 
-**2. `nautilus-server/src/lib.rs`** — two cfg-gated lines mirroring
-   how weather-example is registered:
-
-```rust
-mod apps {
-    // … existing apps …
-    #[cfg(feature = "shell")]
-    #[path = "shell/mod.rs"]
-    pub mod shell;
-}
-
-pub mod app {
-    // … existing re-exports …
-    #[cfg(feature = "shell")]
-    pub use crate::apps::shell::*;
-}
-```
-
-**3. Build with the feature on:** `make ENCLAVE_APP=shell` already
-   does this — the Makefile passes `--features=$(ENCLAVE_APP)` to
-   `cargo build`.
-
-Once the three edits are in, `configure_enclave.sh shell` resolves to
-the Shell app.
+Generate once per deployment. Reboot the enclave as many times as you
+like; the registered pubkey stays valid.
 
 ## Then follow the AWS runbook
 
@@ -92,70 +86,29 @@ enclave on-chain. Substitute these constants when prompted:
 | `ENCLAVE_CONFIG`  | `0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f` |
 | `CAP_OBJECT_ID`   | `0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c` |
 
-## HTTP contract
+## Operating mode: autonomous
 
-`POST /process_data`
+The enclave runs an autonomous matching loop. On boot, `start_poller`
+spawns a tokio task that polls Sui for `OrderSubmitted` events, fetches
+each `OrderCommitment`, requests Seal key shares (gated by
+`shell::shell::seal_approve`), decrypts in-TEE, runs price-time matching,
+and submits the settlement `Transaction` itself. No external trigger
+needed.
 
-```json
-{
-  "payload": {
-    "orders": [
-      {
-        "order_id": "0x…",
-        "trader": "0x…",
-        "plaintext": {
-          "side": "buy",
-          "size": 100,
-          "limit_price": 12500,
-          "expiry_epoch": 1200,
-          "max_slippage_bps": 50
-        }
-      }
-    ]
-  }
-}
-```
+The HTTP server is still up for liveness checks and a hybrid manual mode:
 
-Response:
+| Endpoint | Use |
+| --- | --- |
+| `GET /health_check` | liveness probe |
+| `GET /get_attestation` | hex-encoded AWS-signed attestation doc; used by `register_enclave.sh` |
+| `POST /process_data` | manual one-shot: pass `order_ids` (preferred) or `orders` with plaintexts (legacy side-channel) and the matcher runs once on that input |
 
-```json
-{
-  "enclave_pubkey": "<hex>",
-  "intent": 0,
-  "timestamp_ms": 1750000000000,
-  "matches": [
-    {
-      "envelope": { "intent": 0, "timestamp_ms": …, "data": { …MatchPayload… } },
-      "signature": "<hex>"
-    }
-  ]
-}
-```
+The frontend and SDK don't call `/process_data` in the autonomous path —
+sealed orders go straight to Sui and the poller picks them up. The
+endpoint is kept for tests and recovery scenarios.
 
-One independently-signed envelope per match. The Move side
-(`shell::attestation::verify`) consumes each one separately to mint
-the corresponding `MatchInstruction` hot-potato.
-
-## Trust model (spike vs prod)
-
-Today the handler accepts decrypted plaintexts from the caller. That's
-fine for the offline-mode spike where the trader's SDK ships its own
-plaintexts in over a side channel — the enclave's job is matching +
-signing, not decryption.
-
-For prod, the handler needs to:
-
-1. Fetch `OrderCommitment` shared objects by id from Sui RPC.
-2. Request Seal keys via `/v1/fetch_key`, gated by our
-   `shell::shell::seal_approve` PTB.
-3. AES-decrypt the `sealed_envelope` inside the enclave.
-4. Verify each decrypted plaintext's SHA-256 against the on-chain
-   `commit_hash`.
-5. Match and sign.
-
-That's still pending (#9, #10 in [`README.md`](../README.md)'s
-"Pending" list). The wire shape of the response is identical; only the
-input shape changes (caller sends an order-id list, not plaintexts).
+For the wire-format details that took a debug loop to find, see
+[`docs/seal-in-nitro.md`](../docs/seal-in-nitro.md).
 
 ## BCS layout anchor
 

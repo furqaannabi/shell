@@ -39,16 +39,16 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 
 ## Status
 
-**Spike GO criterion met on testnet** ([product.md §6.2](product.md)). Full Seal → Nautilus → on-chain settle loop runs end-to-end against a real prod-mode `Enclave<SHELL>`. Real AWS-signed attestation, real PCRs registered on the `EnclaveConfig`, real `SettlementReceipt`s minted.
+**Autonomous Seal-in-Nitro loop running on testnet.** The enclave watches Sui for `OrderSubmitted` events, fetches each `OrderCommitment` ciphertext, requests Seal key shares (gated by `shell::shell::seal_approve`), decrypts inside the TEE, runs price-time matching, builds + signs a real `sui_sdk_types::Transaction`, and submits the settlement PTB itself — no trader, host, or operator in the signing path. The enclave's signing identity is derived from a host-managed seed (`ENCLAVE_KEY_SEED`) so the on-chain `Enclave<SHELL>` registration survives reboots.
 
 | Layer    | What works                                                                              | Where                                                            |
 | -------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; 10/10 tests | [`move/`](move/)                                                 |
 | Move     | Published to testnet at `0x5a47e786…`                                                  | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
-| Nitro    | Prod-mode `Enclave<SHELL>` registered at `0x1b18a55…` (PCRs `619c7540…`, `21b9efbc…`)  | running on `m5.xlarge`, HTTP `54.80.82.200:3000`                |
+| Enclave  | Autonomous poller: Seal decrypt → match → sign → on-chain settle, all in-TEE             | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) |
+| Nitro    | Debug-mode `Enclave<SHELL>` registered at `0xd23f96fa…` with persistent eph_kp           | running on `m5.xlarge`, HTTP `54.80.82.200:3000`                |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
-| Enclave  | Nautilus app: BCS-matched matcher + Ed25519 signer behind HTTP `/process_data`         | [`enclave-nitro/apps/shell/`](enclave-nitro/apps/shell/)         |
-| Demo     | Full Seal → Nautilus → on-chain settle loop (digest `CRumEFt7wuTn…`)                   | [`ts-sdk/scripts/spike-end-to-end.mjs`](ts-sdk/scripts/spike-end-to-end.mjs) |
+| Demo     | Six consecutive autonomous on-chain settlements in ~20s (first digest `4fdfgYhsYuCvwY…`) | [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md)                |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | [`web/`](web/)                                                   |
 
 ## Repo layout
@@ -105,16 +105,17 @@ npm run build
 
 ### End-to-end demo (testnet)
 
-Needs `sui client` configured for testnet with ~0.1 SUI in the active address, plus the registered Nitro enclave at the URL stashed in `ts-sdk/deployments/testnet.json` reachable.
+The enclave is autonomous: submit a sealed order from any client and the matching loop picks it up, decrypts it inside the TEE, finds a counterparty, and lands the settlement PTB itself. Two ways to drive it:
 
 ```bash
-( cd ts-sdk && npm run build )
-node ts-sdk/scripts/spike-end-to-end.mjs
+# 1. Frontend: connect a wallet at http://localhost:3000, place a sealed order
+( cd web && npm run dev )
+
+# 2. SDK: submit one or two orders, then watch the enclave settle them
+( cd ts-sdk && npm run build && node scripts/submit-test-order.mjs )
 ```
 
-Submits two Seal-encrypted orders that cross, posts the plaintexts to the live enclave's `POST /process_data`, receives a signed `IntentMessage<MatchPayload>` envelope, then submits the settlement PTB on testnet — `shell::attestation::verify` produces the hot-potato `MatchInstruction`, `shell::settlement::settle` consumes it atomically with both `OrderCommitment`s and mints two `SettlementReceipt`s.
-
-The Seal decryption step is still side-channeled (plaintexts ship over HTTP rather than the enclave fetching ciphertext and Seal key shares itself). The wire format of the signature is identical either way.
+Either path produces an `OrderCommitment` shared object on testnet. The enclave's poller picks it up within ~5s, requests Seal key shares (`shell::shell::seal_approve` gates this — only this enclave's registered pubkey can request), decrypts in-TEE, runs price-time matching, and submits a `Transaction` chaining `attestation::verify` → `settlement::settle<TMaker, TTaker>` signed by the enclave's eph_kp. Two `SettlementReceipt`s mint, one per trader.
 
 ## Frontend integration
 
@@ -124,11 +125,12 @@ See [`ts-sdk/docs/frontend-integration.md`](ts-sdk/docs/frontend-integration.md)
 
 1. Trader's wallet (or SDK) Seal-encrypts an order envelope under a Move-policy IBE.
 2. Sealed envelope is published to Sui as a shared `OrderCommitment` object.
-3. Nautilus enclave watches for new commitments, fetches Seal keys (gated by `shell::shell::seal_approve` which checks the requester is the registered enclave), decrypts inside the TEE, runs price-time-priority matching.
-4. Enclave signs a BCS-encoded `IntentMessage<MatchPayload>` with its registered Ed25519 key.
-5. Settlement PTB lands on Sui: `shell::attestation::verify` re-derives the BCS bytes, checks the signature, produces a `MatchInstruction` hot-potato; `shell::settlement::settle` consumes it atomically with the named `OrderCommitment`s, swaps collateral, mints `SettlementReceipt` to each trader.
+3. Enclave's poller (running inside Nitro) sees the `OrderSubmitted` event, fetches the ciphertext, requests Seal key shares — `shell::shell::seal_approve` dry-runs on the key server and only passes if the requester address matches the on-chain registered enclave pubkey.
+4. Enclave decrypts inside the TEE, BCS-checks the on-chain `commit_hash`, runs price-time matching against its in-memory book.
+5. Enclave builds a `Transaction` chaining `shell::attestation::verify` → `shell::settlement::settle<TMaker, TTaker>`, signs it with `sui-crypto::SuiSigner` (IntentMessage + blake2b + Ed25519), BCS-serializes, and submits via `sui_executeTransactionBlock`.
+6. Move side: `verify` re-derives the BCS bytes and checks the enclave signature, produces a `MatchInstruction` hot-potato; `settle` consumes it atomically with both `OrderCommitment`s and mints a `SettlementReceipt` per trader.
 
-Full system diagram in [`product.md` §4.1](product.md).
+Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough in [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md).
 
 ## On-chain testnet artifacts
 
@@ -137,18 +139,22 @@ Full system diagram in [`product.md` §4.1](product.md).
 | Shell package | `0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd` |
 | `EnclaveConfig<SHELL>` | `0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f` |
 | `Cap<SHELL>` (deployer) | `0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c` |
-| `Enclave<SHELL>` (prod-mode) | `0x1b18a55393efa9378c11e4eac0ad94c3ec3759f85be6c92f71a7a3b074b871e1` |
-| Latest settlement digest | `CRumEFt7wuTn7uPHJghtbnjdsS5LKnE35Kqdka3zMPDP` |
+| `Enclave<SHELL>` (debug-mode, autonomous) | `0xd23f96fa99218490f86724acd1d0059b9adb5f73701630cabe0d741191309745` |
+| Enclave Sui address (derived from eph_kp) | `0xeda60f47715ea94dae92a58467894f3882d18d8690a348df6e03b4e3cfef1114` |
+| Enclave Ed25519 pubkey | `0x6fea82e844451e5c029253ebb91428a08df4868c098a44ebc8289bb0ee114613` |
+| First autonomous settlement digest | `4fdfgYhsYuCvwYFX4kfs3KajWrrrY6U8CbEYg2DgcXiw` |
 
-PCRs registered on-chain:
-- PCR0 / PCR1: `0x619c75409481395d093fabe80991b428d2c5a39567eecea0dc464c7fcad9e2fe7b84ed5000224b5492b2b1dc6f52b56b`
-- PCR2: `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a`
+PCRs registered on-chain (debug-mode):
+- PCR0 / PCR1: all-zero (debug-mode attestation)
+- PCR2: `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a` (kernel measurement, unchanged across modes)
+
+For prod-mode (real AWS-signed PCRs), the deployer runs `update_pcrs` with the captured EIF measurements and re-registers — see [`docs/aws-deployment.md`](docs/aws-deployment.md).
 
 ## Honest list — what's not shipped
 
-- **Seal decryption inside Nitro.** Today the trader's SDK posts plaintexts to `/process_data`; the prod path is the enclave fetching `OrderCommitment` ciphertext + Seal key shares via `fetch_key` (gated by `shell::shell::seal_approve`) and decrypting in-TEE. Wire shape of the response is identical. Scope + plan in [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md) — 3–5 days; Mysten's `apps/seal-example` is the reference implementation.
 - **DeepBook v3 settlement leg.** `shell::settlement::settle` currently does a direct collateral swap. Week-4 work per spec: replace with `place_limit_order<Base, Quote>(pool, balance_manager, trade_proof, …)` against a real DeepBook pool with a funded `BalanceManager` per trader.
 - **Partial fills in the matcher.** v1 is whole-fill only.
+- **Prod-mode PCRs.** Live enclave runs in debug mode for the iteration loop; the PCR/registration script wiring is identical for prod, but the demo box is debug-pinned.
 
 ## Conventions
 

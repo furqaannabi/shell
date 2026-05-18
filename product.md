@@ -28,7 +28,7 @@ Shell Finance is the first true on-chain dark pool: a confidential order flow la
 
 ### **Status**
 
-Spec only. Spike target: end-to-end demonstration of one Seal-encrypted order matched in a Nautilus enclave and settled on DeepBook testnet within 48 hours of build start. If that spike succeeds, the project is Go. If it fails, the team pivots to HashiPay (alt #1) without losing infrastructure investment.
+Spike GO criterion met and surpassed. The autonomous Seal → Nautilus → on-chain settle loop runs end-to-end on testnet: the enclave polls Sui for sealed orders, fetches Seal key shares (gated by `shell::shell::seal_approve`), decrypts in-TEE, matches price-time, builds + signs a real `sui_sdk_types::Transaction`, and submits the settlement PTB itself. The eph_kp is derived from a host-managed seed so the on-chain `Enclave<SHELL>` registration survives enclave reboots. See [README.md](README.md#status) for the current testnet artifact IDs and [docs/seal-in-nitro.md](docs/seal-in-nitro.md) for the wire-level walkthrough.
 
 # **2\. Problem**
 

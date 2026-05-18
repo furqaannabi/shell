@@ -81,7 +81,27 @@ rsync -avz -e "ssh -i ~/.ssh/<your-alias>.pem" ./ ec2-user@<public-ip>:~/nautilu
 ssh -i ~/.ssh/<your-alias>.pem ec2-user@<public-ip>
 ```
 
-On the host:
+### One-time: generate the enclave key seed
+
+The matcher's signing key is derived from a host-managed 32-byte seed
+(see [enclave-nitro/README.md](../enclave-nitro/README.md#persistent-enclave-key)
+for the rationale). Generate it once per deployment:
+
+```bash
+openssl rand -hex 32 > /home/ec2-user/enclave-seed.hex
+chmod 600 /home/ec2-user/enclave-seed.hex
+```
+
+`expose_enclave.sh` reads this file and pushes the seed plus a placeholder
+`API_KEY` to the enclave through the existing VSOCK secrets channel. The
+patched framework `main.rs` consumes it before constructing `eph_kp`.
+
+If the seed file is missing, `expose_enclave.sh` exits with a clear
+error; if it's present but you boot without expose, the enclave will
+fall back to a random keypair (and your on-chain registration won't
+authenticate).
+
+### Build + run the enclave
 
 ```bash
 cd nautilus
@@ -161,14 +181,19 @@ Save the resulting `ENCLAVE_OBJECT_ID` — every settlement PTB will reference t
 
 ## Step 6 — Wire IDs into Shell clients
 
-Update [ts-sdk/deployments/testnet.json](../ts-sdk/deployments/testnet.json):
+Three places to update:
 
-```json
-"enclaveId": "0x…",
-"enclaveUrl": "http://<public-ip>:3000"
-```
+1. [ts-sdk/deployments/testnet.json](../ts-sdk/deployments/testnet.json):
+   ```json
+   "enclaveId": "0x…",
+   "enclaveUrl": "http://<public-ip>:3000"
+   ```
+2. [web/src/lib/sui.ts](../web/src/lib/sui.ts) — `TESTNET.enclaveId` and `TESTNET.enclaveUrl`.
+3. [enclave-nitro/apps/shell/mod.rs](../enclave-nitro/apps/shell/mod.rs) — `ENCLAVE_ID` constant. The autonomous poller references this when building the `seal_approve` PTB; if it points at a stale `Enclave<SHELL>` object the on-chain policy will reject every `fetch_key` request with `ENotEnclave`.
 
-Update [web/src/lib/sui.ts](../web/src/lib/sui.ts) to expose `ENCLAVE_ID` + `ENCLAVE_URL` alongside the other config. The frontend uses `enclaveId` in the decrypt-fetch PTB (the second positional arg of `shell::shell::seal_approve`); the offline-mode spike will switch to calling the live enclave URL.
+After updating `mod.rs`, rebuild and reboot the enclave. Because `eph_kp`
+is seed-derived (Step 3), the new build keeps the same signing key — no
+need to re-run `register_enclave`.
 
 ## Step 7 — Stop EC2 when idle
 
@@ -190,13 +215,15 @@ sh expose_enclave.sh
 
 ## When you'll know it worked
 
-The single GO criterion ([product.md §6.2](../product.md)):
+The autonomous loop is live when:
 
 1. Trader submits a Seal-encrypted order via the web app.
-2. Enclave fetches the ciphertext, requests Seal keys (gated by `shell::shell::seal_approve`, which now succeeds because `Enclave<SHELL>` exists and its derived address matches `ctx.sender()`), decrypts, runs the matcher, signs.
-3. A settlement PTB on testnet calls `shell::attestation::verify` → `shell::settlement::settle` → two `SettlementReceipt`s minted.
+2. The enclave's poller (visible in `/tmp/console-*.log` if you launched with `--attach-console`) picks up the `OrderSubmitted` event within ~5s.
+3. The poller's log shows a `[shell] settled:` line with a real Sui tx digest.
+4. The corresponding `SettlementReceipt` objects exist under the trader and counterparty addresses on testnet.
 
-That's the spike GO. Until then we're on offline-mode (the existing [`ts-sdk/scripts/spike-end-to-end.mjs`](../ts-sdk/scripts/spike-end-to-end.mjs)).
+Wire-format details and the debug-loop findings live in
+[`docs/seal-in-nitro.md`](seal-in-nitro.md).
 
 ## Honest dev-mode caveat
 
