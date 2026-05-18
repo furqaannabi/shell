@@ -46,7 +46,7 @@ export default function SettlementReceipts() {
           <span className="material-symbols-outlined text-[14px] text-on-surface-variant animate-spin">sync</span>
         )}
       </div>
-      <div className="flex-1 overflow-auto flex flex-col gap-2 min-h-[200px]">
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
         {!account ? (
           <div className="flex-1 flex items-center justify-center font-mono-sm text-mono-sm text-outline-variant">
             Connect wallet to view
