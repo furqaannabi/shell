@@ -30,7 +30,7 @@ const TESTNET: NetworkConfig = {
   shellPackageId: '0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd',
   poolId: '0xedc28f54b442ab2422ed8bab35e7a4ebcbc96baa7393d61704fc633503fccdae',
   enclaveConfigId: '0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f',
-  enclaveId: '0x8a1f40fed530cc486b3fb555806eb25c546da8ffb327f7b9c7306db019106796',
+  enclaveId: '0xd23f96fa99218490f86724acd1d0059b9adb5f73701630cabe0d741191309745',
   enclaveUrl: 'http://54.80.82.200:3000',
   deepbookPoolKey: 'SUI_DBUSDC',
   quoteCoinType: '0xe95040085976bfd54a1a07225cd46c8a2b4e8e2b6732f140a0fc49850ba73e1a::dusdc::DUSDC',
