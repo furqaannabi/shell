@@ -42,16 +42,19 @@ export default function EnclavesPage() {
     staleTime: 30_000,
   });
 
-  const pcrRows = configObj
-    ? (['pcr0', 'pcr1', 'pcr2'] as const).map((key) => {
-        const raw = configObj[key];
+  const pcrFields = configObj
+    ? (configObj.pcrs as { fields: Record<string, number[]> } | undefined)?.fields ?? null
+    : null;
+
+  const pcrRows = pcrFields
+    ? (['pos0', 'pos1', 'pos2'] as const).map((key, i) => {
+        const raw = pcrFields[key];
         const hex = Array.isArray(raw)
           ? (raw as number[]).map((b) => b.toString(16).padStart(2, '0')).join('')
-          : typeof raw === 'string'
-          ? raw
           : null;
-        return { key: key.toUpperCase(), hex };
-      }).filter((r) => r.hex)
+        const allZero = hex ? /^0+$/.test(hex) : true;
+        return { label: `PCR${i}`, hex, allZero };
+      })
     : null;
 
   return (
@@ -86,7 +89,13 @@ export default function EnclavesPage() {
         <div className="text-left md:text-right w-full md:w-auto mt-4 md:mt-0 pt-4 md:pt-0 border-t border-outline-variant md:border-none">
           <div className="text-xs text-on-surface-variant uppercase tracking-widest mb-1">PCR Integrity</div>
           <div className="font-mono-data text-primary border border-primary px-3 py-1 rounded inline-block bg-primary/10 shadow-[0_0_8px_rgba(87,241,219,0.3)]">
-            {configLoading ? 'CHECKING...' : configObj ? 'ATTESTED SECURE' : 'ON-CHAIN'}
+            {configLoading
+            ? 'CHECKING...'
+            : pcrRows?.every((r) => r.allZero)
+            ? 'PENDING DEPLOYMENT'
+            : pcrRows
+            ? 'ATTESTED SECURE'
+            : 'ON-CHAIN'}
           </div>
         </div>
       </header>
@@ -123,36 +132,30 @@ export default function EnclavesPage() {
                       Loading on-chain config...
                     </td>
                   </tr>
-                ) : pcrRows && pcrRows.length > 0 ? (
-                  pcrRows.map(({ key, hex }, i) => (
-                    <tr key={key} className="border-b border-[#1E293B] hover:bg-[#1A1D23] transition-colors last:border-0">
-                      <td className="py-3 text-on-surface">{key}</td>
+                ) : pcrRows ? (
+                  pcrRows.map(({ label, hex, allZero }, i) => (
+                    <tr key={label} className="border-b border-[#1E293B] hover:bg-[#1A1D23] transition-colors last:border-0">
+                      <td className="py-3 text-on-surface">{label}</td>
                       <td className="py-3 text-on-surface-variant font-mono-sm text-[10px] truncate max-w-[200px]" title={hex ?? ''}>
-                        {hex ? `${hex.slice(0, 16)}...${hex.slice(-8)}` : '—'}
+                        {allZero ? <span className="text-outline-variant italic">all-zeros (pending deployment)</span> : hex ? `${hex.slice(0, 16)}...${hex.slice(-8)}` : '—'}
                       </td>
                       <td className="py-3 text-on-surface">
-                        {['Enclave Image', 'Linux Kernel', 'Application'][i] ?? key}
+                        {['Enclave Image', 'Linux Kernel', 'Application'][i]}
                       </td>
                       <td className="py-3">
-                        <span className="text-primary border border-primary px-2 py-0.5 rounded text-[10px]">REGISTERED</span>
+                        {allZero
+                          ? <span className="text-on-surface-variant border border-outline-variant px-2 py-0.5 rounded text-[10px]">PENDING</span>
+                          : <span className="text-primary border border-primary px-2 py-0.5 rounded text-[10px]">REGISTERED</span>
+                        }
                       </td>
                     </tr>
                   ))
                 ) : (
-                  <>
-                    {(['PCR0', 'PCR1', 'PCR2'] as const).map((key, i) => (
-                      <tr key={key} className="border-b border-[#1E293B] hover:bg-[#1A1D23] transition-colors last:border-0">
-                        <td className="py-3 text-on-surface">{key}</td>
-                        <td className="py-3 text-outline-variant text-[10px]">—</td>
-                        <td className="py-3 text-on-surface-variant">
-                          {['Enclave Image', 'Linux Kernel', 'Application'][i]}
-                        </td>
-                        <td className="py-3">
-                          <span className="text-outline-variant border border-outline-variant px-2 py-0.5 rounded text-[10px]">UNKNOWN</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </>
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-outline-variant font-mono-sm text-[10px]">
+                      Could not load config object
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
