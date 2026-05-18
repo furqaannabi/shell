@@ -2,7 +2,7 @@
 
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
-import { SHELL_PACKAGE_ID, QUOTE_SYMBOL } from '@/lib/sui';
+import { SHELL_PACKAGE_ID, QUOTE_SYMBOL, NETWORK } from '@/lib/sui';
 import { getReceipts } from '@/lib/shell-sdk';
 
 function truncateAddr(addr: string, chars = 4): string {
@@ -53,9 +53,12 @@ export default function SettlementReceipts() {
           </div>
         ) : receipts && receipts.length > 0 ? (
           receipts.map((receipt) => (
-            <div
+            <a
               key={receipt.objectId}
-              className="p-2 border border-[#1E293B] rounded bg-surface-container-lowest flex flex-col gap-1 hover:border-secondary/50 transition-colors"
+              href={`https://suiscan.xyz/${NETWORK}/object/${receipt.objectId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 border border-[#1E293B] rounded bg-surface-container-lowest flex flex-col gap-1 hover:border-secondary/50 transition-colors cursor-pointer"
             >
               <div className="flex justify-between font-mono-data text-[12px]">
                 <span className="text-primary">FILLED</span>
@@ -68,9 +71,9 @@ export default function SettlementReceipts() {
                 <span>CP: {truncateAddr(receipt.fields.counterparty)}</span>
               </div>
               <div className="font-mono-sm text-[9px] text-secondary truncate">
-                Obj: {receipt.objectId}
+                {receipt.objectId}
               </div>
-            </div>
+            </a>
           ))
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center font-mono-sm text-mono-sm text-outline-variant gap-1">
