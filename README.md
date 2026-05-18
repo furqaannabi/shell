@@ -46,7 +46,7 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 | Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; 10/10 tests | [`move/`](move/)                                                 |
 | Move     | Published to testnet at `0x5a47e786…`                                                  | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
 | Enclave  | Autonomous poller: Seal decrypt → match → sign → on-chain settle, all in-TEE             | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) |
-| Nitro    | Debug-mode `Enclave<SHELL>` registered at `0xd23f96fa…` with persistent eph_kp           | running on `m5.xlarge`, HTTP `50.17.209.169:3000`               |
+| Nitro    | Debug-mode `Enclave<SHELL>` registered at `0xd23f96fa…` with persistent eph_kp           | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
 | Demo     | Six consecutive autonomous on-chain settlements in ~20s (first digest `4fdfgYhsYuCvwY…`) | [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md)                |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | [`web/`](web/)                                                   |
