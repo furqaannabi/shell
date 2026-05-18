@@ -52,7 +52,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
         trader: account!.address,
       }),
     enabled: !!account,
-    refetchInterval: 10_000,
+    refetchInterval: 5_000,
   });
 
   // Side, size, limit price are encrypted on-chain — only known for orders
