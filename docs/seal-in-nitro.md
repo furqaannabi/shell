@@ -1,20 +1,30 @@
-# Closing the side-channel: Seal-in-Nitro
+# Seal-in-Nitro: how the autonomous loop is wired
 
-The current `enclave-nitro/apps/shell/mod.rs` accepts decrypted order plaintexts from the caller. That's the "offline-mode" shape — the trader's SDK ships plaintexts over a side channel rather than the enclave fetching Seal-encrypted ciphertexts and decrypting in-TEE. This doc scopes the work to close that gap.
+The Shell enclave runs an autonomous matching loop entirely inside the TEE: it watches Sui for sealed orders, fetches Seal key shares, decrypts the envelopes in-enclave, runs price-time matching, and submits the settlement PTB itself. The trader, the host, and the operator never see the plaintexts and never sign anything on the enclave's behalf.
 
-## Why it matters
+This doc is a walkthrough of how that loop is wired in [`enclave-nitro/apps/shell/mod.rs`](../enclave-nitro/apps/shell/mod.rs).
 
-Without this, the threat model has a hole:
-- **Today**: anyone who can hit `/process_data` can submit fake plaintexts and get the enclave to sign matches for orders that don't exist on-chain. The Move side catches this (the orders named in the signed `MatchPayload` are looked up and consumed; if they don't exist, `settle` aborts). But the enclave will *sign anything it's told*.
-- **With Seal-in-Nitro**: the enclave never accepts plaintexts. It pulls the `OrderCommitment` shared object by ID, fetches Seal key shares (gated by `shell::shell::seal_approve`), and decrypts inside the TEE. The signing key only signs matches over plaintexts the enclave itself decrypted.
+## The threat model this closes
 
-That's the difference between "the enclave trusts its caller" and "the enclave trusts only the Sui chain + Seal key servers."
+- **What the enclave used to trust**: its caller. The old `/process_data` handler took decrypted plaintexts over HTTP and signed matches against whatever it was told.
+- **What the enclave now trusts**: only the Sui chain + Seal key servers + AWS Nitro hardware. The enclave reads ciphertexts off Sui, requests Seal key shares (which only release if the on-chain `shell::shell::seal_approve` policy passes), decrypts in-TEE, and signs matches over plaintexts it decrypted itself.
 
-## What changes in our code
+That difference is the load-bearing privacy guarantee.
 
-### `shell::shell::seal_approve` — no change
+## The loop
 
-Already correct:
+`start_poller` (mod.rs) spawns a background tokio task on enclave boot. Each tick (~5s):
+
+1. **Watch.** Poll `suix_queryEvents` for new `shell::pool::OrderSubmitted` events, advance the cursor.
+2. **Fetch.** For each event, `sui_getObject` on the `OrderCommitment` shared object — yields `sealed_envelope: vector<u8>`, `commit_hash: vector<u8>`, the `T` from `OrderCommitment<T>`.
+3. **Decrypt.** Build a `seal_approve` PTB, sign with the enclave's eph_kp, POST to `https://seal-aggregator-testnet.mystenlabs.com/v1/fetch_key`. Seal's key servers dry-run the PTB; if it passes, they return ElGamal-encrypted IBE key shares. The enclave combines shares and AES-GCM-decrypts the envelope inside the TEE.
+4. **Verify.** SHA-256 the BCS-decoded plaintext, check it equals the on-chain `commit_hash`. If not, abort — the envelope was tampered.
+5. **Match.** Insert into the in-enclave price-time order book. If a counterparty exists, emit a `MatchPayload`.
+6. **Sign + submit.** Build a `Transaction` with `attestation::verify(...) → settlement::settle<TMaker, TTaker>(...)` chained, sign with `sui-crypto::SuiSigner`, BCS-serialize, submit via `sui_executeTransactionBlock`. Two `SettlementReceipt`s land on-chain.
+
+Nothing in steps 3–6 leaves the enclave's address space until step 6's RPC call.
+
+## Why `shell::shell::seal_approve` is the load-bearing policy
 
 ```move
 entry fun seal_approve(_id: vector<u8>, enclave: &Enclave<SHELL>, ctx: &TxContext) {
@@ -22,91 +32,52 @@ entry fun seal_approve(_id: vector<u8>, enclave: &Enclave<SHELL>, ctx: &TxContex
 }
 ```
 
-The Seal key server's dry-run sees `ctx.sender()` = the wallet that signed the `fetch_key` request. The enclave signs that request with its on-chain-registered Ed25519 key. The derived address must match. Per-order identity bytes flow through `_id` (already unused by the policy because per-`(pkg, id)` IBE derivation already isolates each order).
+Seal's key servers run this Move function as a dry-run against the PTB the requester submits. `ctx.sender()` in that dry-run is set to the address derived from the certificate's signing key — i.e. whatever pubkey signed the `fetch_key` request. The assertion forces that to equal `blake2b256(0x00 || enclave.pk)`, where `enclave.pk` is the on-chain-registered Ed25519 pubkey baked into the `Enclave<SHELL>` shared object at `register_enclave` time.
 
-### TS SDK — no change
+So: only an entity holding the private key that was bound on-chain during registration can get Seal to release key shares. That's what makes the policy enforceable cryptographically rather than procedurally.
 
-`encryptOrder()` already encrypts to a random 32-byte id and prefixes it onto the on-chain `sealed_envelope`. The enclave reads the id back off the envelope and feeds it into `fetch_key`. Wire format is fine as-is.
+## Why eph_kp needs to be persistent
 
-### Move `OrderCommitment` — no change
+Out of the box, the Nautilus framework regenerates `eph_kp` on every enclave boot. That would invalidate the on-chain registration after every reboot — the new pubkey wouldn't match `enclave.pk`, and `seal_approve` would abort with `ENotEnclave`.
 
-Already stores `sealed_envelope: vector<u8>` opaque. Enclave fetches by `object_id`.
+The framework patch in [`enclave-nitro/framework-patches/main.rs`](../enclave-nitro/framework-patches/main.rs) replaces the random generation with:
 
-### `enclave-nitro/apps/shell/` — substantial changes
+```rust
+let eph_kp = match std::env::var("ENCLAVE_KEY_SEED") {
+    Ok(hex) => Ed25519KeyPair::from_bytes(&Hex::decode(&hex)?)?,
+    Err(_) => Ed25519KeyPair::generate(&mut rand::thread_rng()),
+};
+```
 
-This is the work.
+`ENCLAVE_KEY_SEED` is a 32-byte hex string stored on the EC2 host at `/home/ec2-user/enclave-seed.hex` (mode 600) and pushed into the enclave via the existing secrets-blob channel in `expose_enclave.sh`. The seed is host-managed but it never appears in source control or attestation; what's bound on-chain is the *derived public key*. As long as the host doesn't lose the file, the enclave's signing identity is stable across reboots — and one on-chain `register_enclave` call covers all subsequent boots.
 
-## Reference implementation
+If the seed file is lost or rotated, the operator runs `register_enclave` again. The previous `Enclave<SHELL>` object stays addressable but its policy stops authenticating the new boots.
 
-Mysten's [`apps/seal-example/`](https://github.com/MystenLabs/nautilus/tree/main/src/nautilus-server/src/apps/seal-example) ships a working Rust Seal client running inside Nitro. Pattern:
+## Wire-format details that took a debug loop to find
 
-1. **Enclave-internal ElGamal keypair** generated on boot, never leaves the TEE.
-2. **Host-mediated `fetch_key` forwarding**. Enclave generates a signed `FetchKeyRequest`, hands it to the host over VSOCK, host POSTs it to the Seal aggregator URL, host returns the encrypted response over VSOCK.
-3. **Decrypt + combine shares** with the in-enclave ElGamal secret key.
-4. **AES-GCM** the resulting symmetric key against the on-chain ciphertext.
-5. Cache decrypted plaintexts keyed by object id; evict after `expiry_epoch`.
+The runtime issues that bit the integration, all fixed in [commit 4b90d7f](../) and verified end-to-end:
 
-The example uses three endpoints (`init_seal_key_load`, `complete_seal_key_load`, `provision_weather_api_key`) to walk the host through the request/response dance. Shell would collapse to one — `process_data` takes `Vec<order_id>`, does the dance internally for each, runs the matcher, returns signed matches.
+- Sui RPC returns `vector<u8>` Move fields as **JSON arrays of numbers**, not hex strings. `sealed_envelope`, `commit_hash`, and the Seal `KeyServerV2.pk` all needed an `as_array()` parse path. `parse_bytes_field` in mod.rs handles both shapes.
+- The Seal key server's `KeyServer` parent object has no `pk` field directly — the actual pubkey lives in a versioned `KeyServerV2` dynamic-field child. `ensure_server_pubkey` walks `suix_getDynamicFields` to find it.
+- `data.owner.Shared.initial_shared_version` comes back as a JSON **number**, not a quoted string.
+- The Seal aggregator requires `Client-Sdk-Type: rust` and `Client-Sdk-Version: <semver>` headers; without them you get `InvalidSDKType: 400`.
+- The settlement PTB cannot be hand-rolled JSON — `sui_executeTransactionBlock` expects BCS-encoded `TransactionData`. The first byte of a JSON `{` is `123`, which BCS reads as an out-of-range enum variant tag and rejects.
 
-## Architectural shape, side-by-side
+These are the kind of corners that don't show up in TS SDK examples; the Rust path through the same APIs surfaces them directly.
 
-| Step | Today (side-channel) | With Seal-in-Nitro |
-| --- | --- | --- |
-| `/process_data` input | `{ orders: [{ id, trader, plaintext }] }` | `{ order_ids: ["0x..", ...] }` |
-| Trust on caller | sees plaintexts | only sees order IDs |
-| RPC calls from enclave | none | `sui_getObject` per order, `fetch_key` per order |
-| In-enclave crypto | Ed25519 sign | + ElGamal decrypt, AES-GCM, IBE share combine |
-| Caching | none | per-order, expiry-bounded |
+## Files of interest
 
-## Concrete subtasks
+| File | Role |
+| --- | --- |
+| [`enclave-nitro/apps/shell/mod.rs`](../enclave-nitro/apps/shell/mod.rs) | `/process_data` handler, autonomous poller, decrypt path, PTB builders, settle submitter. |
+| [`enclave-nitro/framework-patches/main.rs`](../enclave-nitro/framework-patches/main.rs) | Persistent eph_kp via `ENCLAVE_KEY_SEED`. |
+| [`nautilus/expose_enclave.sh`](../nautilus/expose_enclave.sh) | Pushes `{API_KEY, ENCLAVE_KEY_SEED}` to the enclave over VSOCK at boot. |
+| [`move/sources/shell.move`](../move/sources/shell.move) | `seal_approve` policy + `enclave_address` derivation. |
+| [`move/sources/attestation.move`](../move/sources/attestation.move) | `MatchPayload` BCS schema + `verify` → `MatchInstruction` hot-potato. |
+| [`move/sources/settlement.move`](../move/sources/settlement.move) | `settle<TMaker, TTaker>` consumes the hot-potato + both orders. |
 
-1. **Port `endpoints.rs` from seal-example** (~10KB). Generic plumbing; adapt the wallet-PK signing payload to use the same `IntentMessage`/`SHELL` OTW path.
-2. **Wire host-side VSOCK forwarder** for `fetch_key` HTTP. Mirror the seal-example's host-side helper script.
-3. **Fetch `OrderCommitment` objects** via Sui RPC. The host already gives the enclave a route to `fullnode.testnet.sui.io` via the traffic forwarder we put in `allowed_endpoints.yaml`. Use `reqwest` over the loopback domain.
-4. **PTB construction inside the enclave**. Build the dry-run PTB calling `shell::shell::seal_approve(id, &Enclave<SHELL>, ctx)`. The Seal API needs raw tx bytes. Reuse `fastcrypto::ed25519` for signing.
-5. **AES-GCM decrypt** the sealed envelope. The trader's SDK uses Seal's hybrid scheme — we need to match its DEM choice (look at `@mysten/seal`'s `DemType` default; currently `AesGcm256` IIRC).
-6. **Verify `commit_hash`** post-decrypt: SHA-256 of BCS plaintext must match the `OrderCommitment.commit_hash`. Aborts the match if any decryption was tampered. This is the integrity guarantee the offline path skips.
-7. **Test inside the enclave** with a recorded real-network fetch_key response (seal-example shows how).
-8. **Rebuild EIF, capture new PCRs, `update_pcrs`, re-`register_enclave`.**
+## What's still on the side
 
-## Crypto dependencies (Rust)
-
-All available via `fastcrypto`, already in `nautilus-server`'s deps:
-
-- `fastcrypto::groups::bls12381` — for IBE share combination
-- `fastcrypto::aes::AesGcm256` — for envelope decrypt
-- `fastcrypto::ed25519::Ed25519KeyPair` — already in use
-- `fastcrypto::traits::ToFromBytes` — already in use
-
-No new external Rust crates required.
-
-## Estimate
-
-3–5 focused days. Roughly:
-
-- **Day 1**: port seal-example types + endpoints, get the enclave booting with the ElGamal keypair generated.
-- **Day 2**: wire host-side VSOCK forwarder + `sui_getObject` path.
-- **Day 3**: per-order decrypt path end-to-end, prove a single order works.
-- **Day 4**: caching, error paths, concurrent-request safety.
-- **Day 5**: integration tests + PCR rebuild + re-register.
-
-## What to ship between now and then
-
-For the hackathon submission, the side-channel demo is honest if labelled correctly:
-
-> "The trader's SDK currently hands plaintexts to the enclave over HTTP. The prod path — `enclave fetches ciphertext from Sui + Seal shares from key servers + decrypts in-TEE` — is scoped in [docs/seal-in-nitro.md](docs/seal-in-nitro.md), reuses Mysten's reference implementation in [apps/seal-example](https://github.com/MystenLabs/nautilus/tree/main/src/nautilus-server/src/apps/seal-example), and is the immediate post-hackathon priority."
-
-That's the threat-model honesty Mysten judges have rewarded.
-
-## What this unblocks
-
-Once shipped, the full chain runs without operator trust:
-
-1. Trader encrypts an order under Seal with a random per-order id. On-chain.
-2. Enclave watches `OrderSubmitted` events, fetches each `OrderCommitment` by id.
-3. Enclave dry-run-signs a `seal_approve` PTB with its on-chain-pinned key.
-4. Seal returns IBE shares only if the PTB passes (i.e. caller-address == registered-enclave-address).
-5. Enclave decrypts inside the TEE, verifies SHA-256 commit hash, runs matcher, signs match.
-6. Settlement PTB on-chain consumes the hot-potato and mints receipts.
-
-No path through this requires trusting the operator's host, the host's network, or anyone other than (Sui consensus + Seal key servers + AWS Nitro hardware). That trust set was the goal in [product.md §5](../product.md).
+- **DeepBook v3 settlement leg.** `settlement::settle` currently does a direct collateral swap. Spec calls for `place_limit_order<Base, Quote>` against a real DeepBook pool with a per-trader `BalanceManager`.
+- **Partial fills.** The matcher is whole-fill only; partials are out of scope for v1.
+- **Prod-mode PCRs.** The running enclave is debug-mode (zero PCRs). The build and registration scripts are identical for prod; the demo box is debug-pinned to keep the iteration loop fast.
