@@ -101,23 +101,36 @@ export interface GetReceiptsOptions {
   owner: string;
 }
 
-/// Fetch `SettlementReceipt`s owned by `owner`. Returns the parsed
-/// content fields plus the object id.
+/// Fetch all `SettlementReceipt`s owned by `owner`, paginating through
+/// every page so no receipts are missed regardless of RPC page size.
 export async function getReceipts(
   suiClient: SuiJsonRpcClient,
   opts: GetReceiptsOptions,
 ): Promise<Array<{ objectId: string; fields: SettlementReceiptFields }>> {
-  const res = await suiClient.getOwnedObjects({
-    owner: opts.owner,
-    filter: { StructType: `${opts.shellPackageId}::pool::SettlementReceipt` },
-    options: { showContent: true },
-  });
+  const all: Array<{ objectId: string; fields: SettlementReceiptFields }> = [];
+  let cursor: string | null | undefined = undefined;
 
-  return res.data
-    .filter((obj) => obj.data?.content?.dataType === "moveObject")
-    .map((obj) => ({
-      objectId: obj.data!.objectId,
-      fields: (obj.data!.content as unknown as { fields: SettlementReceiptFields })
-        .fields,
-    }));
+  do {
+    const res = await suiClient.getOwnedObjects({
+      owner: opts.owner,
+      filter: { StructType: `${opts.shellPackageId}::pool::SettlementReceipt` },
+      options: { showContent: true },
+      limit: 50,
+      ...(cursor ? { cursor } : {}),
+    });
+
+    all.push(
+      ...res.data
+        .filter((obj) => obj.data?.content?.dataType === "moveObject")
+        .map((obj) => ({
+          objectId: obj.data!.objectId,
+          fields: (obj.data!.content as unknown as { fields: SettlementReceiptFields })
+            .fields,
+        })),
+    );
+
+    cursor = res.hasNextPage ? (res.nextCursor ?? null) : null;
+  } while (cursor);
+
+  return all;
 }
