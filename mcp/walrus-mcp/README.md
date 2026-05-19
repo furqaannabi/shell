@@ -66,6 +66,17 @@ All env vars are optional; defaults target Walrus testnet's public endpoints.
 - **`walrus.status`** — HEAD against the aggregator.
   Args: `blob_id`. Returns `{ resolvable, size_bytes?, blob_end_epoch?, ... }`.
 
+### MemWal-backed (needs delegate key)
+
+Generate a delegate key + account at https://app.memwal.com, set `MEMWAL_DELEGATE_KEY`, `MEMWAL_ACCOUNT_ID`, and (optionally) `MEMWAL_SERVER_URL` / `MEMWAL_NAMESPACE`.
+
+- **`memwal.remember`** — server encrypts, uploads to Walrus, and indexes the text. Returns the accepted job_id by default; pass `wait=true` to block until the pipeline finishes and return the final `blob_id`.
+  Args: `text`, `namespace?`, `wait?`. Returns `{ kind: "accepted" | "done", job_id, blob_id?, ... }`.
+- **`memwal.recall`** — semantic search; server downloads + decrypts hits server-side and returns plaintext.
+  Args: `query`, `k?` (1–50, default 5), `namespace?`. Returns `{ total, results: [{ blob_id, text, distance }] }`.
+- **`memwal.restore`** — rebuild a namespace's index from its underlying Walrus blobs.
+  Args: `namespace`, `limit?`. Returns `{ restored, skipped, total, namespace, owner }`.
+
 ### Stubbed (return `not_implemented` until wired)
 
 - **`walrus.extend`** — needs `WALRUS_KEYPAIR_PATH`.
@@ -73,7 +84,6 @@ All env vars are optional; defaults target Walrus testnet's public endpoints.
 - **`walrus.put_quilt`** — bundle multiple files; needs `WALRUS_KEYPAIR_PATH`.
 - **`walrus.list_owned`** — Sui RPC walk; no signer needed but not wired yet.
 - **`walrus.head_pointer`** — read a Sui head-pointer object.
-- **`memwal.remember` / `memwal.recall` / `memwal.restore`** — need MemWal delegate.
 
 ## Smoke test
 
