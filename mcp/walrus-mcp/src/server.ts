@@ -9,8 +9,12 @@ import { loadConfig } from "./config.js";
 import * as put from "./tools/put.js";
 import * as get from "./tools/get.js";
 import * as status from "./tools/status.js";
+import * as extend from "./tools/extend.js";
+import * as del from "./tools/delete.js";
+import * as quilt from "./tools/quilt.js";
+import * as listOwned from "./tools/list_owned.js";
+import * as headPointer from "./tools/head_pointer.js";
 import * as memwal from "./tools/memwal.js";
-import * as stubs from "./tools/stubs.js";
 
 const cfg = loadConfig();
 const server = new McpServer({ name: "walrus-mcp", version: "0.1.0" });
@@ -78,17 +82,18 @@ server.registerTool(
   },
 );
 
-// ── Walrus stubs (needs Sui keypair) ──────────────────────────────────
+// ── Walrus signed ops (needs WALRUS_KEYPAIR_PATH) ─────────────────────
 
 server.registerTool(
   "walrus.extend",
   {
-    description: "Extend a blob's storage duration by N epochs. Needs WALRUS_KEYPAIR_PATH.",
-    inputSchema: stubs.extend.inputSchema.shape,
+    description:
+      "Extend a blob's storage duration by N epochs. Signed tx; needs WALRUS_KEYPAIR_PATH and a WAL balance on the keypair address.",
+    inputSchema: extend.inputSchema.shape,
   },
   async (input: any) => {
     try {
-      return ok(await stubs.extend.run(cfg, input));
+      return ok(await extend.run(cfg, input as extend.Input));
     } catch (e) {
       return fail(e);
     }
@@ -98,12 +103,13 @@ server.registerTool(
 server.registerTool(
   "walrus.delete",
   {
-    description: "Delete a deletable blob (still readable from caches). Needs WALRUS_KEYPAIR_PATH.",
-    inputSchema: stubs.del.inputSchema.shape,
+    description:
+      "Delete a deletable blob (still readable from caches for a while). Original walrus.put must have set deletable=true. Needs WALRUS_KEYPAIR_PATH.",
+    inputSchema: del.inputSchema.shape,
   },
   async (input: any) => {
     try {
-      return ok(await stubs.del.run(cfg, input));
+      return ok(await del.run(cfg, input as del.Input));
     } catch (e) {
       return fail(e);
     }
@@ -113,27 +119,31 @@ server.registerTool(
 server.registerTool(
   "walrus.put_quilt",
   {
-    description: "Bundle multiple files into a single Walrus storage event (quilt).",
-    inputSchema: stubs.quilt.inputSchema.shape,
+    description:
+      "Bundle multiple files into one Walrus storage event. Cheaper than N walrus.put calls; each file keeps its own identifier + tags. Needs WALRUS_KEYPAIR_PATH.",
+    inputSchema: quilt.inputSchema.shape,
   },
   async (input: any) => {
     try {
-      return ok(await stubs.quilt.run(cfg, input));
+      return ok(await quilt.run(cfg, input as quilt.Input));
     } catch (e) {
       return fail(e);
     }
   },
 );
 
+// ── Sui read-only (no keypair) ────────────────────────────────────────
+
 server.registerTool(
   "walrus.list_owned",
   {
-    description: "List Walrus Blob<T> objects owned by a Sui address.",
-    inputSchema: stubs.listOwned.inputSchema.shape,
+    description:
+      "List Walrus Blob<T> objects owned by a Sui address. Paginates via Sui RPC; filters by object type substring '::blob::Blob' so it works across Walrus package upgrades.",
+    inputSchema: listOwned.inputSchema.shape,
   },
   async (input: any) => {
     try {
-      return ok(await stubs.listOwned.run(cfg, input));
+      return ok(await listOwned.run(cfg, input as listOwned.Input));
     } catch (e) {
       return fail(e);
     }
@@ -144,12 +154,12 @@ server.registerTool(
   "walrus.head_pointer",
   {
     description:
-      "Read a Sui head-pointer object that tracks the current blob_id for an agent's state.",
-    inputSchema: stubs.headPointer.inputSchema.shape,
+      "Read a Sui head-pointer object that tracks the current blob_id for an agent's state. Schema-agnostic: returns the parsed Move fields verbatim, so any pointer shape (e.g. shell_agent::Head) works.",
+    inputSchema: headPointer.inputSchema.shape,
   },
   async (input: any) => {
     try {
-      return ok(await stubs.headPointer.run(cfg, input));
+      return ok(await headPointer.run(cfg, input as headPointer.Input));
     } catch (e) {
       return fail(e);
     }
