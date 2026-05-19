@@ -77,13 +77,24 @@ Generate a delegate key + account at https://app.memwal.com, set `MEMWAL_DELEGAT
 - **`memwal.restore`** — rebuild a namespace's index from its underlying Walrus blobs.
   Args: `namespace`, `limit?`. Returns `{ restored, skipped, total, namespace, owner }`.
 
-### Stubbed (return `not_implemented` until wired)
+### Sui read-only (no signer)
 
-- **`walrus.extend`** — needs `WALRUS_KEYPAIR_PATH`.
-- **`walrus.delete`** — needs `WALRUS_KEYPAIR_PATH`.
-- **`walrus.put_quilt`** — bundle multiple files; needs `WALRUS_KEYPAIR_PATH`.
-- **`walrus.list_owned`** — Sui RPC walk; no signer needed but not wired yet.
-- **`walrus.head_pointer`** — read a Sui head-pointer object.
+- **`walrus.list_owned`** — page through `suix_getOwnedObjects` for an address and filter to Walrus Blob<T> by type substring.
+  Args: `address`, `cursor?`, `page_size?` (1–100, default 50).
+  Returns `{ address, blobs: [{ object_id, type, version, digest }], has_next_page, next_cursor }`.
+- **`walrus.head_pointer`** — schema-agnostic Sui object read; returns the parsed Move fields verbatim so any head-pointer shape works.
+  Args: `object_id`. Returns `{ object_id, type, version, owner, fields }`.
+
+### Signed Walrus ops (needs `WALRUS_KEYPAIR_PATH`)
+
+Export a keypair into a file containing a `suiprivkey1...` bech32 string (e.g. `sui keytool export --key-identity <addr> --json | jq -r .exportedPrivateKey > ~/.walrus/key`), `chmod 600`, point `WALRUS_KEYPAIR_PATH` at it. The address needs WAL (use `walrus get-wal --context testnet` if you have the Walrus CLI; otherwise the testnet faucet).
+
+- **`walrus.extend`** — extend a blob's storage duration by N epochs.
+  Args: `sui_object_id`, `epochs_extended`. Returns `{ digest, ... }`.
+- **`walrus.delete`** — delete a deletable blob (original PUT must have `deletable=true`). Cached aggregator copies may still serve briefly.
+  Args: `sui_object_id`. Returns `{ digest, ... }`.
+- **`walrus.put_quilt`** — bundle ≤50 files (≤10 MiB each) into one storage event. Cheaper than N independent puts; each file keeps its own identifier + tags.
+  Args: `files: [{ path, identifier?, tags? }]`, `epochs?`, `deletable?`. Returns `{ count, files: [{ id, blob_id, blob_object_id }] }`.
 
 ## Smoke test
 
