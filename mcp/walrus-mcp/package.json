@@ -8,7 +8,10 @@
     "walrus-mcp": "./dist/server.js"
   },
   "main": "./dist/server.js",
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node ./dist/server.js",
@@ -16,6 +19,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@mysten-incubation/memwal": "^0.0.4",
     "zod": "^3.25.0"
   },
   "devDependencies": {

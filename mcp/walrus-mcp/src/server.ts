@@ -9,6 +9,7 @@ import { loadConfig } from "./config.js";
 import * as put from "./tools/put.js";
 import * as get from "./tools/get.js";
 import * as status from "./tools/status.js";
+import * as memwal from "./tools/memwal.js";
 import * as stubs from "./tools/stubs.js";
 
 const cfg = loadConfig();
@@ -155,17 +156,18 @@ server.registerTool(
   },
 );
 
-// ── MemWal stubs ──────────────────────────────────────────────────────
+// ── MemWal (encrypted Walrus + semantic index, server-side TEE) ───────
 
 server.registerTool(
   "memwal.remember",
   {
-    description: "Store an agent memory in MemWal (encrypted Walrus + semantic index).",
-    inputSchema: stubs.memwalRemember.inputSchema.shape,
+    description:
+      "Store an agent memory in MemWal — server encrypts + uploads to Walrus + indexes semantically. Returns immediately by default; pass wait=true to block until the relayer pipeline finishes.",
+    inputSchema: memwal.rememberInput.shape,
   },
   async (input: any) => {
     try {
-      return ok(await stubs.memwalRemember.run(cfg, input));
+      return ok(await memwal.remember(cfg, input as memwal.RememberInput));
     } catch (e) {
       return fail(e);
     }
@@ -175,12 +177,13 @@ server.registerTool(
 server.registerTool(
   "memwal.recall",
   {
-    description: "Semantic-search MemWal memories matching a query.",
-    inputSchema: stubs.memwalRecall.inputSchema.shape,
+    description:
+      "Semantic-search MemWal memories matching a query. Returns decrypted text + blob_ids + similarity distance.",
+    inputSchema: memwal.recallInput.shape,
   },
   async (input: any) => {
     try {
-      return ok(await stubs.memwalRecall.run(cfg, input));
+      return ok(await memwal.recall(cfg, input as memwal.RecallInput));
     } catch (e) {
       return fail(e);
     }
@@ -190,12 +193,13 @@ server.registerTool(
 server.registerTool(
   "memwal.restore",
   {
-    description: "Rebuild a MemWal namespace's index from its underlying Walrus blobs.",
-    inputSchema: stubs.memwalRestore.inputSchema.shape,
+    description:
+      "Rebuild a MemWal namespace's semantic index from its underlying Walrus blobs (decrypt + re-embed server-side).",
+    inputSchema: memwal.restoreInput.shape,
   },
   async (input: any) => {
     try {
-      return ok(await stubs.memwalRestore.run(cfg, input));
+      return ok(await memwal.restore(cfg, input as memwal.RestoreInput));
     } catch (e) {
       return fail(e);
     }
