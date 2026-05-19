@@ -4,6 +4,8 @@ Shell's second user surface alongside the manual trader. A headless process trad
 
 This doc fixes the architecture before any `shell-agent/` code lands. It does **not** introduce Move changes — agent mode is purely a new client of the existing on-chain primitives.
 
+> See also [`walrus-agent-tooling.md`](walrus-agent-tooling.md) for the LLM-facing surface (MCP server + Claude Code skill) that lets Claude Desktop / Claude Code / Cursor read and reason over the daemon's Walrus blob trail.
+
 ## Why this exists
 
 - **Product**: institutional users want both manual and algorithmic execution. The same privacy + settlement guarantees apply.

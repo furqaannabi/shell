@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(*)",
-      "Curl(*)"
+      "Curl(*)",
+      "WebFetch(domain:docs.wal.app)",
+      "WebFetch(domain:docs.walrus.site)",
+      "WebFetch(domain:sdk.mystenlabs.com)",
+      "WebFetch(domain:mystenlabs.github.io)"
     ],
     "additionalDirectories": [
       "c:\\Users\\furka\\nautilus\\src\\nautilus-server"
