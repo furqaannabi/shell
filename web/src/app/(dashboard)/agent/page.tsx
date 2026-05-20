@@ -1,6 +1,7 @@
 'use client';
 
 import AuditJournal from '@/components/agent/AuditJournal';
+import IOIForm from '@/components/agent/IOIForm';
 import IOIList from '@/components/agent/IOIList';
 import ProposalFeed from '@/components/agent/ProposalFeed';
 
@@ -29,29 +30,16 @@ export default function AgentPage() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-margin">
-        <IOIList />
-        <ProposalFeed />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-margin">
+        <IOIForm />
+        <div className="lg:col-span-2">
+          <ProposalFeed />
+        </div>
       </div>
 
-      <AuditJournal />
+      <IOIList />
 
-      <section className="glass-panel rounded border border-outline-variant p-4">
-        <h2 className="font-body-base text-on-surface font-medium border-b border-outline-variant pb-2 mb-3">
-          Posting an IOI
-        </h2>
-        <p className="font-mono-sm text-mono-sm text-on-surface-variant mb-3">
-          The browser flow is on its way. For now, post IOIs from a local
-          shell-agent daemon:
-        </p>
-        <pre className="bg-surface-container-low rounded p-3 font-mono-sm text-mono-sm text-secondary overflow-x-auto">
-{`cd shell-agent && cp .env.example .env  # fill in PRIVATE_KEY + OPENAI_API_KEY
-npm install && npm run build
-node dist/index.js post-ioi \\
-  --side=buy --size-lo=1000000000 --size-hi=10000000000 \\
-  --price-lo=1000000000 --price-hi=2000000000`}
-        </pre>
-      </section>
+      <AuditJournal />
     </div>
   );
 }
