@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   useCurrentAccount,
   useSignAndExecuteTransaction,
@@ -67,6 +67,7 @@ export default function ProposalFeed() {
   const [accepting, setAccepting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [accepted, setAccepted] = useState<Record<string, string>>({});
+  const seenDigests = useRef<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery({
     queryKey: ['match-proposed', account?.address],
@@ -109,6 +110,30 @@ export default function ProposalFeed() {
     enabled: !!account,
     refetchInterval: 5_000,
   });
+
+  // Play a chime when new proposals arrive.
+  useEffect(() => {
+    if (!data) return;
+    const newOnes = data.filter((p) => !seenDigests.current.has(p.txDigest));
+    if (newOnes.length === 0) return;
+    newOnes.forEach((p) => seenDigests.current.add(p.txDigest));
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+    } catch {
+      // AudioContext blocked (e.g. no user gesture yet) — silent fail.
+    }
+  }, [data]);
 
   async function handleAccept(
     blobId: string,
