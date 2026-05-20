@@ -258,6 +258,80 @@ shell-agent/
 
 ---
 
+## Running on a VPS (24/7)
+
+Any Linux VPS with Node 20 works. Recommended: keep it running with `pm2`.
+
+```bash
+# Install pm2 globally
+npm install -g pm2
+
+# Build first
+npm run build
+
+# Start the agent as a managed process
+pm2 start dist/index.js --name shell-agent -- run
+
+# Auto-restart on reboot
+pm2 save
+pm2 startup
+
+# Useful commands
+pm2 logs shell-agent        # tail live logs
+pm2 status                  # check running/stopped
+pm2 stop shell-agent        # stop
+pm2 restart shell-agent     # restart after config change
+```
+
+Or use `screen` if you prefer:
+
+```bash
+screen -S shell-agent
+node dist/index.js run
+# Ctrl+A then D to detach
+# screen -r shell-agent to re-attach
+```
+
+---
+
+## Getting your private key
+
+**From Sui CLI (generated with `sui client new-address`):**
+
+```bash
+# List all addresses
+sui client addresses
+
+# Export the key — outputs suiprivkey1... bech32 format
+sui keytool export --key-identity <ADDRESS>
+```
+
+**From Slush / other wallets:**
+Slush does not expose private keys. Create a dedicated agent wallet using Sui CLI instead — never use your main wallet.
+
+**Check balance before running:**
+
+```bash
+sui client balance --address <YOUR_ADDRESS>
+```
+
+Need both SUI (gas + sell collateral) and DUSDC (buy collateral). Get testnet SUI from [faucet.testnet.sui.io](https://faucet.testnet.sui.io).
+
+---
+
+## Troubleshooting
+
+| Error | Cause | Fix |
+|---|---|---|
+| `missing env var: AGENT_PRIVATE_KEY` | `.env` not filled | Set `AGENT_PRIVATE_KEY=suiprivkey1...` |
+| `record_ioi failed: function not found` | Move package not upgraded | Teammate must run `sui client upgrade` |
+| `no DUSDC coin to use` | Wallet has no DUSDC | Get DUSDC from testnet faucet, or switch `AGENT_IOI_SIDE=sell` |
+| `walrus put 429` | Walrus rate limit | Increase `AGENT_IOI_TTL_MIN` to reduce re-post frequency |
+| `LLM returned non-JSON` | GPT hallucinated | Retry; if recurring, simplify `AGENT_POLICY` |
+| `timeout — enclave did not match` | Enclave down or no counterparty | Check enclave status with teammate; verify a counterparty IOI exists |
+
+---
+
 ## Prerequisites
 
 - Move package upgraded to include `shell::ioi` module (teammate runs `sui client upgrade`)
