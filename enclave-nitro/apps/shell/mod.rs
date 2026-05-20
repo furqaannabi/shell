@@ -60,6 +60,20 @@ const ORDER_SUBMITTED_EVENT: &str =
 const POLL_INTERVAL_SECS: u64 = 5;
 const SEAL_CERT_TTL_MIN: u16 = 30;
 
+// ── DeepBook v3 (testnet) constants ─────────────────────────────────
+const DEEPBOOK_SUI_DBUSDC_POOL: &str =
+    "0x1c19362ca52b8ffd7a33cee805a67d40f31e6ba303753fd3a4cfdfacea7163a5";
+const DEEP_COIN_TYPE: &str =
+    "0x36dbef866a1d62bf7328989a10fb2f07d769f4ee587c0de4a0a256e57e0a58a8::deep::DEEP";
+/// 0x6 — the global Clock shared object, initial_shared_version is 1.
+const SUI_CLOCK_OBJECT_ID: &str =
+    "0x0000000000000000000000000000000000000000000000000000000000000006";
+const SUI_CLOCK_INITIAL_SHARED_VERSION: u64 = 1;
+/// Default slippage budget passed to settle. Matches the SDK's default
+/// `max_slippage_bps: 50` for now; future work threads the per-order
+/// value from the decrypted plaintext.
+const DEFAULT_SLIPPAGE_BPS: u64 = 50;
+
 // ── Seal-in-Nitro persistent state ───────────────────────────────────
 // ElGamal keypair generated once at enclave boot, used to receive
 // per-order IBE shares from the Seal key server. Static so the
@@ -850,12 +864,18 @@ async fn submit_settlement(
     let enclave_isv = fetch_initial_shared_version(http, ENCLAVE_ID).await?;
     let maker_isv = fetch_initial_shared_version(http, &maker_order_hex).await?;
     let taker_isv = fetch_initial_shared_version(http, &taker_order_hex).await?;
+    let pool_isv = fetch_initial_shared_version(http, DEEPBOOK_SUI_DBUSDC_POOL).await?;
 
-    // 4. Build the ProgrammableTransaction.
+    // 4. Fetch a DEEP coin (for DeepBook swap fees) owned by the enclave.
+    let deep_ref = fetch_deep_coin(http, &enclave_addr_str).await?;
+
+    // 5. Build the ProgrammableTransaction.
     let ptb = build_settle_ptb(
         enclave_isv,
         maker_isv,
         taker_isv,
+        pool_isv,
+        deep_ref,
         timestamp_ms,
         payload,
         &sig_bytes,
@@ -865,7 +885,7 @@ async fn submit_settlement(
         &taker_order_hex,
     )?;
 
-    // 5. Fetch a gas coin owned by the enclave + current RGP.
+    // 6. Fetch a gas coin owned by the enclave + current RGP.
     let gas_ref = fetch_gas_coin(http, &enclave_addr_str).await?;
     let rgp = fetch_reference_gas_price(http).await?;
 
@@ -943,11 +963,13 @@ fn build_settle_ptb(
     enclave_isv: u64,
     maker_isv: u64,
     taker_isv: u64,
+    pool_isv: u64,
+    deep_ref: ObjectReference,
     timestamp_ms: u64,
     payload: &MatchPayload,
     signature: &[u8],
-    maker_type: &str,
-    taker_type: &str,
+    base_type: &str,
+    quote_type: &str,
     maker_order_hex: &str,
     taker_order_hex: &str,
 ) -> Result<ProgrammableTransaction, EnclaveError> {
@@ -959,9 +981,30 @@ fn build_settle_ptb(
         .map_err(|e| EnclaveError::GenericError(format!("maker obj id: {e}")))?;
     let taker_obj = Address::from_str(taker_order_hex)
         .map_err(|e| EnclaveError::GenericError(format!("taker obj id: {e}")))?;
+    let pool_obj = Address::from_str(DEEPBOOK_SUI_DBUSDC_POOL)
+        .map_err(|e| EnclaveError::GenericError(format!("pool id: {e}")))?;
+    let clock_obj = Address::from_str(SUI_CLOCK_OBJECT_ID)
+        .map_err(|e| EnclaveError::GenericError(format!("clock id: {e}")))?;
     let maker_addr = Address::new(payload.maker);
     let taker_addr = Address::new(payload.taker);
 
+    // Argument indices below MUST stay in sync with the MoveCalls.
+    //  0  Enclave<SHELL>            (shared, imm)  → verify
+    //  1  timestamp_ms              (pure u64)     → verify
+    //  2  maker                     (pure addr)    → verify
+    //  3  taker                     (pure addr)    → verify
+    //  4  maker_order_id            (pure ID)      → verify
+    //  5  taker_order_id            (pure ID)      → verify
+    //  6  filled_size               (pure u64)     → verify
+    //  7  filled_price              (pure u64)     → verify
+    //  8  deepbook_tx_digest        (pure vec<u8>) → verify
+    //  9  signature                 (pure vec<u8>) → verify
+    // 10  maker_order               (shared mut)   → settle
+    // 11  taker_order               (shared mut)   → settle
+    // 12  pool                      (shared mut)   → settle
+    // 13  deep_in                   (owned coin)   → settle
+    // 14  slippage_bps              (pure u64)     → settle
+    // 15  clock                     (shared imm)   → settle
     let inputs = vec![
         Input::Shared {
             object_id: enclave_obj,
@@ -987,6 +1030,18 @@ fn build_settle_ptb(
             initial_shared_version: taker_isv,
             mutable: true,
         },
+        Input::Shared {
+            object_id: pool_obj,
+            initial_shared_version: pool_isv,
+            mutable: true,
+        },
+        Input::ImmutableOrOwned(deep_ref),
+        pure_bcs(&DEFAULT_SLIPPAGE_BPS, "slippage_bps")?,
+        Input::Shared {
+            object_id: clock_obj,
+            initial_shared_version: SUI_CLOCK_INITIAL_SHARED_VERSION,
+            mutable: false,
+        },
     ];
 
     let verify_call = MoveCall {
@@ -1005,15 +1060,19 @@ fn build_settle_ptb(
         function: Identifier::new("settle")
             .map_err(|e| EnclaveError::GenericError(format!("function: {e}")))?,
         type_arguments: vec![
-            TypeTag::from_str(maker_type)
-                .map_err(|e| EnclaveError::GenericError(format!("maker_type: {e}")))?,
-            TypeTag::from_str(taker_type)
-                .map_err(|e| EnclaveError::GenericError(format!("taker_type: {e}")))?,
+            TypeTag::from_str(base_type)
+                .map_err(|e| EnclaveError::GenericError(format!("base_type: {e}")))?,
+            TypeTag::from_str(quote_type)
+                .map_err(|e| EnclaveError::GenericError(format!("quote_type: {e}")))?,
         ],
         arguments: vec![
-            Argument::Result(0),
-            Argument::Input(10),
-            Argument::Input(11),
+            Argument::Result(0),  // MatchInstruction
+            Argument::Input(10),  // maker_order
+            Argument::Input(11),  // taker_order
+            Argument::Input(12),  // pool
+            Argument::Input(13),  // deep_in
+            Argument::Input(14),  // slippage_bps
+            Argument::Input(15),  // clock
         ],
     };
 
@@ -1030,16 +1089,33 @@ async fn fetch_gas_coin(
     http: &reqwest::Client,
     owner: &str,
 ) -> Result<ObjectReference, EnclaveError> {
+    fetch_first_coin(http, owner, "0x2::sui::SUI").await
+}
+
+async fn fetch_deep_coin(
+    http: &reqwest::Client,
+    owner: &str,
+) -> Result<ObjectReference, EnclaveError> {
+    fetch_first_coin(http, owner, DEEP_COIN_TYPE).await
+}
+
+async fn fetch_first_coin(
+    http: &reqwest::Client,
+    owner: &str,
+    coin_type: &str,
+) -> Result<ObjectReference, EnclaveError> {
     let result = sui_rpc(
         http,
         "suix_getCoins",
-        serde_json::json!([owner, "0x2::sui::SUI", null, 1]),
+        serde_json::json!([owner, coin_type, null, 1]),
     )
     .await?;
     let coin = result["data"]
         .as_array()
         .and_then(|a| a.first())
-        .ok_or_else(|| EnclaveError::GenericError(format!("no SUI coins for {owner}")))?;
+        .ok_or_else(|| {
+            EnclaveError::GenericError(format!("no {coin_type} coin for {owner}"))
+        })?;
     let id = coin["coinObjectId"]
         .as_str()
         .ok_or_else(|| EnclaveError::GenericError("coin: missing coinObjectId".into()))?;
