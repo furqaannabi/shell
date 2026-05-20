@@ -4,6 +4,13 @@
 
 Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minimized Finance slot. Full spec lives in [`product.md`](product.md). Track positioning in [`product.md` §7.1](product.md). Honest threat model in [`product.md` §5](product.md).
 
+**Live on testnet:**
+
+- Web app — <https://shell-finance.vercel.app/>
+- Walrus + MemWal MCP (Streamable HTTP) — `POST https://sui.furqaannabi.com/mcp` ([runbook](mcp/walrus-mcp/deploy/DEPLOY.md))
+- Nitro enclave HTTP surface — <https://sui.furqaannabi.com/>
+- Walrus skill (markdown) — <https://shell-finance.vercel.app/skills.md>
+
 ## Problem
 
 Every public order book on-chain — DeepBook included — exposes order intent before execution. For retail flow that's acceptable; for institutional size it's an execution tax: searchers front-run, market makers fade quotes, and large orders can't be worked without significant slippage. Existing on-chain attempts at hiding flow are each partial:
@@ -49,7 +56,7 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 | Nitro    | Debug-mode `Enclave<SHELL>` registered at `0xd23f96fa…` with persistent eph_kp           | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
 | Demo     | Six consecutive autonomous on-chain settlements in ~20s (first digest `4fdfgYhsYuCvwY…`) | [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md)                |
-| Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | [`web/`](web/)                                                   |
+| Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | <https://shell-finance.vercel.app/> ([source](web/))             |
 | Agents   | Walrus + MemWal MCP server (11 typed tools); stdio for local + Streamable HTTP at `https://sui.furqaannabi.com/mcp` | [`mcp/walrus-mcp/`](mcp/walrus-mcp/), [`skills/walrus/`](skills/walrus/) |
 
 ## Repo layout
@@ -150,7 +157,7 @@ claude mcp add walrus -- node "$(pwd)/dist/server.js"
 
 Eleven tools become available either way: `walrus.put/get/status/extend/delete/put_quilt/list_owned/head_pointer` and `memwal.remember/recall/restore`. `put`/`get`/`status` and the two Sui RPC tools work with zero config against testnet; the signed-tx tools need `WALRUS_KEYPAIR_PATH` and the MemWal tools need a delegate key from <https://app.memwal.com>. Design rationale + composition stories in [`docs/walrus-agent-tooling.md`](docs/walrus-agent-tooling.md). Deploy runbook in [`mcp/walrus-mcp/deploy/DEPLOY.md`](mcp/walrus-mcp/deploy/DEPLOY.md).
 
-Zero-install fallback skill: drop [`skills/walrus/SKILL.md`](skills/walrus/SKILL.md) into your Claude Code skills directory (also served at `https://<web>/skills.md` once the frontend is deployed).
+Zero-install fallback skill: drop [`skills/walrus/SKILL.md`](skills/walrus/SKILL.md) into your Claude Code skills directory, or fetch it from the live frontend at <https://shell-finance.vercel.app/skills.md>.
 
 ### End-to-end demo (testnet)
 
