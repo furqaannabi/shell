@@ -12,9 +12,11 @@ import {
 import { config } from "./config.js";
 import type { MatchProposal } from "./proposals.js";
 
-/** Quote coin type for DUSDC on testnet. */
+/** Quote coin type — DUSDC on testnet (mirror of web/src/lib/sui.ts).
+ *  DeepBook pool key happens to be SUI_DUSDC for legacy naming
+ *  reasons; the actual quote coin traded in that pool is DUSDC. */
 const QUOTE_COIN_TYPE =
-  "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::dbusdc::DBUSDC";
+  "0xe95040085976bfd54a1a07225cd46c8a2b4e8e2b6732f140a0fc49850ba73e1a::dusdc::DUSDC";
 
 /** Build + submit a Shell sealed order matching the agent's side of a
  *  match proposal. For now uses the proposal's `agreedPrice` as the
@@ -45,7 +47,7 @@ export async function submitOrderFromProposal(opts: {
     order: plaintext,
   });
 
-  // Collateral coin: buy → quote (DBUSDC), sell → base (SUI).
+  // Collateral coin: buy → quote (DUSDC), sell → base (SUI).
   // For demo simplicity, send minimal collateral (the enclave-matched
   // price + size implies these amounts).
   const isBuy = proposal.side === "buy";
@@ -59,12 +61,12 @@ export async function submitOrderFromProposal(opts: {
   const tx = new Transaction();
   let collateralArg;
   if (isBuy) {
-    // Split DBUSDC from the agent's USDC coin(s).
+    // Split DUSDC from the agent's USDC coin(s).
     const coins = await opts.suiClient.getCoins({
       owner: opts.keypair.toSuiAddress(),
       coinType: collateralType,
     });
-    if (coins.data.length === 0) throw new Error("no DBUSDC coin to use");
+    if (coins.data.length === 0) throw new Error("no DUSDC coin to use");
     const primary = tx.object(coins.data[0]!.coinObjectId);
     const [c] = tx.splitCoins(primary, [tx.pure.u64(collateralAmount)]);
     collateralArg = c!;
