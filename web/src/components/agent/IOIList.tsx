@@ -134,9 +134,8 @@ export default function IOIList() {
         </table>
       ) : (
         <div className="text-on-surface-variant font-mono-sm text-mono-sm py-8 text-center">
-          No IOIs posted yet. Run{' '}
-          <code className="text-primary">shell-agent post-ioi …</code> to post
-          one.
+          No IOIs posted yet. Fill the form on the left and click{' '}
+          <span className="text-primary">Post IOI</span> to publish one.
         </div>
       )}
     </div>
