@@ -50,7 +50,7 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
 | Demo     | Six consecutive autonomous on-chain settlements in ~20s (first digest `4fdfgYhsYuCvwY…`) | [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md)                |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | [`web/`](web/)                                                   |
-| Agents   | Walrus + MemWal MCP server (11 typed tools, stdio); Claude Code SKILL.md fallback        | [`mcp/walrus-mcp/`](mcp/walrus-mcp/), [`skills/walrus/`](skills/walrus/) |
+| Agents   | Walrus + MemWal MCP server (11 typed tools); stdio for local + Streamable HTTP at `https://sui.furqaannabi.com/mcp` | [`mcp/walrus-mcp/`](mcp/walrus-mcp/), [`skills/walrus/`](skills/walrus/) |
 
 ## Repo layout
 
@@ -114,7 +114,33 @@ npm run build
 
 ### Walrus MCP server (agent surface)
 
-For LLM agents (Claude Desktop / Claude Code / Cursor) to read and reason over Shell's Walrus-backed state — and over Walrus more generally:
+Two transports. Pick whichever fits the client.
+
+**Remote (no install, public HTTPS):** the server runs on the demo EC2 host behind nginx + Let's Encrypt.
+
+```bash
+claude mcp add walrus --transport http https://sui.furqaannabi.com/mcp
+```
+
+Claude Desktop config:
+
+```json
+{ "mcpServers": { "walrus": {
+  "url": "https://sui.furqaannabi.com/mcp",
+  "transport": "streamable-http"
+} } }
+```
+
+Quick smoke check:
+
+```bash
+curl -X POST https://sui.furqaannabi.com/mcp \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
+**Local (stdio):** build the package and point Claude Code at the binary.
 
 ```bash
 cd mcp/walrus-mcp
@@ -122,9 +148,9 @@ npm install && npm run build
 claude mcp add walrus -- node "$(pwd)/dist/server.js"
 ```
 
-Eleven tools become available: `walrus.put/get/status/extend/delete/put_quilt/list_owned/head_pointer` and `memwal.remember/recall/restore`. `put`/`get`/`status` and the two Sui RPC tools work with zero config against testnet; the signed-tx tools need `WALRUS_KEYPAIR_PATH` and the MemWal tools need a delegate key from <https://app.memwal.com>. Design rationale + composition stories in [`docs/walrus-agent-tooling.md`](docs/walrus-agent-tooling.md).
+Eleven tools become available either way: `walrus.put/get/status/extend/delete/put_quilt/list_owned/head_pointer` and `memwal.remember/recall/restore`. `put`/`get`/`status` and the two Sui RPC tools work with zero config against testnet; the signed-tx tools need `WALRUS_KEYPAIR_PATH` and the MemWal tools need a delegate key from <https://app.memwal.com>. Design rationale + composition stories in [`docs/walrus-agent-tooling.md`](docs/walrus-agent-tooling.md). Deploy runbook in [`mcp/walrus-mcp/deploy/DEPLOY.md`](mcp/walrus-mcp/deploy/DEPLOY.md).
 
-Zero-install fallback: drop [`skills/walrus/SKILL.md`](skills/walrus/SKILL.md) into your Claude Code skills directory.
+Zero-install fallback skill: drop [`skills/walrus/SKILL.md`](skills/walrus/SKILL.md) into your Claude Code skills directory (also served at `https://<web>/walrus.md` once the frontend is deployed).
 
 ### End-to-end demo (testnet)
 
