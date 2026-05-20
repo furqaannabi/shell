@@ -4,6 +4,24 @@ Autonomous trading bot for Shell Finance. Fund a wallet, set a policy, run the a
 
 ---
 
+## Deployment model
+
+Shell Finance has two interfaces — pick the one that fits:
+
+| | **Web UI** | **shell-agent CLI** |
+|---|---|---|
+| Who | Regular traders | Quants, bot operators |
+| How | Connect Slush wallet, use browser | Clone repo, fill `.env`, run on machine/VPS |
+| Decisions | Human clicks Accept | GPT enforces policy automatically |
+| Key custody | Wallet extension (user controls) | Private key in `.env` (self-hosted, nobody else touches it) |
+| Runs | When browser is open | 24/7 on any Node 20 server |
+
+**The CLI is self-hosted by design.** Quants never hand their private key to a third party — same model as every algo trading bot on Binance, dYdX, or any other exchange. You clone, configure, deploy on your own infrastructure.
+
+Regular users never need to touch the CLI. It is an optional power-user path.
+
+---
+
 ## Who this is for
 
 - **Quants** who want policy-driven automated execution without a custodian
