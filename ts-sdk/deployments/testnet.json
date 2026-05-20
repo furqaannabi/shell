@@ -1,12 +1,12 @@
 {
   "network": "testnet",
-  "packageId": "0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd",
+  "packageId": "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd",
   "enclavePackageId": "0x8ecf22e78c90c3e32833d76d82415d7e4227ea370bec4efdad4c4830cbda9e49",
-  "poolId": "0xedc28f54b442ab2422ed8bab35e7a4ebcbc96baa7393d61704fc633503fccdae",
-  "enclaveConfigId": "0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f",
-  "shellCapId": "0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c",
-  "upgradeCapId": "0x3343783ce5dfad095271001971e0c234179e6d708f3befeb047b36699a07b57a",
-  "enclaveId": "0xd23f96fa99218490f86724acd1d0059b9adb5f73701630cabe0d741191309745",
+  "poolId": "0x0fbb5658e6e5f0ef13e134b21ed46c264959bdec6976ae52e2667aba2588569b",
+  "enclaveConfigId": "0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8",
+  "shellCapId": "0xfbbcb810f66ac05bb0924237eb488dce80b51afde44f5f68a3aacc2a287b2209",
+  "upgradeCapId": "0x482f0eb651c900224d73f8bfae67662432d243bafd7f98ef8f0133e72743ff72",
+  "enclaveId": "0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3",
   "enclaveUrl": "https://sui.furqaannabi.com",
   "enclaveMode": "phase2-seal-in-nitro-debug",
   "enclavePcr0": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
@@ -14,5 +14,7 @@
   "enclavePcr2": "0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a",
   "previousProdEnclaveId": "0x1b18a55393efa9378c11e4eac0ad94c3ec3759f85be6c92f71a7a3b074b871e1",
   "previousDebugEnclaveId": "0xdf07cfd107e154ecbc6e5aa9292b2d2342c42fb978624456a4695924a20cf3da",
+  "previousPackageId_preDeepBook": "0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd",
+  "previousEnclaveId_preDeepBook": "0xd23f96fa99218490f86724acd1d0059b9adb5f73701630cabe0d741191309745",
   "publishDigest": "see commit log; tx at checkpoint 335662593"
 }

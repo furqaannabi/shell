@@ -46,17 +46,17 @@ use tokio::time::sleep;
 
 // ── On-chain constants ──────────────────────────────────────────────
 const SHELL_PACKAGE_ID: &str =
-    "0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd";
+    "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd";
 const ENCLAVE_CONFIG_ID: &str =
-    "0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f";
+    "0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8";
 const ENCLAVE_ID: &str =
-    "0xd23f96fa99218490f86724acd1d0059b9adb5f73701630cabe0d741191309745";
+    "0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3";
 const SEAL_TESTNET_KEY_SERVER: &str =
     "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98";
 const SUI_FULLNODE: &str = "https://fullnode.testnet.sui.io";
 const SEAL_AGGREGATOR: &str = "https://seal-aggregator-testnet.mystenlabs.com";
 const ORDER_SUBMITTED_EVENT: &str =
-    "0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd::pool::OrderSubmitted";
+    "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd::pool::OrderSubmitted";
 const POLL_INTERVAL_SECS: u64 = 5;
 const SEAL_CERT_TTL_MIN: u16 = 30;
 
