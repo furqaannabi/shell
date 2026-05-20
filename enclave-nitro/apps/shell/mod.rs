@@ -66,8 +66,19 @@ const SUI_FULLNODE: &str = "https://fullnode.testnet.sui.io";
 const SEAL_AGGREGATOR: &str = "https://seal-aggregator-testnet.mystenlabs.com";
 const ORDER_SUBMITTED_EVENT: &str =
     "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd::pool::OrderSubmitted";
+const IOIS_POSTED_EVENT: &str =
+    "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd::ioi::IoisPosted";
 const POLL_INTERVAL_SECS: u64 = 5;
+const IOI_POLL_INTERVAL_SECS: u64 = 15;
 const SEAL_CERT_TTL_MIN: u16 = 30;
+
+// ── Walrus (testnet) constants ──────────────────────────────────────
+const WALRUS_AGGREGATOR: &str = "https://aggregator.walrus-testnet.walrus.space";
+const WALRUS_PUBLISHER: &str = "https://publisher.walrus-testnet.walrus.space";
+const WALRUS_PROPOSAL_EPOCHS: u32 = 2;
+/// Match proposal grace period — how long the agents have to accept
+/// before the IOI returns to the pool. 60s for hackathon; bump for prod.
+const PROPOSAL_EXPIRY_MS: u64 = 60_000;
 
 // ── DeepBook v3 (testnet) constants ─────────────────────────────────
 const DEEPBOOK_SUI_DBUSDC_POOL: &str =
@@ -187,6 +198,51 @@ struct DecryptedOrder {
 
 pub type OrderBook = Arc<RwLock<HashMap<[u8; 32], DecryptedOrder>>>;
 
+// ── IOI types (Indications of Interest) ─────────────────────────────
+//
+// IOIs are encrypted hints posted off-chain on Walrus. The enclave is
+// the only entity that can decrypt them (same Seal IBE identity as
+// regular orders). Plaintext field order locks to the daemon's BCS
+// schema in shell-agent/src/ioi.ts.
+#[derive(Debug, Clone, Deserialize)]
+struct IoiPlaintextBcs {
+    side: u8,
+    asset: String,
+    size_lo: u64,
+    size_hi: u64,
+    price_lo: u64,
+    price_hi: u64,
+    expiry_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+struct DecryptedIoi {
+    blob_id: String,
+    agent_id: [u8; 32],
+    side: Side,
+    asset: String,
+    size_lo: u64,
+    size_hi: u64,
+    price_lo: u64,
+    price_hi: u64,
+    expiry_ms: u64,
+}
+
+pub type IoiBook = Arc<RwLock<HashMap<String, DecryptedIoi>>>;
+
+/// Match proposal plaintext written to Walrus and read by both agents.
+/// v1 is stored plaintext (security by blob_id obscurity); v2 will
+/// Seal-encrypt to the recipient agent's address.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MatchProposalPlaintext {
+    buy_agent: [u8; 32],
+    sell_agent: [u8; 32],
+    asset: String,
+    agreed_price: u64,
+    agreed_size: u64,
+    expiry_ms: u64,
+}
+
 // ── Extended AppState fields ────────────────────────────────────────
 // Nautilus defines AppState. We extend it via a newtype wrapper
 // accessible through the order_book + http fields we add to the
@@ -194,6 +250,7 @@ pub type OrderBook = Arc<RwLock<HashMap<[u8; 32], DecryptedOrder>>>;
 
 pub struct ShellState {
     pub order_book: OrderBook,
+    pub ioi_book: IoiBook,
     pub http: reqwest::Client,
 }
 
@@ -201,6 +258,7 @@ impl ShellState {
     pub fn new() -> Self {
         Self {
             order_book: Arc::new(RwLock::new(HashMap::new())),
+            ioi_book: Arc::new(RwLock::new(HashMap::new())),
             http: reqwest::Client::new(),
         }
     }
@@ -1371,6 +1429,547 @@ fn match_orders(orders: &[DecryptedOrder]) -> Vec<MatchPayload> {
     }
 
     fills
+}
+
+// ── IOI matcher (second background task) ───────────────────────────
+//
+// Mirror of `start_poller` but for off-chain Walrus IOI ciphertexts:
+//   1. poll `IoisPosted` events
+//   2. fetch each blob's ciphertext from the Walrus aggregator
+//   3. Seal-decrypt inside the TEE (same gate as orders)
+//   4. insert into in-memory IOI book
+//   5. pair up compatible IOIs (opposite side, overlapping price+size)
+//   6. write per-side proposal blobs back to Walrus
+//   7. emit a `MatchProposed` event on Sui so each side can find them
+pub fn start_ioi_matcher(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        let http = &state.shell.http;
+        let mut cursor: Option<serde_json::Value> = None;
+
+        loop {
+            match ioi_poll_once(&state, http, &mut cursor).await {
+                Ok(_) => {}
+                Err(e) => eprintln!("[shell-ioi] error: {e}"),
+            }
+            sleep(Duration::from_secs(IOI_POLL_INTERVAL_SECS)).await;
+        }
+    });
+}
+
+async fn ioi_poll_once(
+    state: &Arc<AppState>,
+    http: &reqwest::Client,
+    cursor: &mut Option<serde_json::Value>,
+) -> Result<(), EnclaveError> {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| EnclaveError::GenericError(format!("clock: {e}")))?
+        .as_millis() as u64;
+
+    // ── Query new IoisPosted events ─────────────────────────────────
+    let query_params = serde_json::json!([
+        { "MoveEventType": IOIS_POSTED_EVENT },
+        cursor,
+        50,
+        false
+    ]);
+    let result = sui_rpc(http, "suix_queryEvents", query_params).await?;
+    let empty = vec![];
+    let events = result["data"].as_array().unwrap_or(&empty);
+
+    for event in events {
+        let json = &event["parsedJson"];
+        let agent_str = json["agent_id"].as_str().unwrap_or_default();
+        let blob_id = json["blob_id"]
+            .as_str()
+            .map(|s| s.to_string())
+            .or_else(|| {
+                // events sometimes come back as byte-array form
+                json["blob_id"].as_array().map(|arr| {
+                    let bytes: Vec<u8> = arr
+                        .iter()
+                        .filter_map(|n| n.as_u64().map(|b| b as u8))
+                        .collect();
+                    String::from_utf8(bytes).unwrap_or_default()
+                })
+            })
+            .unwrap_or_default();
+        let expiry_epoch: u64 = json["expiry_epoch"]
+            .as_str()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        if blob_id.is_empty() || agent_str.is_empty() {
+            continue;
+        }
+
+        // Skip already-known IOIs.
+        if state.shell.ioi_book.read().await.contains_key(&blob_id) {
+            continue;
+        }
+
+        // ── Fetch ciphertext from Walrus aggregator ─────────────────
+        let ciphertext = match fetch_walrus_blob(http, &blob_id).await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("[shell-ioi] fetch blob {blob_id}: {e}");
+                continue;
+            }
+        };
+
+        // ── Seal-decrypt inside TEE ─────────────────────────────────
+        let plaintext = match seal_decrypt_envelope(state, http, &ciphertext).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("[shell-ioi] decrypt {blob_id}: {e}");
+                continue;
+            }
+        };
+
+        let p: IoiPlaintextBcs = match bcs::from_bytes(&plaintext) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("[shell-ioi] bcs decode {blob_id}: {e}");
+                continue;
+            }
+        };
+        let side = match p.side {
+            0 => Side::Buy,
+            1 => Side::Sell,
+            other => {
+                eprintln!("[shell-ioi] bad side {other} for {blob_id}");
+                continue;
+            }
+        };
+
+        let agent_id = match parse_hex32(agent_str) {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+        let _ = expiry_epoch; // expiry_epoch is on-chain hint; expiry_ms is plaintext
+
+        // ── Insert into IOI book ────────────────────────────────────
+        {
+            let mut book = state.shell.ioi_book.write().await;
+            book.insert(
+                blob_id.clone(),
+                DecryptedIoi {
+                    blob_id: blob_id.clone(),
+                    agent_id,
+                    side,
+                    asset: p.asset,
+                    size_lo: p.size_lo,
+                    size_hi: p.size_hi,
+                    price_lo: p.price_lo,
+                    price_hi: p.price_hi,
+                    expiry_ms: p.expiry_ms,
+                },
+            );
+        }
+
+        // ── Try matching ────────────────────────────────────────────
+        if let Err(e) = try_match_and_propose(state, http, now_ms).await {
+            eprintln!("[shell-ioi] match+propose error: {e}");
+        }
+    }
+
+    // ── Prune expired IOIs ──────────────────────────────────────────
+    {
+        let mut book = state.shell.ioi_book.write().await;
+        book.retain(|_, i| now_ms < i.expiry_ms);
+    }
+
+    // ── Advance cursor ──────────────────────────────────────────────
+    if let Some(next) = result.get("nextCursor") {
+        if !next.is_null() {
+            *cursor = Some(next.clone());
+        }
+    }
+
+    Ok(())
+}
+
+/// Find compatible IOI pairs in the book, write proposal blobs to
+/// Walrus, emit `MatchProposed` events on Sui. Removes matched IOIs
+/// from the in-memory book so they don't re-match.
+async fn try_match_and_propose(
+    state: &Arc<AppState>,
+    http: &reqwest::Client,
+    now_ms: u64,
+) -> Result<(), EnclaveError> {
+    let snapshot: Vec<DecryptedIoi> = state
+        .shell
+        .ioi_book
+        .read()
+        .await
+        .values()
+        .cloned()
+        .collect();
+
+    let matches = match_iois(&snapshot);
+
+    for (buy, sell, agreed_price, agreed_size) in matches {
+        let proposal_expiry = now_ms + PROPOSAL_EXPIRY_MS;
+        let buy_proposal = MatchProposalPlaintext {
+            buy_agent: buy.agent_id,
+            sell_agent: sell.agent_id,
+            asset: buy.asset.clone(),
+            agreed_price,
+            agreed_size,
+            expiry_ms: proposal_expiry,
+        };
+        let sell_proposal = buy_proposal.clone();
+
+        let buy_bytes = bcs::to_bytes(&buy_proposal)
+            .map_err(|e| EnclaveError::GenericError(format!("buy proposal bcs: {e}")))?;
+        let sell_bytes = bcs::to_bytes(&sell_proposal)
+            .map_err(|e| EnclaveError::GenericError(format!("sell proposal bcs: {e}")))?;
+
+        // Two separate blobs so each side can be encrypted independently in v2.
+        let buy_blob = match put_walrus_blob(http, &buy_bytes).await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("[shell-ioi] put buy proposal: {e}");
+                continue;
+            }
+        };
+        let sell_blob = match put_walrus_blob(http, &sell_bytes).await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("[shell-ioi] put sell proposal: {e}");
+                continue;
+            }
+        };
+
+        // Emit MatchProposed event on Sui so both agents discover their proposal.
+        if let Err(e) = submit_propose_match(
+            state,
+            http,
+            buy.agent_id,
+            sell.agent_id,
+            &buy_blob,
+            &sell_blob,
+        )
+        .await
+        {
+            eprintln!("[shell-ioi] propose_match tx failed: {e}");
+            continue;
+        }
+
+        // Remove the matched IOIs so they don't re-match.
+        let mut book = state.shell.ioi_book.write().await;
+        book.remove(&buy.blob_id);
+        book.remove(&sell.blob_id);
+
+        eprintln!(
+            "[shell-ioi] proposed: buy={} sell={} price={agreed_price} size={agreed_size}",
+            Hex::encode(buy.agent_id),
+            Hex::encode(sell.agent_id),
+        );
+    }
+
+    Ok(())
+}
+
+/// Pair up IOIs with opposite sides, same asset, overlapping price+size
+/// ranges. Returns (buy_ioi, sell_ioi, agreed_price, agreed_size).
+fn match_iois(iois: &[DecryptedIoi]) -> Vec<(DecryptedIoi, DecryptedIoi, u64, u64)> {
+    let buys: Vec<&DecryptedIoi> = iois.iter().filter(|i| i.side == Side::Buy).collect();
+    let sells: Vec<&DecryptedIoi> = iois.iter().filter(|i| i.side == Side::Sell).collect();
+
+    let mut out = Vec::new();
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for b in &buys {
+        if used.contains(&b.blob_id) {
+            continue;
+        }
+        for s in &sells {
+            if used.contains(&s.blob_id) {
+                continue;
+            }
+            if b.asset != s.asset {
+                continue;
+            }
+            // Price overlap: buy.price_hi >= sell.price_lo AND buy.price_lo <= sell.price_hi
+            if b.price_hi < s.price_lo || b.price_lo > s.price_hi {
+                continue;
+            }
+            // Size overlap: buy.size_hi >= sell.size_lo AND buy.size_lo <= sell.size_hi
+            if b.size_hi < s.size_lo || b.size_lo > s.size_hi {
+                continue;
+            }
+            // Midpoint of overlap on both axes.
+            let price_lo = b.price_lo.max(s.price_lo);
+            let price_hi = b.price_hi.min(s.price_hi);
+            let size_lo = b.size_lo.max(s.size_lo);
+            let size_hi = b.size_hi.min(s.size_hi);
+            let agreed_price = (price_lo + price_hi) / 2;
+            let agreed_size = (size_lo + size_hi) / 2;
+            out.push(((*b).clone(), (*s).clone(), agreed_price, agreed_size));
+            used.insert(b.blob_id.clone());
+            used.insert(s.blob_id.clone());
+            break;
+        }
+    }
+    out
+}
+
+async fn fetch_walrus_blob(
+    http: &reqwest::Client,
+    blob_id: &str,
+) -> Result<Vec<u8>, EnclaveError> {
+    let url = format!("{WALRUS_AGGREGATOR}/v1/blobs/{blob_id}");
+    let resp = http
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| EnclaveError::GenericError(format!("walrus get http: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(EnclaveError::GenericError(format!(
+            "walrus get {}: {}",
+            resp.status(),
+            resp.text().await.unwrap_or_default()
+        )));
+    }
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| EnclaveError::GenericError(format!("walrus get body: {e}")))?;
+    Ok(bytes.to_vec())
+}
+
+async fn put_walrus_blob(
+    http: &reqwest::Client,
+    body: &[u8],
+) -> Result<String, EnclaveError> {
+    let url = format!("{WALRUS_PUBLISHER}/v1/blobs?epochs={WALRUS_PROPOSAL_EPOCHS}");
+    let resp = http
+        .put(&url)
+        .body(body.to_vec())
+        .send()
+        .await
+        .map_err(|e| EnclaveError::GenericError(format!("walrus put http: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(EnclaveError::GenericError(format!(
+            "walrus put {}: {}",
+            resp.status(),
+            resp.text().await.unwrap_or_default()
+        )));
+    }
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| EnclaveError::GenericError(format!("walrus put json: {e}")))?;
+    // Walrus returns either `newlyCreated.blobObject.blobId` or `alreadyCertified.blobId`.
+    let blob_id = json["newlyCreated"]["blobObject"]["blobId"]
+        .as_str()
+        .or_else(|| json["alreadyCertified"]["blobId"].as_str())
+        .ok_or_else(|| EnclaveError::GenericError(format!("walrus put: no blobId in {json}")))?;
+    Ok(blob_id.to_string())
+}
+
+/// Build + sign + submit a PTB calling `shell::ioi::propose_match`.
+async fn submit_propose_match(
+    state: &Arc<AppState>,
+    http: &reqwest::Client,
+    buy_agent: [u8; 32],
+    sell_agent: [u8; 32],
+    buy_blob_id: &str,
+    sell_blob_id: &str,
+) -> Result<(), EnclaveError> {
+    let enclave_addr_str = enclave_sui_address(state);
+    let sender = Address::from_str(&enclave_addr_str)
+        .map_err(|e| EnclaveError::GenericError(format!("sender addr: {e}")))?;
+    let enclave_isv = fetch_initial_shared_version(http, ENCLAVE_ID.as_str()).await?;
+
+    let pkg = Address::from_str(SHELL_PACKAGE_ID)
+        .map_err(|e| EnclaveError::GenericError(format!("pkg id: {e}")))?;
+    let enclave_obj = Address::from_str(ENCLAVE_ID.as_str())
+        .map_err(|e| EnclaveError::GenericError(format!("enclave id: {e}")))?;
+    let buy_addr = Address::new(buy_agent);
+    let sell_addr = Address::new(sell_agent);
+
+    let inputs = vec![
+        Input::Shared {
+            object_id: enclave_obj,
+            initial_shared_version: enclave_isv,
+            mutable: false,
+        },
+        pure_bcs(&buy_addr, "buy_agent")?,
+        pure_bcs(&sell_addr, "sell_agent")?,
+        pure_bcs(&buy_blob_id.as_bytes().to_vec(), "buy_blob_id")?,
+        pure_bcs(&sell_blob_id.as_bytes().to_vec(), "sell_blob_id")?,
+    ];
+    let call = MoveCall {
+        package: pkg,
+        module: Identifier::new("ioi")
+            .map_err(|e| EnclaveError::GenericError(format!("module: {e}")))?,
+        function: Identifier::new("propose_match")
+            .map_err(|e| EnclaveError::GenericError(format!("function: {e}")))?,
+        type_arguments: vec![],
+        arguments: (0..5).map(Argument::Input).collect(),
+    };
+    let ptb = ProgrammableTransaction {
+        inputs,
+        commands: vec![Command::MoveCall(call)],
+    };
+
+    let gas_ref = fetch_gas_coin(http, &enclave_addr_str).await?;
+    let rgp = fetch_reference_gas_price(http).await?;
+
+    let tx = Transaction {
+        kind: TransactionKind::ProgrammableTransaction(ptb),
+        sender,
+        gas_payment: GasPayment {
+            objects: vec![gas_ref],
+            owner: sender,
+            price: rgp,
+            budget: 10_000_000,
+        },
+        expiration: TransactionExpiration::None,
+    };
+
+    let secret_bytes: [u8; 32] = state
+        .eph_kp
+        .copy()
+        .private()
+        .as_ref()
+        .try_into()
+        .map_err(|_| EnclaveError::GenericError("eph_kp secret wrong size".into()))?;
+    let wallet = Ed25519PrivateKey::new(secret_bytes);
+    let user_sig = wallet
+        .sign_transaction(&tx)
+        .map_err(|e| EnclaveError::GenericError(format!("sign tx: {e}")))?;
+    let tx_bytes = bcs::to_bytes(&tx)
+        .map_err(|e| EnclaveError::GenericError(format!("tx bcs: {e}")))?;
+
+    let result = sui_rpc(
+        http,
+        "sui_executeTransactionBlock",
+        serde_json::json!([
+            Base64::encode(&tx_bytes),
+            [user_sig.to_base64()],
+            { "showEffects": true },
+            "WaitForLocalExecution"
+        ]),
+    )
+    .await?;
+
+    let status = result["effects"]["status"]["status"]
+        .as_str()
+        .unwrap_or("unknown");
+    if status != "success" {
+        return Err(EnclaveError::GenericError(format!(
+            "propose_match tx status: {status} — {}",
+            result["effects"]["status"]["error"].as_str().unwrap_or("")
+        )));
+    }
+    Ok(())
+}
+
+/// Shared Seal-decrypt helper used by both `decrypt_order` (on-chain
+/// ciphertext) and the IOI matcher (Walrus ciphertext). Takes the full
+/// sealed envelope (first 32 bytes = Seal IBE identity, rest = BCS
+/// EncryptedObject) and returns the decrypted plaintext bytes.
+async fn seal_decrypt_envelope(
+    state: &Arc<AppState>,
+    http: &reqwest::Client,
+    envelope_bytes: &[u8],
+) -> Result<Vec<u8>, EnclaveError> {
+    if envelope_bytes.len() < 32 {
+        return Err(EnclaveError::GenericError("sealed envelope too short".into()));
+    }
+    let seal_id: [u8; 32] = envelope_bytes[..32].try_into().unwrap();
+    let raw_seal_bytes = &envelope_bytes[32..];
+    let encrypted_object: EncryptedObject = bcs::from_bytes(raw_seal_bytes)
+        .map_err(|e| EnclaveError::GenericError(format!("EncryptedObject decode: {e}")))?;
+
+    ensure_server_pubkey(http).await?;
+    let enclave_shared_version = fetch_initial_shared_version(http, ENCLAVE_ID.as_str()).await?;
+    let ptb = build_seal_approve_ptb(&seal_id, enclave_shared_version)?;
+
+    let session_kp = Ed25519KeyPair::generate(&mut thread_rng());
+    let session_vk = session_kp.public().clone();
+    let creation_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| EnclaveError::GenericError(format!("clock: {e}")))?
+        .as_millis() as u64;
+
+    let secret_bytes: [u8; 32] = state
+        .eph_kp
+        .copy()
+        .private()
+        .as_ref()
+        .try_into()
+        .map_err(|_| EnclaveError::GenericError("eph_kp secret wrong size".into()))?;
+    let wallet = Ed25519PrivateKey::new(secret_bytes);
+
+    let message = signed_message(
+        SHELL_PACKAGE_ID.to_string(),
+        &session_vk,
+        creation_time,
+        SEAL_CERT_TTL_MIN,
+    );
+    let signature = wallet
+        .sign_personal_message(&PersonalMessage(message.as_bytes().into()))
+        .map_err(|e| EnclaveError::GenericError(format!("sign cert: {e}")))?;
+    let certificate = Certificate {
+        user: wallet.public_key().derive_address(),
+        session_vk,
+        creation_time,
+        ttl_min: SEAL_CERT_TTL_MIN,
+        signature,
+        mvr_name: None,
+    };
+
+    let (enc_secret, enc_key, enc_verification_key) = &*ENCRYPTION_KEYS;
+    let request_message = signed_request(&ptb, enc_key, enc_verification_key);
+    let request_signature = session_kp.sign(&request_message);
+
+    let fetch_request = FetchKeyRequest {
+        ptb: Base64::encode(
+            bcs::to_bytes(&ptb)
+                .map_err(|e| EnclaveError::GenericError(format!("ptb bcs: {e}")))?,
+        ),
+        enc_key: enc_key.clone(),
+        enc_verification_key: enc_verification_key.clone(),
+        request_signature,
+        certificate,
+    };
+    let body = fetch_request
+        .to_json_string()
+        .map_err(|e| EnclaveError::GenericError(format!("request json: {e}")))?;
+    let resp = http
+        .post(format!("{SEAL_AGGREGATOR}/v1/fetch_key"))
+        .header("Content-Type", "application/json")
+        .header("Client-Sdk-Type", "rust")
+        .header("Client-Sdk-Version", "0.1.0")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| EnclaveError::GenericError(format!("fetch_key http: {e}")))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(EnclaveError::GenericError(format!(
+            "fetch_key {status}: {text}"
+        )));
+    }
+    let fetch_response: FetchKeyResponse = resp
+        .json()
+        .await
+        .map_err(|e| EnclaveError::GenericError(format!("fetch_key parse: {e}")))?;
+
+    let server_id = Address::from_str(SEAL_TESTNET_KEY_SERVER)
+        .map_err(|e| EnclaveError::GenericError(format!("server id: {e}")))?;
+    let server_pk_map = SERVER_PK_MAP.read().unwrap().clone();
+    let cached_keys =
+        decrypt_seal_responses(enc_secret, &[(server_id, fetch_response)], &server_pk_map)
+            .map_err(|e| EnclaveError::GenericError(format!("decrypt responses: {e}")))?;
+    let plaintext = seal_decrypt_object(&encrypted_object, &cached_keys, &server_pk_map)
+        .map_err(|e| EnclaveError::GenericError(format!("seal_decrypt: {e}")))?;
+    Ok(plaintext)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

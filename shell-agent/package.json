@@ -1,0 +1,31 @@
+{
+  "name": "@shell-finance/shell-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Headless trading agent for Shell Finance — posts sealed IOIs to Walrus, polls MatchProposed events, LLM-evaluates proposals, submits Shell orders.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "shell-agent": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node --enable-source-maps dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@mysten/bcs": "2.0.5",
+    "@mysten/seal": "1.1.3",
+    "@mysten/sui": "2.16.2",
+    "@shell-finance/sdk": "file:../ts-sdk",
+    "dotenv": "^16.4.0",
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

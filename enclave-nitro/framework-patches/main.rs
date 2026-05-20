@@ -76,6 +76,7 @@ async fn main() -> Result<()> {
     #[cfg(feature = "shell")]
     {
         nautilus_server::app::start_poller(state.clone());
+        nautilus_server::app::start_ioi_matcher(state.clone());
     }
 
     // Define your own restricted CORS policy here if needed.

@@ -8,18 +8,18 @@ The Walrus track problem statement is "AI agents and agentic workflows powered b
 
 Understanding the current baseline avoids re-building what exists.
 
-| Component | Status | Where |
-|---|---|---|
-| Autonomous Seal-in-Nitro order matcher | ✅ live on testnet | `enclave-nitro/apps/shell/mod.rs` |
-| DeepBook v3 settlement (`settle<TBase, TQuote>`) | ✅ live on testnet | `move/sources/settlement.move` |
-| DEEP fee handling in settle PTB | ✅ live — enclave splits DEEP coin across two swap legs | `settlement.move` + enclave `build_settle_ptb` |
-| Walrus + MemWal MCP server (11 tools) | ✅ live at `https://sui.furqaannabi.com/mcp` | `mcp/walrus-mcp/` |
-| Walrus SKILL.md (zero-install fallback) | ✅ live at `https://shell-finance.vercel.app/skills.md` | `skills/walrus/SKILL.md` |
-| Web trader terminal (sealed order form, receipts) | ✅ live at `https://shell-finance.vercel.app/` | `web/` |
-| `shell-agent/` Node daemon | ❌ not yet built | target of this design |
-| IOI matcher in enclave | ❌ not yet built | target of this design |
-| LLM decision layer | ❌ not yet built | target of this design |
-| Web Agent tab (policy, IOI dashboard, block intent) | ❌ not yet built | target of this design |
+| Component                                           | Status                                                  | Where                                          |
+| --------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------- |
+| Autonomous Seal-in-Nitro order matcher              | ✅ live on testnet                                      | `enclave-nitro/apps/shell/mod.rs`              |
+| DeepBook v3 settlement (`settle<TBase, TQuote>`)    | ✅ live on testnet                                      | `move/sources/settlement.move`                 |
+| DEEP fee handling in settle PTB                     | ✅ live — enclave splits DEEP coin across two swap legs | `settlement.move` + enclave `build_settle_ptb` |
+| Walrus + MemWal MCP server (11 tools)               | ✅ live at `https://sui.furqaannabi.com/mcp`            | `mcp/walrus-mcp/`                              |
+| Walrus SKILL.md (zero-install fallback)             | ✅ live at `https://shell-finance.vercel.app/skills.md` | `skills/walrus/SKILL.md`                       |
+| Web trader terminal (sealed order form, receipts)   | ✅ live at `https://shell-finance.vercel.app/`          | `web/`                                         |
+| `shell-agent/` Node daemon                          | ❌ not yet built                                        | target of this design                          |
+| IOI matcher in enclave                              | ❌ not yet built                                        | target of this design                          |
+| LLM decision layer                                  | ❌ not yet built                                        | target of this design                          |
+| Web Agent tab (policy, IOI dashboard, block intent) | ❌ not yet built                                        | target of this design                          |
 
 **Testnet package**: `0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd`
 **DeepBook SUI/DBUSDC pool**: `0x1c19362ca52b8ffd7a33cee805a67d40f31e6ba303753fd3a4cfdfacea7163a5`
@@ -31,7 +31,7 @@ Understanding the current baseline avoids re-building what exists.
 
 Three institutional pains that Shell's manual trader surface doesn't address.
 
-**D — Private counterparty discovery.** Today, an institution wanting to move a block trade either (a) posts to a public orderbook and leaks intent, or (b) uses an OTC desk and trusts a centralized middleman. Both options are bad. Shell can match orders confidentially *once both sides have posted* — but the discovery problem (how do those two traders find each other in the first place?) is outside Shell's scope today.
+**D — Private counterparty discovery.** Today, an institution wanting to move a block trade either (a) posts to a public orderbook and leaks intent, or (b) uses an OTC desk and trusts a centralized middleman. Both options are bad. Shell can match orders confidentially _once both sides have posted_ — but the discovery problem (how do those two traders find each other in the first place?) is outside Shell's scope today.
 
 **C — Intelligent block execution.** A trader who wants to "sell 10M SUI over 4 hours without moving the price more than 2 bps" currently needs an algo desk or custom code. Slicing strategy, timing, and post-trade transaction-cost-analysis (TCA) are all manual.
 
@@ -43,7 +43,7 @@ Three institutional pains that Shell's manual trader surface doesn't address.
 
 Traders post encrypted "indications of interest" (IOIs) to a Walrus namespace. The Shell enclave is the **only** entity that can decrypt them. It runs an internal matching pass and writes per-side match proposals back to Walrus, encrypted to each respective trader. The matched parties then submit normal Shell sealed orders with pre-aligned terms.
 
-Critically: even other traders authorized to *post* IOIs cannot *read* anyone else's. The trust model is identical to Shell's existing order matching — the enclave is the only oracle.
+Critically: even other traders authorized to _post_ IOIs cannot _read_ anyone else's. The trust model is identical to Shell's existing order matching — the enclave is the only oracle.
 
 ### Feature 2 — Block execution agent (solves C)
 
@@ -101,13 +101,13 @@ New blob roles added by this design. Existing roles (`wallet`, `strategy_state`,
 
 > Notation: `<agent_id>` throughout this doc is the agent's Sui address (each agent has its own keypair per `agent-mode.md`).
 
-| Namespace | Role | Written by | Read by | Encryption |
-|---|---|---|---|---|
-| `policy/<agent_id>` | Declared trading policy (NL + compiled struct). Hash committed on-chain. | Trader, via web UI | Trader, enclave (verify), auditors | Plain (or Seal-gated if private) |
-| `iois/<ts>-<agent_id>` | Indication of interest (side, asset, size range, price range, expiry, agent address) | Trader's agent | Enclave only | Seal — policy `enclave_can_decrypt` |
-| `matches/<agent_id>/<match_id>` | Match proposal (counterparty agent address, agreed price, agreed size, **proposal expiry** = deadline to accept) | Enclave | Trader's agent only | Seal — policy `recipient_can_decrypt` |
-| `journal/<agent_id>/<day>` | Append-only LLM reasoning entries: input snapshot → policy check → output decision | Trader's agent | Trader, auditors | Plain (or Seal-gated if private) |
-| `tca/<agent_id>/<parent_id>` | Post-block TCA report (Feature 2): realised vs benchmark, slice-by-slice analysis | Trader's agent (LLM-generated) | Trader, auditors | Plain |
+| Namespace                       | Role                                                                                                             | Written by                     | Read by                            | Encryption                            |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------------------------------- | ------------------------------------- |
+| `policy/<agent_id>`             | Declared trading policy (NL + compiled struct). Hash committed on-chain.                                         | Trader, via web UI             | Trader, enclave (verify), auditors | Plain (or Seal-gated if private)      |
+| `iois/<ts>-<agent_id>`          | Indication of interest (side, asset, size range, price range, expiry, agent address)                             | Trader's agent                 | Enclave only                       | Seal — policy `enclave_can_decrypt`   |
+| `matches/<agent_id>/<match_id>` | Match proposal (counterparty agent address, agreed price, agreed size, **proposal expiry** = deadline to accept) | Enclave                        | Trader's agent only                | Seal — policy `recipient_can_decrypt` |
+| `journal/<agent_id>/<day>`      | Append-only LLM reasoning entries: input snapshot → policy check → output decision                               | Trader's agent                 | Trader, auditors                   | Plain (or Seal-gated if private)      |
+| `tca/<agent_id>/<parent_id>`    | Post-block TCA report (Feature 2): realised vs benchmark, slice-by-slice analysis                                | Trader's agent (LLM-generated) | Trader, auditors                   | Plain                                 |
 
 Head pointers (Sui shared objects):
 
@@ -138,8 +138,6 @@ IOI matcher loop (every N seconds):
 ```
 
 The matcher is deterministic given the IOI book. PCR-attested. Same trust model as Shell's existing order matcher.
-
-**DEEP fee note:** the existing settle PTB takes `deep_in: Coin<DEEP>` and splits it across two DeepBook swap legs, refunding dust to the enclave wallet. The IOI matcher must provision DEEP from the enclave's wallet balance for each matched pair it settles — same as the existing order settle flow. The enclave already manages this; the IOI path reuses the same `build_settle_ptb` logic.
 
 ## Agent decision loop with LLM
 
@@ -240,6 +238,7 @@ The judges see: discovery happened privately (no one but the enclave saw the IOI
 ## Scope and build order
 
 Day 1 — core pipeline end-to-end on one feature:
+
 - Walrus blob layer for `iois/` and `matches/` namespaces
 - Enclave IOI matcher (simplest possible — exact price match, no ranges)
 - shell-agent extension: post IOI, react to match proposal
@@ -248,12 +247,14 @@ Day 1 — core pipeline end-to-end on one feature:
 - Demo: two tabs, end-to-end match → fill on testnet
 
 Day 2 — feature 2 + polish:
+
 - Block execution agent (slicing logic, TCA report)
 - Tiered execution (auto / confirm / block) wired through UI
 - Policy authoring UI (NL → compiled struct + hash commitment)
 - Demo video rehearsal
 
 Day 3 (stretch):
+
 - Self-improvement loop (LLM reads journal, proposes policy adjustments)
 - Multi-pair IOIs
 - Reputation tracking per agent address
@@ -270,7 +271,7 @@ Day 3 (stretch):
 ## References
 
 - `agent-mode.md` — the headless trading daemon this layer extends
-- `walrus-agent-tooling.md` — the MCP server design; **server is live** at `https://sui.furqaannabi.com/mcp` with 11 tools (`walrus.put/get/status/extend/delete/put_quilt/list_owned/head_pointer` + `memwal.remember/recall/restore`)
+- `walrus-agent-tooling.md` — the MCP server providing LLM-facing Walrus tools
 - `seal-in-nitro.md` — relevant if the enclave's IOI matcher uses the same Seal flow
 - Walrus track problem statement — Sui Overflow 2026
 - Shell `product.md` — protocol-level architecture (Section 5: threat model)
