@@ -6,9 +6,13 @@ function required(name: string): string {
   return v;
 }
 
+function optional(name: string, fallback = ""): string {
+  return process.env[name] ?? fallback;
+}
+
 export const config = {
-  agentPrivateKey: required("AGENT_PRIVATE_KEY"),
-  openaiApiKey: required("OPENAI_API_KEY"),
+  agentPrivateKey: optional("AGENT_PRIVATE_KEY"),
+  openaiApiKey: optional("OPENAI_API_KEY"),
   suiRpcUrl: process.env.SUI_RPC_URL ?? "https://fullnode.testnet.sui.io",
   walrusAggregator:
     process.env.WALRUS_AGGREGATOR ??

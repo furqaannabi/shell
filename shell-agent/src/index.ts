@@ -7,6 +7,7 @@ import { runAgent } from "./agent.js";
 import { config } from "./config.js";
 import { appendEntry } from "./journal.js";
 import { postIoi } from "./ioi.js";
+import { runDemo } from "./demo.js";
 
 const SEAL_TESTNET_KEY_SERVER = {
   objectId:
@@ -26,6 +27,10 @@ async function main() {
     case undefined:
     case "run":
       await runAgent();
+      break;
+
+    case "demo":
+      await runDemo();
       break;
 
     case "post-ioi": {
