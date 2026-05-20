@@ -1,8 +1,31 @@
-# AI execution agent — design (2026-05-19)
+# AI execution agent — design (updated 2026-05-20)
 
 Layered on top of `agent-mode.md` (the headless trading daemon) and `walrus-agent-tooling.md` (the MCP layer). This doc adds the **LLM-in-the-loop** decision layer that lets institutional traders express intent in natural language, discover counterparties privately, and execute large orders intelligently — with every agent decision auditable on Walrus.
 
 The Walrus track problem statement is "AI agents and agentic workflows powered by Walrus as a verifiable data and memory layer." This design uses Walrus as exactly that: durable, verifiable storage for declared trading policies, encrypted indications of interest, agent reasoning trails, and post-trade audit records.
+
+## What is already shipped (as of 2026-05-20)
+
+Understanding the current baseline avoids re-building what exists.
+
+| Component | Status | Where |
+|---|---|---|
+| Autonomous Seal-in-Nitro order matcher | ✅ live on testnet | `enclave-nitro/apps/shell/mod.rs` |
+| DeepBook v3 settlement (`settle<TBase, TQuote>`) | ✅ live on testnet | `move/sources/settlement.move` |
+| DEEP fee handling in settle PTB | ✅ live — enclave splits DEEP coin across two swap legs | `settlement.move` + enclave `build_settle_ptb` |
+| Walrus + MemWal MCP server (11 tools) | ✅ live at `https://sui.furqaannabi.com/mcp` | `mcp/walrus-mcp/` |
+| Walrus SKILL.md (zero-install fallback) | ✅ live at `https://shell-finance.vercel.app/skills.md` | `skills/walrus/SKILL.md` |
+| Web trader terminal (sealed order form, receipts) | ✅ live at `https://shell-finance.vercel.app/` | `web/` |
+| `shell-agent/` Node daemon | ❌ not yet built | target of this design |
+| IOI matcher in enclave | ❌ not yet built | target of this design |
+| LLM decision layer | ❌ not yet built | target of this design |
+| Web Agent tab (policy, IOI dashboard, block intent) | ❌ not yet built | target of this design |
+
+**Testnet package**: `0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd`
+**DeepBook SUI/DBUSDC pool**: `0x1c19362ca52b8ffd7a33cee805a67d40f31e6ba303753fd3a4cfdfacea7163a5`
+**Enclave**: `0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3` at `https://sui.furqaannabi.com`
+
+> Slippage: enclave currently hardcodes `DEFAULT_SLIPPAGE_BPS = 50`. Threading per-order slippage from the decrypted plaintext into the settle PTB is a planned improvement (tracked in `mod.rs` as a TODO comment).
 
 ## What problems this solves
 
@@ -44,7 +67,7 @@ This is not a separate feature. It's how Features 1 and 2 are implemented.
 └────────────│────────────────────────│─────────────────────│──────────┘
              │                        │                     │
              ▼                        ▼                     ▼
-       ┌─ shell-agent (Node daemon, per agent-mode.md) ────────────────┐
+       ┌─ shell-agent (Node daemon — TO BUILD, per agent-mode.md) ────┐
        │   ┌─ LLM orchestrator (Claude API) ──────────────────────┐    │
        │   │   compile NL policy / draft IOI / evaluate matches / │    │
        │   │   slice block / annotate every decision              │    │
@@ -115,6 +138,8 @@ IOI matcher loop (every N seconds):
 ```
 
 The matcher is deterministic given the IOI book. PCR-attested. Same trust model as Shell's existing order matcher.
+
+**DEEP fee note:** the existing settle PTB takes `deep_in: Coin<DEEP>` and splits it across two DeepBook swap legs, refunding dust to the enclave wallet. The IOI matcher must provision DEEP from the enclave's wallet balance for each matched pair it settles — same as the existing order settle flow. The enclave already manages this; the IOI path reuses the same `build_settle_ptb` logic.
 
 ## Agent decision loop with LLM
 
@@ -245,7 +270,7 @@ Day 3 (stretch):
 ## References
 
 - `agent-mode.md` — the headless trading daemon this layer extends
-- `walrus-agent-tooling.md` — the MCP server providing LLM-facing Walrus tools
+- `walrus-agent-tooling.md` — the MCP server design; **server is live** at `https://sui.furqaannabi.com/mcp` with 11 tools (`walrus.put/get/status/extend/delete/put_quilt/list_owned/head_pointer` + `memwal.remember/recall/restore`)
 - `seal-in-nitro.md` — relevant if the enclave's IOI matcher uses the same Seal flow
 - Walrus track problem statement — Sui Overflow 2026
 - Shell `product.md` — protocol-level architecture (Section 5: threat model)
