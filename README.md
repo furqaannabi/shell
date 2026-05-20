@@ -192,13 +192,15 @@ Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough 
 
 | Object | ID |
 | --- | --- |
-| Shell package | `0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd` |
-| `EnclaveConfig<SHELL>` | `0x741c7a6cf78930ca2dea0d3188749be18585d286e5c28bfdef007aff3468f41f` |
-| `Cap<SHELL>` (deployer) | `0x1c8bbd85b6dbc1bb0c35f97c24155cf896d9bbd041bd75c8ad519a13c7cee87c` |
-| `Enclave<SHELL>` (debug-mode, autonomous) | `0xd23f96fa99218490f86724acd1d0059b9adb5f73701630cabe0d741191309745` |
+| Shell package (DeepBook-enabled) | `0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd` |
+| `EnclaveConfig<SHELL>` | `0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8` |
+| `Cap<SHELL>` (deployer) | `0xfbbcb810f66ac05bb0924237eb488dce80b51afde44f5f68a3aacc2a287b2209` |
+| `Enclave<SHELL>` (debug-mode, autonomous) | `0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3` |
 | Enclave Sui address (derived from eph_kp) | `0xeda60f47715ea94dae92a58467894f3882d18d8690a348df6e03b4e3cfef1114` |
 | Enclave Ed25519 pubkey | `0x6fea82e844451e5c029253ebb91428a08df4868c098a44ebc8289bb0ee114613` |
-| First autonomous settlement digest | `4fdfgYhsYuCvwYFX4kfs3KajWrrrY6U8CbEYg2DgcXiw` |
+| DeepBook testnet SUI/DBUSDC pool | `0x1c19362ca52b8ffd7a33cee805a67d40f31e6ba303753fd3a4cfdfacea7163a5` |
+| Previous package (pre-DeepBook, direct-swap) | `0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd` |
+| First autonomous direct-swap settlement digest | `4fdfgYhsYuCvwYFX4kfs3KajWrrrY6U8CbEYg2DgcXiw` |
 
 PCRs registered on-chain (debug-mode):
 - PCR0 / PCR1: all-zero (debug-mode attestation)
@@ -208,7 +210,7 @@ For prod-mode (real AWS-signed PCRs), the deployer runs `update_pcrs` with the c
 
 ## Honest list — what's not shipped
 
-- **DeepBook v3 settlement leg.** `shell::settlement::settle` currently does a direct collateral swap. Week-4 work per spec: replace with `place_limit_order<Base, Quote>(pool, balance_manager, trade_proof, …)` against a real DeepBook pool with a funded `BalanceManager` per trader.
+- **DeepBook v3 settlement leg — code in, live demo trade pending DBUSDC depth.** `shell::settlement::settle<TBase, TQuote>` now wraps both legs in `swap_exact_base_for_quote` / `swap_exact_quote_for_base` against the SUI/DBUSDC pool, with `min_*_out` derived from the enclave-matched price. Either both legs fill at-or-better or the PTB reverts atomically. Move build clean, EIF rebuilt + deployed, enclave wallet funded with DEEP. A live crossing-pair demo on testnet additionally needs DBUSDC depth on the bid side of `0x1c19362c…` — the testnet pool was thin on the day of writing, so the headline still relies on the on-chain code path rather than a fresh tx digest. See [`docs/deepbook-integration.md`](docs/deepbook-integration.md).
 - **Partial fills in the matcher.** v1 is whole-fill only.
 - **Prod-mode PCRs.** Live enclave runs in debug mode for the iteration loop; the PCR/registration script wiring is identical for prod, but the demo box is debug-pinned.
 
