@@ -2,3 +2,8 @@
 # product.md
 # skills-lock.json
 # ui-guide
+
+# Never commit exported Sui / Walrus secret keys.
+*.suiprivkey
+walrus-mcp-test.key
+enclave-seed.hex
