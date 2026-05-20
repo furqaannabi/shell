@@ -4,6 +4,7 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 
 import { config } from "./config.js";
 import { appendEntry } from "./journal.js";
+import { postIoi } from "./ioi.js";
 import { evaluateProposal } from "./llm.js";
 import { submitOrderFromProposal } from "./orders.js";
 import { pollProposals } from "./proposals.js";
@@ -36,9 +37,46 @@ export async function runAgent(): Promise<void> {
 
   let cursor: { txDigest: string; eventSeq: string } | undefined;
   const seenProposals = new Set<string>();
+  // Track when the active IOI expires so we re-post before it lapses.
+  let ioiExpiryMs = 0;
 
   while (true) {
     try {
+      // Auto-post IOI if none active (or expiring within 60s).
+      if (Date.now() >= ioiExpiryMs - 60_000) {
+        const ttlMs = config.ioiTtlMin * 60_000;
+        const sys = await suiClient.getLatestSuiSystemState();
+        const expiryEpoch = BigInt(sys.epoch) + 10n;
+        try {
+          const { blobId, digest } = await postIoi({
+            suiClient,
+            sealClient,
+            keypair,
+            plaintext: {
+              side: config.ioiSide,
+              asset: config.ioiAsset,
+              sizeLo: config.ioiSizeLo,
+              sizeHi: config.ioiSizeHi,
+              priceLo: config.ioiPriceLo,
+              priceHi: config.ioiPriceHi,
+              expiryMs: BigInt(Date.now()) + BigInt(ttlMs),
+            },
+            expiryEpoch,
+          });
+          ioiExpiryMs = Date.now() + ttlMs;
+          console.log(`[agent] IOI posted: blob=${blobId} tx=${digest} ttl=${config.ioiTtlMin}min`);
+          await appendEntry({
+            timestamp_ms: Date.now(),
+            agent_id: agentAddr,
+            event: "ioi_posted",
+            action_digest: digest,
+            notes: `blob=${blobId} side=${config.ioiSide}`,
+          });
+        } catch (e) {
+          console.error(`[agent] IOI post failed: ${(e as Error).message}`);
+        }
+      }
+
       const { proposals, nextCursor } = await pollProposals({
         suiClient,
         agentAddr,
