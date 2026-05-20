@@ -19,7 +19,21 @@ if [[ ! -f "$SEED_FILE" ]]; then
     exit 1
 fi
 SEED="$(tr -d '\n' < "$SEED_FILE")"
-jq -n --arg seed "$SEED" '{API_KEY: "shell-dummy", ENCLAVE_KEY_SEED: $seed}' > secrets.json
+
+# Optional: override the compile-time DEFAULT_ENCLAVE_ID with whatever
+# Enclave<SHELL> shared object is currently active on-chain. Lets a
+# prod-mode re-registration land without rebuilding the EIF.
+ENCLAVE_ID_FILE="${ENCLAVE_ID_FILE:-/home/ec2-user/shell-enclave-id.txt}"
+if [[ -f "$ENCLAVE_ID_FILE" ]]; then
+    SHELL_ENCLAVE_ID="$(tr -d '\n[:space:]' < "$ENCLAVE_ID_FILE")"
+    jq -n --arg seed "$SEED" --arg eid "$SHELL_ENCLAVE_ID" \
+        '{API_KEY: "shell-dummy", ENCLAVE_KEY_SEED: $seed, SHELL_ENCLAVE_ID: $eid}' \
+        > secrets.json
+else
+    jq -n --arg seed "$SEED" \
+        '{API_KEY: "shell-dummy", ENCLAVE_KEY_SEED: $seed}' \
+        > secrets.json
+fi
 
 cat secrets.json | socat - VSOCK-CONNECT:$ENCLAVE_CID:7777
 socat TCP4-LISTEN:3000,reuseaddr,fork VSOCK-CONNECT:$ENCLAVE_CID:3000 &
