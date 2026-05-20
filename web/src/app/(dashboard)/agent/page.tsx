@@ -14,10 +14,9 @@ export default function AgentPage() {
             Agent — Sealed IOI Exchange
           </h1>
           <p className="font-mono-sm text-mono-sm text-on-surface-variant max-w-[640px]">
-            Post a Seal-encrypted indication of interest to Walrus. The
-            enclave is the only entity that can decrypt it. When it finds a
-            compatible counter-IOI, both sides receive a match proposal and
-            can submit Shell sealed orders with pre-aligned terms.
+            Signal interest to trade privately. Your price and size stay
+            confidential until a match is found — then both sides confirm
+            on the same terms.
           </p>
         </div>
         <div className="text-left md:text-right w-full md:w-auto mt-4 md:mt-0 pt-4 md:pt-0 border-t border-outline-variant md:border-none">
