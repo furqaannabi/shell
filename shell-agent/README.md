@@ -63,6 +63,33 @@ Regular users never need to touch the CLI. It is an optional power-user path.
 
 ---
 
+## Role of the enclave
+
+shell-agent never calls the enclave directly. All coordination happens through Sui events — the enclave and the agent both watch the chain independently.
+
+```
+shell-agent                   Sui chain              Nautilus enclave
+    │                             │                        │
+    │── postIoi() ──────────────► IoisPosted event ──────► │ decrypt IOI
+    │                             │                        │ compare all IOIs
+    │                             │                        │ find overlap
+    │                             │ ◄── MatchProposed ──── │ emit event
+    │ ◄── pollProposals() ────────│                        │
+    │  fetch blob from Walrus     │                        │
+    │  GPT evaluates              │                        │
+    │── submitOrder() ──────────► OrderCommitment event ──► │ decrypt order
+    │                             │                        │ settle via DeepBook
+```
+
+The enclave runs two background loops simultaneously:
+
+- **IOI matcher** — watches `IoisPosted`, decrypts all IOIs via Seal, finds overlapping buy/sell pairs, emits `MatchProposed`
+- **Order settler** — watches `OrderCommitment` (from Terminal + shell-agent accepts), decrypts sealed orders, executes on DeepBook
+
+The enclave is the only entity that ever sees plaintext IOI terms. Its code is registered on-chain as PCR hashes — if anyone tampers with it, Seal refuses to release decryption keys and the enclave goes blind. This is the trust guarantee.
+
+---
+
 ## Setup
 
 ### 1. Install
