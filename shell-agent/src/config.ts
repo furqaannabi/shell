@@ -33,4 +33,12 @@ export const config = {
     process.env.AGENT_POLICY ??
     "Accept any match within declared range. Reject if size > 1000.",
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+  // IOI parameters used by the auto-posting loop in `run` mode.
+  ioiSide: (process.env.AGENT_IOI_SIDE ?? "buy") as "buy" | "sell",
+  ioiAsset: process.env.AGENT_IOI_ASSET ?? "0x2::sui::SUI",
+  ioiSizeLo: BigInt(process.env.AGENT_IOI_SIZE_LO ?? "1000000000"),   // 1 SUI
+  ioiSizeHi: BigInt(process.env.AGENT_IOI_SIZE_HI ?? "10000000000"),  // 10 SUI
+  ioiPriceLo: BigInt(process.env.AGENT_IOI_PRICE_LO ?? "1800000000"), // 1.80
+  ioiPriceHi: BigInt(process.env.AGENT_IOI_PRICE_HI ?? "2200000000"), // 2.20
+  ioiTtlMin: parseInt(process.env.AGENT_IOI_TTL_MIN ?? "60", 10),
 };
