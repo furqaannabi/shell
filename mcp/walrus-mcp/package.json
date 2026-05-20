@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "walrus-mcp": "./dist/server.js"
+    "walrus-mcp": "./dist/server.js",
+    "walrus-mcp-http": "./dist/server-http.js"
   },
   "main": "./dist/server.js",
   "files": [
@@ -15,7 +16,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node ./dist/server.js",
-    "dev": "tsx watch src/server.ts"
+    "start:http": "node ./dist/server-http.js",
+    "dev": "tsx watch src/server.ts",
+    "dev:http": "tsx watch src/server-http.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
