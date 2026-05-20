@@ -11,7 +11,7 @@ export default function AgentPage() {
       <header className="glass-panel p-6 rounded border border-outline-variant flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="font-headline-md text-headline-md text-on-surface mb-1">
-            Agent — Sealed IOI Exchange
+            IOI Desk
           </h1>
           <p className="font-mono-sm text-mono-sm text-on-surface-variant max-w-[640px]">
             Signal interest to trade privately. Your price and size stay
