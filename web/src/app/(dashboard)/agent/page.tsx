@@ -7,7 +7,7 @@ import ProposalFeed from '@/components/agent/ProposalFeed';
 
 export default function AgentPage() {
   return (
-    <div className="max-w-container-max mx-auto space-y-margin w-full">
+    <div className="max-w-container-max mx-auto space-y-margin w-full h-full overflow-y-auto pb-8">
       <header className="glass-panel p-6 rounded border border-outline-variant flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="font-headline-md text-headline-md text-on-surface mb-1">
