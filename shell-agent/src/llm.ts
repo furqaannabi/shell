@@ -14,13 +14,14 @@ export interface LlmDecision {
 }
 
 /** Ask GPT to evaluate a match proposal against the agent's declared
- *  policy. Returns a structured decision; throws on malformed output. */
+ *  policy. `policyOverride` replaces `config.agentPolicy` when provided. */
 export async function evaluateProposal(
   proposal: MatchProposal,
+  policyOverride?: string,
 ): Promise<LlmDecision> {
   const system =
     "You are a trading agent. Your policy is: " +
-    config.agentPolicy +
+    (policyOverride ?? config.agentPolicy) +
     "\n\nReply with ONLY a single JSON object matching this schema:" +
     " {decision: 'accept_match'|'reject_match'|'wait', reasoning: string, policy_check: boolean}." +
     " Set policy_check=true only if the decision provably stays within the declared policy.";

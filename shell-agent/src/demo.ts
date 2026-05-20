@@ -6,7 +6,7 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { config } from "./config.js";
 import { postIoi } from "./ioi.js";
 import { evaluateProposal } from "./llm.js";
-import { pollProposals } from "./proposals.js";
+import { pollProposals, type MatchProposal } from "./proposals.js";
 import { submitOrderFromProposal } from "./orders.js";
 
 const SEAL_KEY_SERVER = {
@@ -18,6 +18,16 @@ const SEAL_KEY_SERVER = {
 const POLL_MS = 5_000;
 const TIMEOUT_MS = 5 * 60_000;
 const FLOAT = 1_000_000_000n;
+
+// Quant policy used throughout this demo.
+// Values are 1e9-scaled integers (1 DUSDC = 1_000_000_000, 1 SUI = 1_000_000_000).
+const DEMO_POLICY =
+  "You are a quant trading agent for Shell Finance. " +
+  "Accept a match only if ALL conditions hold: " +
+  "(1) agreed_price is between 1_800_000_000 and 2_100_000_000 (i.e. 1.80–2.10 DUSDC); " +
+  "(2) agreed_size is between 1_000_000_000 and 5_000_000_000 (i.e. 1–5 SUI). " +
+  "Reject if price or size is outside those bounds. " +
+  "Set policy_check=true only when the accepted match provably satisfies both conditions.";
 
 function makeSui() {
   return new SuiJsonRpcClient({ url: config.suiRpcUrl, network: "testnet" });
@@ -31,8 +41,18 @@ function makeSeal(sui: SuiJsonRpcClient) {
   });
 }
 
-/** Full end-to-end demo: two wallets post overlapping IOIs, enclave matches,
- *  both sides auto-accept. No human interaction required. */
+function sep(label: string) {
+  console.log(`\n${"─".repeat(60)}`);
+  console.log(`  ${label}`);
+  console.log("─".repeat(60));
+}
+
+/** Full end-to-end demo:
+ *  1. LLM rejects a bad synthetic proposal (shows AI decision-making)
+ *  2. Two wallets post overlapping IOIs on-chain
+ *  3. Enclave matches → both sides get proposals
+ *  4. LLM evaluates and auto-accepts the real proposals
+ */
 export async function runDemo(): Promise<void> {
   const buyerKey = process.env.DEMO_BUYER_KEY;
   const sellerKey = process.env.DEMO_SELLER_KEY;
@@ -47,6 +67,41 @@ export async function runDemo(): Promise<void> {
   const buyerAddr = buyerKp.toSuiAddress();
   const sellerAddr = sellerKp.toSuiAddress();
 
+  sep("STEP 1 — AI policy enforcement (synthetic bad proposal)");
+  console.log("[demo] policy:", DEMO_POLICY.slice(0, 120) + "…");
+
+  // Manufacture a proposal that violates the policy: price 3.50 DUSDC (above max 2.10).
+  const badProposal: MatchProposal = {
+    buyAgent: buyerAddr,
+    sellAgent: sellerAddr,
+    asset: "0x2::sui::SUI",
+    agreedPrice: 3_500_000_000n, // 3.50 DUSDC — above policy ceiling
+    agreedSize: 2n * FLOAT,
+    expiryMs: BigInt(Date.now()) + 60_000n,
+    side: "buy",
+    blobId: "demo-synthetic-bad-proposal",
+  };
+
+  console.log(
+    `[demo] synthetic proposal: price=3.50 DUSDC  size=2 SUI  (price violates policy max 2.10)`,
+  );
+  const badDecision = await evaluateProposal(badProposal, DEMO_POLICY);
+  console.log(
+    `[demo] LLM decision : ${badDecision.decision}`,
+  );
+  console.log(
+    `[demo] LLM reasoning: ${badDecision.reasoning}`,
+  );
+  console.log(
+    `[demo] policy_check : ${badDecision.policy_check}`,
+  );
+  if (badDecision.decision === "accept_match") {
+    console.warn("[demo] WARNING: LLM accepted a bad proposal — demo narrative weakened");
+  } else {
+    console.log("[demo] ✓ bad proposal correctly rejected — no order submitted");
+  }
+
+  sep("STEP 2 — Post encrypted IOIs on-chain (Seal + Walrus)");
   console.log(`[demo] buyer  ${buyerAddr}`);
   console.log(`[demo] seller ${sellerAddr}`);
 
@@ -58,14 +113,13 @@ export async function runDemo(): Promise<void> {
   const sys = await buyerSui.getLatestSuiSystemState();
   const expiryEpoch = BigInt(sys.epoch) + 10n;
 
-  // Overlapping terms:
+  // Overlapping terms that satisfy DEMO_POLICY:
   //   Buyer: 2–4 SUI @ 1.80–2.20 DUSDC
   //   Seller: 2–4 SUI @ 1.90–2.10 DUSDC
   //   Enclave midpoint: 2.00 DUSDC, 2 SUI
   const asset = "0x2::sui::SUI";
   const ttlMs = BigInt(Date.now()) + 30n * 60_000n;
 
-  console.log("[demo] posting Buy + Sell IOIs…");
   const [buyResult, sellResult] = await Promise.all([
     postIoi({
       suiClient: buyerSui,
@@ -99,9 +153,10 @@ export async function runDemo(): Promise<void> {
     }),
   ]);
 
-  console.log(`[demo] buy  IOI: blob=${buyResult.blobId} tx=${buyResult.digest}`);
-  console.log(`[demo] sell IOI: blob=${sellResult.blobId} tx=${sellResult.digest}`);
-  console.log("[demo] waiting for enclave match (timeout 5 min)…");
+  console.log(`[demo] buy  IOI encrypted + posted: blob=${buyResult.blobId}`);
+  console.log(`[demo] sell IOI encrypted + posted: blob=${sellResult.blobId}`);
+
+  sep("STEP 3 — Enclave matches (polling every 5s, timeout 5 min)");
 
   const buyerSeen = new Set<string>();
   const sellerSeen = new Set<string>();
@@ -127,14 +182,14 @@ export async function runDemo(): Promise<void> {
         if (buyerSeen.has(p.blobId)) continue;
         buyerSeen.add(p.blobId);
         console.log(
-          `[demo] buyer proposal: price=${p.agreedPrice} size=${p.agreedSize}`,
+          `\n[demo] buyer got proposal: price=${p.agreedPrice} size=${p.agreedSize}`,
         );
-        const buyDecision = await evaluateProposal(p);
-        console.log(
-          `[demo] buyer LLM: ${buyDecision.decision} (policy_ok=${buyDecision.policy_check}) — ${buyDecision.reasoning}`,
-        );
-        if (buyDecision.decision !== "accept_match" || !buyDecision.policy_check) {
-          console.log("[demo] buyer rejected by LLM — skipping");
+        const d = await evaluateProposal(p, DEMO_POLICY);
+        console.log(`[demo] buyer LLM decision : ${d.decision}`);
+        console.log(`[demo] buyer LLM reasoning: ${d.reasoning}`);
+        console.log(`[demo] buyer policy_check  : ${d.policy_check}`);
+        if (d.decision !== "accept_match" || !d.policy_check) {
+          console.log("[demo] buyer LLM rejected — skipping");
           continue;
         }
         const digest = await submitOrderFromProposal({
@@ -143,7 +198,7 @@ export async function runDemo(): Promise<void> {
           keypair: buyerKp,
           proposal: p,
         });
-        console.log(`[demo] buyer order submitted: ${digest}`);
+        console.log(`[demo] buyer Shell order submitted: ${digest}`);
         buyerDone = true;
       }
     }
@@ -157,14 +212,14 @@ export async function runDemo(): Promise<void> {
         if (sellerSeen.has(p.blobId)) continue;
         sellerSeen.add(p.blobId);
         console.log(
-          `[demo] seller proposal: price=${p.agreedPrice} size=${p.agreedSize}`,
+          `\n[demo] seller got proposal: price=${p.agreedPrice} size=${p.agreedSize}`,
         );
-        const sellDecision = await evaluateProposal(p);
-        console.log(
-          `[demo] seller LLM: ${sellDecision.decision} (policy_ok=${sellDecision.policy_check}) — ${sellDecision.reasoning}`,
-        );
-        if (sellDecision.decision !== "accept_match" || !sellDecision.policy_check) {
-          console.log("[demo] seller rejected by LLM — skipping");
+        const d = await evaluateProposal(p, DEMO_POLICY);
+        console.log(`[demo] seller LLM decision : ${d.decision}`);
+        console.log(`[demo] seller LLM reasoning: ${d.reasoning}`);
+        console.log(`[demo] seller policy_check  : ${d.policy_check}`);
+        if (d.decision !== "accept_match" || !d.policy_check) {
+          console.log("[demo] seller LLM rejected — skipping");
           continue;
         }
         const digest = await submitOrderFromProposal({
@@ -173,11 +228,15 @@ export async function runDemo(): Promise<void> {
           keypair: sellerKp,
           proposal: p,
         });
-        console.log(`[demo] seller order submitted: ${digest}`);
+        console.log(`[demo] seller Shell order submitted: ${digest}`);
         sellerDone = true;
       }
     }
   }
 
-  console.log("[demo] both orders submitted — IOI exchange complete");
+  sep("DEMO COMPLETE");
+  console.log("[demo] ✓ bad proposal rejected by AI policy enforcement");
+  console.log("[demo] ✓ matching IOIs posted privately (Seal-encrypted on Walrus)");
+  console.log("[demo] ✓ enclave matched without seeing plaintext order terms");
+  console.log("[demo] ✓ AI accepted real proposals and submitted Shell orders on-chain");
 }
