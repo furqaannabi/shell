@@ -1,5 +1,6 @@
 'use client';
 
+import AuditJournal from '@/components/agent/AuditJournal';
 import IOIList from '@/components/agent/IOIList';
 import ProposalFeed from '@/components/agent/ProposalFeed';
 
@@ -32,6 +33,8 @@ export default function AgentPage() {
         <IOIList />
         <ProposalFeed />
       </div>
+
+      <AuditJournal />
 
       <section className="glass-panel rounded border border-outline-variant p-4">
         <h2 className="font-body-base text-on-surface font-medium border-b border-outline-variant pb-2 mb-3">
