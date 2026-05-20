@@ -17,6 +17,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Shell Finance",
   description: "Confidential order flow on DeepBook",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
