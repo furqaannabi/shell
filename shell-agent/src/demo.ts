@@ -5,6 +5,7 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 
 import { config } from "./config.js";
 import { postIoi } from "./ioi.js";
+import { evaluateProposal } from "./llm.js";
 import { pollProposals } from "./proposals.js";
 import { submitOrderFromProposal } from "./orders.js";
 
@@ -128,6 +129,14 @@ export async function runDemo(): Promise<void> {
         console.log(
           `[demo] buyer proposal: price=${p.agreedPrice} size=${p.agreedSize}`,
         );
+        const buyDecision = await evaluateProposal(p);
+        console.log(
+          `[demo] buyer LLM: ${buyDecision.decision} (policy_ok=${buyDecision.policy_check}) — ${buyDecision.reasoning}`,
+        );
+        if (buyDecision.decision !== "accept_match" || !buyDecision.policy_check) {
+          console.log("[demo] buyer rejected by LLM — skipping");
+          continue;
+        }
         const digest = await submitOrderFromProposal({
           suiClient: buyerSui,
           sealClient: buyerSeal,
@@ -150,6 +159,14 @@ export async function runDemo(): Promise<void> {
         console.log(
           `[demo] seller proposal: price=${p.agreedPrice} size=${p.agreedSize}`,
         );
+        const sellDecision = await evaluateProposal(p);
+        console.log(
+          `[demo] seller LLM: ${sellDecision.decision} (policy_ok=${sellDecision.policy_check}) — ${sellDecision.reasoning}`,
+        );
+        if (sellDecision.decision !== "accept_match" || !sellDecision.policy_check) {
+          console.log("[demo] seller rejected by LLM — skipping");
+          continue;
+        }
         const digest = await submitOrderFromProposal({
           suiClient: sellerSui,
           sealClient: sellerSeal,
