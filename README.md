@@ -50,6 +50,7 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
 | Demo     | Six consecutive autonomous on-chain settlements in ~20s (first digest `4fdfgYhsYuCvwY…`) | [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md)                |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | [`web/`](web/)                                                   |
+| Agents   | Walrus + MemWal MCP server (11 typed tools, stdio); Claude Code SKILL.md fallback        | [`mcp/walrus-mcp/`](mcp/walrus-mcp/), [`skills/walrus/`](skills/walrus/) |
 
 ## Repo layout
 
@@ -68,11 +69,19 @@ ts-sdk/                    @shell-finance/sdk
   deployments/testnet.json Object IDs from testnet publish
 enclave-nitro/             Nautilus app overlay (drops into a MystenLabs/nautilus checkout)
   apps/shell/              Rust /process_data handler + allowed_endpoints.yaml
+  framework-patches/       lib.rs + main.rs overlays (persistent eph_kp, AppState.shell)
   scripts/assemble.sh      Clones nautilus, applies patches, copies the overlay
 web/                       Trader-facing Next.js app (dapp-kit wallet, sealed-order form, receipts)
+mcp/walrus-mcp/            Walrus + MemWal MCP server — 11 typed tools over stdio
+  src/server.ts            Tool registration + dispatch
+  src/tools/               put / get / status / extend / delete / put_quilt /
+                           list_owned / head_pointer / memwal.{remember,recall,restore}
+skills/walrus/SKILL.md     Zero-install Claude Code skill — CLI install + flow + head-pointer pattern
 docs/
+  agent-mode.md            Headless Node-daemon agent design (Walrus state, head pointer)
+  walrus-agent-tooling.md  MCP + skill design for LLM-driven agents
   aws-deployment.md        Nitro provisioning runbook (assemble → configure → register)
-  seal-in-nitro.md         Scope for closing the side-channel (port apps/seal-example, ~3-5 days)
+  seal-in-nitro.md         Autonomous loop walkthrough + wire-format gotchas
 ui-guide/                  Static HTML mockups (design intent, not code to import)
 ```
 
@@ -102,6 +111,20 @@ cd ts-sdk
 npm install
 npm run build
 ```
+
+### Walrus MCP server (agent surface)
+
+For LLM agents (Claude Desktop / Claude Code / Cursor) to read and reason over Shell's Walrus-backed state — and over Walrus more generally:
+
+```bash
+cd mcp/walrus-mcp
+npm install && npm run build
+claude mcp add walrus -- node "$(pwd)/dist/server.js"
+```
+
+Eleven tools become available: `walrus.put/get/status/extend/delete/put_quilt/list_owned/head_pointer` and `memwal.remember/recall/restore`. `put`/`get`/`status` and the two Sui RPC tools work with zero config against testnet; the signed-tx tools need `WALRUS_KEYPAIR_PATH` and the MemWal tools need a delegate key from <https://app.memwal.com>. Design rationale + composition stories in [`docs/walrus-agent-tooling.md`](docs/walrus-agent-tooling.md).
+
+Zero-install fallback: drop [`skills/walrus/SKILL.md`](skills/walrus/SKILL.md) into your Claude Code skills directory.
 
 ### End-to-end demo (testnet)
 

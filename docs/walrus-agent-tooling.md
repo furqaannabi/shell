@@ -104,36 +104,33 @@ Three concrete stories that directly satisfy the Walrus-track headlines:
 
 All three are *interface gaps* on top of the existing Shell blob roles in [`agent-mode.md`](agent-mode.md). The MCP server / SKILL.md is the layer that closes them.
 
-## Recommendation
+## What shipped
 
-**Ship both, MCP first.** The MCP server is the bigger track signal — the problem statement names "integrations and tooling that make it easier for developers to adopt Walrus or MemWal in agentic systems" verbatim — and the demo of typing *"show me what my Shell agent did yesterday"* into Claude Desktop and getting a real summary off Walrus is the money shot. SKILL.md follows as the zero-install fallback that points at the MCP server when present and falls back to CLI when not.
+Both surfaces are live as of [`9add692`](../skills/walrus/SKILL.md).
 
-## Next-step skeleton (if proceeding)
+| File | Role | State |
+| --- | --- | --- |
+| [`mcp/walrus-mcp/src/server.ts`](../mcp/walrus-mcp/src/server.ts) | MCP stdio transport, 11 tools registered | ✅ |
+| [`mcp/walrus-mcp/src/tools/put.ts`](../mcp/walrus-mcp/src/tools/put.ts) | `walrus.put` — publisher `PUT /v1/blobs` | ✅ live testnet |
+| [`mcp/walrus-mcp/src/tools/get.ts`](../mcp/walrus-mcp/src/tools/get.ts) | `walrus.get` — aggregator `GET /v1/blobs/{id}` | ✅ live testnet |
+| [`mcp/walrus-mcp/src/tools/status.ts`](../mcp/walrus-mcp/src/tools/status.ts) | `walrus.status` — aggregator HEAD | ✅ live testnet |
+| [`mcp/walrus-mcp/src/tools/list_owned.ts`](../mcp/walrus-mcp/src/tools/list_owned.ts) | `walrus.list_owned` — Sui RPC paginated, filter on `::blob::Blob` | ✅ live testnet |
+| [`mcp/walrus-mcp/src/tools/head_pointer.ts`](../mcp/walrus-mcp/src/tools/head_pointer.ts) | `walrus.head_pointer` — schema-agnostic Sui object read | ✅ live testnet |
+| [`mcp/walrus-mcp/src/tools/extend.ts`](../mcp/walrus-mcp/src/tools/extend.ts) | `walrus.extend` — `WalrusClient.executeExtendBlobTransaction` | ✅ wired, needs `WALRUS_KEYPAIR_PATH` |
+| [`mcp/walrus-mcp/src/tools/delete.ts`](../mcp/walrus-mcp/src/tools/delete.ts) | `walrus.delete` — `WalrusClient.executeDeleteBlobTransaction` | ✅ wired, needs key |
+| [`mcp/walrus-mcp/src/tools/quilt.ts`](../mcp/walrus-mcp/src/tools/quilt.ts) | `walrus.put_quilt` — `WalrusClient.writeFiles` + `WalrusFile.from` | ✅ wired, needs key |
+| [`mcp/walrus-mcp/src/tools/memwal.ts`](../mcp/walrus-mcp/src/tools/memwal.ts) | `memwal.remember / recall / restore` via `@mysten-incubation/memwal` | ✅ wired, needs delegate key |
+| [`mcp/walrus-mcp/src/sui.ts`](../mcp/walrus-mcp/src/sui.ts) | Lazy SuiJsonRpcClient + WalrusClient + bech32 keypair loader | ✅ |
+| [`mcp/walrus-mcp/README.md`](../mcp/walrus-mcp/README.md) | Install, env config table, tool reference | ✅ |
+| [`skills/walrus/SKILL.md`](../skills/walrus/SKILL.md) | Zero-install Claude Code skill (CLI flow + head-pointer recipe) | ✅ |
 
-```
-mcp/walrus-mcp/
-  package.json                 # @shell-finance/walrus-mcp, MIT
-  src/server.ts                # stdio transport, MCP SDK boilerplate
-  src/tools/
-    put.ts                     # walrus.put — wraps publisher PUT
-    get.ts                     # walrus.get — wraps aggregator GET
-    status.ts                  # walrus.status — wraps walrus blob-status
-    extend.ts                  # walrus.extend — TS SDK
-    delete.ts                  # walrus.delete — TS SDK
-    quilt.ts                   # walrus.put_quilt — TS SDK writeFiles
-    list_owned.ts              # walrus.list_owned — Sui RPC dynamic-fields walk
-    head_pointer.ts            # walrus.head_pointer — Sui RPC object fetch
-    memwal_remember.ts         # memwal.remember — wraps @mysten-incubation/memwal
-    memwal_recall.ts           # memwal.recall
-    memwal_restore.ts          # memwal.restore
-  README.md                    # claude mcp add walrus -- node /path/to/server.js
+Smoke-tested: tool introspection lists all 11; `put → get → status` round-trips a fresh nonce on testnet; `head_pointer` reads the live Shell `Enclave<SHELL>` Move fields; `list_owned` paginates; the five tools that need keys/delegate return structured `isError` payloads with the exact env vars / CLI to fix.
 
-skills/walrus/SKILL.md         # markdown above, plus extend/delete/quilt/seal recipes
+Wiring into Shell: the daemon's existing Walrus writes (per [`agent-mode.md`](agent-mode.md)) keep using the TS SDK directly. The MCP server is for the *operator-facing* LLM surface — reading and reasoning over the daemon's blob trail from inside Claude Desktop / Cursor / etc., with `memwal.recall` providing the semantic-search shortcut over the journal.
 
-docs/walrus-agent-tooling.md   # this file
-```
+## Recommendation (retained from design phase)
 
-Wiring into Shell: the daemon's existing Walrus writes (per `agent-mode.md`) keep using the TS SDK directly. The MCP server is for the *operator-facing* LLM surface — reading and reasoning over the daemon's blob trail from inside Claude Desktop / Cursor / etc., with `memwal.recall` providing the semantic-search shortcut over the journal.
+**Ship both, MCP first.** The MCP server is the bigger track signal — the problem statement names "integrations and tooling that make it easier for developers to adopt Walrus or MemWal in agentic systems" verbatim — and the demo of typing *"show me what my Shell agent did yesterday"* into Claude Desktop and getting a real summary off Walrus is the money shot. SKILL.md is the zero-install fallback.
 
 ## References
 
