@@ -195,24 +195,22 @@ Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough 
 | Shell package (DeepBook-enabled) | `0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd` |
 | `EnclaveConfig<SHELL>` | `0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8` |
 | `Cap<SHELL>` (deployer) | `0xfbbcb810f66ac05bb0924237eb488dce80b51afde44f5f68a3aacc2a287b2209` |
-| `Enclave<SHELL>` (debug-mode, autonomous) | `0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3` |
+| `Enclave<SHELL>` (**prod-mode**, autonomous) | `0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948` |
+| PCR0 / PCR1 on `EnclaveConfig` | `0x39fb1236cced155c9be30f9ba03e1f5a699b5223e81003e3ee8ec6508b692a99d3490d481bf45b18191fdb8b854ed814` |
+| PCR2 | `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a` |
+| Previous debug Enclave<SHELL> | `0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3` |
 | Enclave Sui address (derived from eph_kp) | `0xeda60f47715ea94dae92a58467894f3882d18d8690a348df6e03b4e3cfef1114` |
 | Enclave Ed25519 pubkey | `0x6fea82e844451e5c029253ebb91428a08df4868c098a44ebc8289bb0ee114613` |
 | DeepBook testnet SUI/DBUSDC pool | `0x1c19362ca52b8ffd7a33cee805a67d40f31e6ba303753fd3a4cfdfacea7163a5` |
 | Previous package (pre-DeepBook, direct-swap) | `0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd` |
 | First autonomous direct-swap settlement digest | `4fdfgYhsYuCvwYFX4kfs3KajWrrrY6U8CbEYg2DgcXiw` |
 
-PCRs registered on-chain (debug-mode):
-- PCR0 / PCR1: all-zero (debug-mode attestation)
-- PCR2: `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a` (kernel measurement, unchanged across modes)
-
-For prod-mode (real AWS-signed PCRs), the deployer runs `update_pcrs` with the captured EIF measurements and re-registers — see [`docs/aws-deployment.md`](docs/aws-deployment.md).
+**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0x39fb1236…` match the published EIF measurement. The on-chain `EnclaveConfig` was updated to those values (digest `HDwqbS7QUzq9vSa7KdAs7xGnDJWLR2GuicANuj3XrQA`) and `register_enclave` was called against a fresh prod-mode attestation (digest `RLZFudQeMvXo3GvWUmL6f32AFUrwHnfDkTb83y1YcGH`). The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the new `SHELL_ENCLAVE_ID` env var (also pushed through the secrets blob) lets the binary follow a re-registration without yet another rebuild.
 
 ## Honest list — what's not shipped
 
 - **DeepBook v3 settlement leg — code in, live demo trade pending DBUSDC depth.** `shell::settlement::settle<TBase, TQuote>` now wraps both legs in `swap_exact_base_for_quote` / `swap_exact_quote_for_base` against the SUI/DBUSDC pool, with `min_*_out` derived from the enclave-matched price. Either both legs fill at-or-better or the PTB reverts atomically. Move build clean, EIF rebuilt + deployed, enclave wallet funded with DEEP. A live crossing-pair demo on testnet additionally needs DBUSDC depth on the bid side of `0x1c19362c…` — the testnet pool was thin on the day of writing, so the headline still relies on the on-chain code path rather than a fresh tx digest. See [`docs/deepbook-integration.md`](docs/deepbook-integration.md).
 - **Partial fills in the matcher.** v1 is whole-fill only.
-- **Prod-mode PCRs.** Live enclave runs in debug mode for the iteration loop; the PCR/registration script wiring is identical for prod, but the demo box is debug-pinned.
 
 ## Conventions
 

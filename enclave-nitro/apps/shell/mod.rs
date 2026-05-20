@@ -49,8 +49,17 @@ const SHELL_PACKAGE_ID: &str =
     "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd";
 const ENCLAVE_CONFIG_ID: &str =
     "0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8";
-const ENCLAVE_ID: &str =
+/// Default `Enclave<SHELL>` shared object id. Overridable at boot via
+/// the `SHELL_ENCLAVE_ID` env var (pushed in through the host secrets
+/// blob) so a prod-mode re-registration produces a new Enclave<SHELL>
+/// without requiring yet another EIF rebuild.
+const DEFAULT_ENCLAVE_ID: &str =
     "0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3";
+
+lazy_static::lazy_static! {
+    static ref ENCLAVE_ID: String = std::env::var("SHELL_ENCLAVE_ID")
+        .unwrap_or_else(|_| DEFAULT_ENCLAVE_ID.to_string());
+}
 const SEAL_TESTNET_KEY_SERVER: &str =
     "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98";
 const SUI_FULLNODE: &str = "https://fullnode.testnet.sui.io";
@@ -517,7 +526,7 @@ async fn decrypt_order(
     ensure_server_pubkey(http).await?;
 
     // Build PTB: shell::shell::seal_approve(id, &Enclave<SHELL>, ctx)
-    let enclave_shared_version = fetch_initial_shared_version(http, ENCLAVE_ID).await?;
+    let enclave_shared_version = fetch_initial_shared_version(http, ENCLAVE_ID.as_str()).await?;
     let ptb = build_seal_approve_ptb(&seal_id, enclave_shared_version)?;
 
     // Per-request session keypair (TS SDK calls these "session keys").
@@ -861,7 +870,7 @@ async fn submit_settlement(
         .map_err(|e| EnclaveError::GenericError(format!("sender addr: {e}")))?;
 
     // 3. Look up the initial_shared_version for every shared input.
-    let enclave_isv = fetch_initial_shared_version(http, ENCLAVE_ID).await?;
+    let enclave_isv = fetch_initial_shared_version(http, ENCLAVE_ID.as_str()).await?;
     let maker_isv = fetch_initial_shared_version(http, &maker_order_hex).await?;
     let taker_isv = fetch_initial_shared_version(http, &taker_order_hex).await?;
     let pool_isv = fetch_initial_shared_version(http, DEEPBOOK_SUI_DBUSDC_POOL).await?;
@@ -975,7 +984,7 @@ fn build_settle_ptb(
 ) -> Result<ProgrammableTransaction, EnclaveError> {
     let pkg = Address::from_str(SHELL_PACKAGE_ID)
         .map_err(|e| EnclaveError::GenericError(format!("pkg id: {e}")))?;
-    let enclave_obj = Address::from_str(ENCLAVE_ID)
+    let enclave_obj = Address::from_str(ENCLAVE_ID.as_str())
         .map_err(|e| EnclaveError::GenericError(format!("enclave id: {e}")))?;
     let maker_obj = Address::from_str(maker_order_hex)
         .map_err(|e| EnclaveError::GenericError(format!("maker obj id: {e}")))?;
@@ -1183,7 +1192,7 @@ fn build_seal_approve_ptb(
 ) -> Result<ProgrammableTransaction, EnclaveError> {
     let pkg = Address::from_str(SHELL_PACKAGE_ID)
         .map_err(|e| EnclaveError::GenericError(format!("pkg id: {e}")))?;
-    let enclave_obj = Address::from_str(ENCLAVE_ID)
+    let enclave_obj = Address::from_str(ENCLAVE_ID.as_str())
         .map_err(|e| EnclaveError::GenericError(format!("enclave id: {e}")))?;
 
     let id_input = Input::Pure {
