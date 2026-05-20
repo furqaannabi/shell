@@ -16,6 +16,12 @@ use_environment = "testnet"
 manifest_digest = "7AFB66695545775FBFBB2D3078ADFD084244D5002392E837FDE21D9EA1C6D01C"
 deps = { MoveStdlib = "MoveStdlib" }
 
+[pinned.testnet.deepbook]
+source = { git = "https://github.com/MystenLabs/deepbookv3.git", subdir = 'packages\deepbook', rev = "b59d8d2eff1053adce617700dc4312cdd828bd96" }
+use_environment = "testnet"
+manifest_digest = "3101923B9428545A4F52FFAD1C4F959F9BFFF84CD09CE4BCC1CB831286999B5A"
+deps = { std = "MoveStdlib", sui = "Sui", token = "token" }
+
 [pinned.testnet.enclave]
 source = { git = "https://github.com/MystenLabs/nautilus.git", subdir = 'move\enclave', rev = "af7535b9d314f034fa7f9f1f208264540d54cde1" }
 use_environment = "testnet"
@@ -25,5 +31,11 @@ deps = { std = "MoveStdlib", sui = "Sui" }
 [pinned.testnet.shell]
 source = { root = true }
 use_environment = "testnet"
-manifest_digest = "C6BCFA8F297FEE7557ED9C04CF310A13CC30F2F6BAACD47C969FD780BF4A01D4"
-deps = { enclave = "enclave", std = "MoveStdlib", sui = "Sui" }
+manifest_digest = "39B2D407654A3C0F04763C56B04417B54058BCE618D6DF8AB93A0238CD46D2E0"
+deps = { deepbook = "deepbook", enclave = "enclave", std = "MoveStdlib", sui = "Sui", token = "token" }
+
+[pinned.testnet.token]
+source = { git = "https://github.com/MystenLabs/deepbookv3.git", subdir = 'packages\token', rev = "b59d8d2eff1053adce617700dc4312cdd828bd96" }
+use_environment = "testnet"
+manifest_digest = "5745706258F61D6CE210904B3E6AE87A73CE9D31A6F93BE4718C442529332A87"
+deps = { std = "MoveStdlib", sui = "Sui" }
