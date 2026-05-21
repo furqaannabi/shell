@@ -59,7 +59,7 @@ const ENCLAVE_CONFIG_ID: &str =
 /// blob) so a prod-mode re-registration produces a new Enclave<SHELL>
 /// without requiring yet another EIF rebuild.
 const DEFAULT_ENCLAVE_ID: &str =
-    "0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3";
+    "0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948";
 
 lazy_static::lazy_static! {
     static ref ENCLAVE_ID: String = std::env::var("SHELL_ENCLAVE_ID")

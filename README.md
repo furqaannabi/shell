@@ -51,9 +51,9 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 | Layer    | What works                                                                              | Where                                                            |
 | -------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; 10/10 tests | [`move/`](move/)                                                 |
-| Move     | Published to testnet at `0x5a47e786…`                                                  | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
+| Move     | Published to testnet at `0x6a9fb5d2…` (original), upgraded to v2 `0x68aae56c…` (adds `shell::ioi`) | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
 | Enclave  | Autonomous poller: Seal decrypt → match → sign → on-chain settle, all in-TEE             | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) |
-| Nitro    | Debug-mode `Enclave<SHELL>` registered at `0xd23f96fa…` with persistent eph_kp           | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
+| Nitro    | **Prod-mode** `Enclave<SHELL>` `0xe342ee55…`, real PCR0/1 `0x437ff9cd…`, persistent eph_kp | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
 | Demo     | Six consecutive autonomous on-chain settlements in ~20s (first digest `4fdfgYhsYuCvwY…`) | [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md)                |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | <https://shell-finance.vercel.app/> ([source](web/))             |
@@ -206,7 +206,7 @@ Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough 
 | Previous package (pre-DeepBook, direct-swap) | `0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd` |
 | First autonomous direct-swap settlement digest | `4fdfgYhsYuCvwYFX4kfs3KajWrrrY6U8CbEYg2DgcXiw` |
 
-**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0x39fb1236…` match the published EIF measurement. The on-chain `EnclaveConfig` was updated to those values (digest `HDwqbS7QUzq9vSa7KdAs7xGnDJWLR2GuicANuj3XrQA`) and `register_enclave` was called against a fresh prod-mode attestation (digest `RLZFudQeMvXo3GvWUmL6f32AFUrwHnfDkTb83y1YcGH`). The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the new `SHELL_ENCLAVE_ID` env var (also pushed through the secrets blob) lets the binary follow a re-registration without yet another rebuild.
+**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0x437ff9cd…` match the published EIF measurement. The on-chain `EnclaveConfig` was updated to those values (digest `HDwqbS7QUzq9vSa7KdAs7xGnDJWLR2GuicANuj3XrQA`) and `register_enclave` was called against a fresh prod-mode attestation (digest `RLZFudQeMvXo3GvWUmL6f32AFUrwHnfDkTb83y1YcGH`). The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the new `SHELL_ENCLAVE_ID` env var (also pushed through the secrets blob) lets the binary follow a re-registration without yet another rebuild.
 
 ## Honest list — what's not shipped
 

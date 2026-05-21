@@ -23,7 +23,7 @@ Understanding the current baseline avoids re-building what exists.
 
 **Testnet package**: `0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd`
 **DeepBook SUI/DBUSDC pool**: `0x1c19362ca52b8ffd7a33cee805a67d40f31e6ba303753fd3a4cfdfacea7163a5`
-**Enclave**: `0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3` at `https://sui.furqaannabi.com`
+**Enclave**: `0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948` at `https://sui.furqaannabi.com`
 
 > Slippage: enclave currently hardcodes `DEFAULT_SLIPPAGE_BPS = 50`. Threading per-order slippage from the decrypted plaintext into the settle PTB is a planned improvement (tracked in `mod.rs` as a TODO comment).
 
