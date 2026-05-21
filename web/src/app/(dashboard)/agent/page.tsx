@@ -1,6 +1,5 @@
 'use client';
 
-import AuditJournal from '@/components/agent/AuditJournal';
 import IOIForm from '@/components/agent/IOIForm';
 import IOIList from '@/components/agent/IOIList';
 import ProposalFeed from '@/components/agent/ProposalFeed';
@@ -37,8 +36,6 @@ export default function AgentPage() {
       </div>
 
       <IOIList />
-
-      <AuditJournal />
     </div>
   );
 }
