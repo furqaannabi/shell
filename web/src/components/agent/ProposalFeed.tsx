@@ -116,8 +116,9 @@ export default function ProposalFeed() {
   useEffect(() => {
     if (!data) return;
     const newOnes = data.filter((p) => !seenDigests.current.has(p.txDigest));
-    if (newOnes.length === 0) return;
+    const isFirstPass = seenDigests.current.size === 0;
     newOnes.forEach((p) => seenDigests.current.add(p.txDigest));
+    if (isFirstPass || newOnes.length === 0) return;
     try {
       const ctx = new AudioContext();
       const osc = ctx.createOscillator();
