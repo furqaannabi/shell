@@ -43,7 +43,7 @@ export async function pollProposals(opts: {
   proposals: MatchProposal[];
   nextCursor: { txDigest: string; eventSeq: string } | null;
 }> {
-  const eventType = `${config.shellPackageId}::ioi::MatchProposed`;
+  const eventType = `${config.shellPackageIdLatest}::ioi::MatchProposed`;
   const res = await opts.suiClient.queryEvents({
     query: { MoveEventType: eventType },
     cursor: opts.cursor ?? null,

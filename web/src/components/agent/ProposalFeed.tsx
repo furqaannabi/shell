@@ -17,6 +17,7 @@ import {
   getSealClient,
   NETWORK,
   SHELL_PACKAGE_ID,
+  SHELL_PACKAGE_ID_LATEST,
 } from '@/lib/sui';
 
 const WALRUS_AGGREGATOR =
@@ -74,7 +75,7 @@ export default function ProposalFeed() {
     queryFn: async () => {
       if (!account) return [];
       const res = await suiClient.queryEvents({
-        query: { MoveEventType: `${SHELL_PACKAGE_ID}::ioi::MatchProposed` },
+        query: { MoveEventType: `${SHELL_PACKAGE_ID_LATEST}::ioi::MatchProposed` },
         limit: 50,
         order: 'descending',
       });

@@ -2,7 +2,7 @@
 
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
-import { NETWORK, SHELL_PACKAGE_ID } from '@/lib/sui';
+import { NETWORK, SHELL_PACKAGE_ID_LATEST } from '@/lib/sui';
 
 function shortBlob(b: string): string {
   return b.length > 14 ? `${b.slice(0, 8)}…${b.slice(-4)}` : b;
@@ -30,7 +30,7 @@ export default function IOIList() {
     queryFn: async () => {
       if (!account) return [];
       const res = await suiClient.queryEvents({
-        query: { MoveEventType: `${SHELL_PACKAGE_ID}::ioi::IoisPosted` },
+        query: { MoveEventType: `${SHELL_PACKAGE_ID_LATEST}::ioi::IoisPosted` },
         limit: 50,
         order: 'descending',
       });
