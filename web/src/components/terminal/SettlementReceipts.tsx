@@ -2,6 +2,7 @@
 
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { SHELL_PACKAGE_ID, QUOTE_SYMBOL, NETWORK } from '@/lib/sui';
 import { getReceipts } from '@/lib/shell-sdk';
 
@@ -37,6 +38,32 @@ export default function SettlementReceipts() {
     enabled: !!account,
     refetchInterval: 5_000,
   });
+
+  // Chime when a new settlement receipt lands.
+  const seenIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!receipts) return;
+    const fresh = receipts.filter((r) => !seenIds.current.has(r.objectId));
+    const isFirstPass = seenIds.current.size === 0;
+    fresh.forEach((r) => seenIds.current.add(r.objectId));
+    if (isFirstPass || fresh.length === 0) return;
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(660, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(990, ctx.currentTime + 0.25);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.35);
+    } catch {
+      // AudioContext blocked (no user gesture yet) — silent fail.
+    }
+  }, [receipts]);
 
   return (
     <div className="glass-panel rounded-lg p-4 flex flex-col flex-1 overflow-hidden">
