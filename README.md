@@ -196,7 +196,7 @@ Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough 
 | `EnclaveConfig<SHELL>` | `0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8` |
 | `Cap<SHELL>` (deployer) | `0xfbbcb810f66ac05bb0924237eb488dce80b51afde44f5f68a3aacc2a287b2209` |
 | `Enclave<SHELL>` (**prod-mode**, autonomous) | `0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948` |
-| PCR0 / PCR1 on `EnclaveConfig` | `0x4d8e939af9c17bb00b06f31896d256c1982d3aa247863ff6cef77d14b083621577a736f0b3c623a7a9734d77bcb4b1b3` |
+| PCR0 / PCR1 on `EnclaveConfig` | `0x437ff9cd726d4c9d8cee57564f5a6cf479d1f3f7c0290dd82bdc1624278bb1bb7250702d2bd85317ddf63af7f022ca07` |
 | Shell package latest version (v2, adds `shell::ioi`) | `0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa` |
 | PCR2 | `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a` |
 | Previous debug Enclave<SHELL> | `0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3` |
