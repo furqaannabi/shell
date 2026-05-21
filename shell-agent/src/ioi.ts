@@ -76,7 +76,7 @@ export async function postIoi(opts: {
 
   const tx = new Transaction();
   tx.moveCall({
-    target: `${config.shellPackageId}::ioi::record_ioi`,
+    target: `${config.shellPackageIdLatest}::ioi::record_ioi`,
     arguments: [
       tx.pure.vector("u8", Array.from(new TextEncoder().encode(blobId))),
       tx.pure.u64(opts.expiryEpoch),

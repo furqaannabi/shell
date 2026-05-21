@@ -11,7 +11,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { encryptIoi } from '@/lib/ioi';
 import { putBlob } from '@/lib/walrus';
 import { friendlyError } from '@/lib/errors';
-import { SHELL_PACKAGE_ID, QUOTE_SYMBOL, getSealClient } from '@/lib/sui';
+import { SHELL_PACKAGE_ID, SHELL_PACKAGE_ID_LATEST, QUOTE_SYMBOL, getSealClient } from '@/lib/sui';
 
 export default function IOIForm() {
   const account = useCurrentAccount();
@@ -75,7 +75,7 @@ export default function IOIForm() {
 
       const tx = new Transaction();
       tx.moveCall({
-        target: `${SHELL_PACKAGE_ID}::ioi::record_ioi`,
+        target: `${SHELL_PACKAGE_ID_LATEST}::ioi::record_ioi`,
         arguments: [
           tx.pure.vector('u8', Array.from(new TextEncoder().encode(blobId))),
           tx.pure.u64(expiryEpoch),

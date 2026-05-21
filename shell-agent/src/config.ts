@@ -20,9 +20,14 @@ export const config = {
   walrusPublisher:
     process.env.WALRUS_PUBLISHER ??
     "https://publisher.walrus-testnet.walrus.space",
+  // original-id — event filters, Seal identity
   shellPackageId:
     process.env.SHELL_PACKAGE_ID ??
     "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd",
+  // latest published-at — moveCall targets for v2+ functions (e.g. ioi::record_ioi)
+  shellPackageIdLatest:
+    process.env.SHELL_PACKAGE_ID_LATEST ??
+    "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa",
   enclaveId:
     process.env.ENCLAVE_ID ??
     "0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948",
