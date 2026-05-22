@@ -48,12 +48,11 @@ export async function submitOrderFromProposal(opts: {
   });
 
   // Collateral coin: buy → quote (DUSDC), sell → base (SUI).
-  // For demo simplicity, send minimal collateral (the enclave-matched
-  // price + size implies these amounts).
   const isBuy = proposal.side === "buy";
   const collateralType = isBuy ? QUOTE_COIN_TYPE : "0x2::sui::SUI";
   const FLOAT_SCALING = 1_000_000_000n;
-  // Required collateral derived from agreed_price (1e9-scaled) * agreed_size.
+  // size: base raw (1e9). price: DeepBook quote-per-base scale (1e6 for SUI/DUSDC).
+  // quote_raw = size * price / 1e9.
   const collateralAmount = isBuy
     ? (proposal.agreedSize * proposal.agreedPrice) / FLOAT_SCALING
     : proposal.agreedSize;

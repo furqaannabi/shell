@@ -172,6 +172,7 @@ export default function ProposalFeed() {
       // 3. Build PTB with collateral.
       const tx = new Transaction();
       const collateralType = collateralTypeFor(side);
+      // Size in base raw (1e9), price in DeepBook scale (1e6) → quote raw = size * price / 1e9.
       const collateralAmount =
         side === 'sell' ? agreedSize : (agreedSize * agreedPrice) / FLOAT_SCALING;
 

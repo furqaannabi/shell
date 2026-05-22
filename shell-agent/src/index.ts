@@ -42,8 +42,9 @@ async function main() {
       const asset = args.asset ?? "0x2::sui::SUI";
       const sizeLo = BigInt(args["size-lo"] ?? "1000000000"); // 1 SUI
       const sizeHi = BigInt(args["size-hi"] ?? "10000000000"); // 10 SUI
-      const priceLo = BigInt(args["price-lo"] ?? "1000000000");
-      const priceHi = BigInt(args["price-hi"] ?? "2000000000");
+      // price scale: DeepBook quote-per-base (10^(9-base_dec+quote_dec)). 1e6 for SUI/DUSDC.
+      const priceLo = BigInt(args["price-lo"] ?? "1000000"); // $1.00
+      const priceHi = BigInt(args["price-hi"] ?? "2000000"); // $2.00
       const ttlMs = BigInt(args["ttl-ms"] ?? "1800000"); // 30 min
       const expiryMs = BigInt(Date.now()) + ttlMs;
 

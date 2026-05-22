@@ -43,7 +43,8 @@ export const config = {
   ioiAsset: process.env.AGENT_IOI_ASSET ?? "0x2::sui::SUI",
   ioiSizeLo: BigInt(process.env.AGENT_IOI_SIZE_LO ?? "1000000000"),   // 1 SUI
   ioiSizeHi: BigInt(process.env.AGENT_IOI_SIZE_HI ?? "10000000000"),  // 10 SUI
-  ioiPriceLo: BigInt(process.env.AGENT_IOI_PRICE_LO ?? "1800000000"), // 1.80
-  ioiPriceHi: BigInt(process.env.AGENT_IOI_PRICE_HI ?? "2200000000"), // 2.20
+  // Price scale: DeepBook quote-per-base (1e6 for SUI/DUSDC, matches SealedOrderForm + IOIForm).
+  ioiPriceLo: BigInt(process.env.AGENT_IOI_PRICE_LO ?? "1800000"), // 1.80
+  ioiPriceHi: BigInt(process.env.AGENT_IOI_PRICE_HI ?? "2200000"), // 2.20
   ioiTtlMin: parseInt(process.env.AGENT_IOI_TTL_MIN ?? "60", 10),
 };

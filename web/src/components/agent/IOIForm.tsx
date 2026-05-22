@@ -41,10 +41,12 @@ export default function IOIForm() {
 
     try {
       // Parse inputs to base units.
+      // Size = base raw (SUI 9 decimals). Price = DeepBook-scaled quote_per_base
+      // (10^(9-base_dec+quote_dec) = 1e6 for SUI/DUSDC) — matches SealedOrderForm.
       const sizeLoBase = BigInt(Math.round(parseFloat(sizeLo) * 1_000_000_000));
       const sizeHiBase = BigInt(Math.round(parseFloat(sizeHi) * 1_000_000_000));
-      const priceLoBase = BigInt(Math.round(parseFloat(priceLo) * 1_000_000_000));
-      const priceHiBase = BigInt(Math.round(parseFloat(priceHi) * 1_000_000_000));
+      const priceLoBase = BigInt(Math.round(parseFloat(priceLo) * 1_000_000));
+      const priceHiBase = BigInt(Math.round(parseFloat(priceHi) * 1_000_000));
       if (sizeLoBase > sizeHiBase || priceLoBase > priceHiBase) {
         throw new Error('lo must be <= hi for size and price');
       }
