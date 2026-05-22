@@ -8,11 +8,18 @@ import {
 } from '@mysten/dapp-kit';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Transaction } from '@mysten/sui/transactions';
-import { encryptOrder, submitOrderTx } from '@/lib/shell-sdk';
+import {
+  encryptOrder,
+  submitOrderTx,
+  getActiveOrders,
+  getReceipts,
+} from '@/lib/shell-sdk';
 import { getBlob } from '@/lib/walrus';
 import { MatchProposalBcs } from '@/lib/ioi';
 import { friendlyError } from '@/lib/errors';
 import {
+  BASE_COIN_TYPE,
+  QUOTE_COIN_TYPE,
   collateralTypeFor,
   getSealClient,
   NETWORK,
@@ -78,29 +85,68 @@ export default function ProposalFeed() {
   });
   const seenDigests = useRef<Set<string>>(new Set());
 
-  // User's own OrderSubmitted events — used to derive accepted state
-  // from chain so the "ACCEPTED" chip survives reload / browser switch.
-  const { data: userOrders } = useQuery({
-    queryKey: ['user-orders-submitted', account?.address],
+  // User's own alive OrderCommitments + collateral values + originating tx digest.
+  // We match a proposal to one of these by (collateralType, collateralValue) below.
+  const { data: aliveOrders } = useQuery({
+    queryKey: ['alive-orders-with-collateral', account?.address],
     queryFn: async () => {
       if (!account) return [];
-      const res = await suiClient.queryEvents({
-        query: { MoveEventType: `${SHELL_PACKAGE_ID}::pool::OrderSubmitted` },
-        limit: 50,
-        order: 'descending',
+      const orders = await getActiveOrders(suiClient, {
+        shellPackageId: SHELL_PACKAGE_ID,
+        trader: account.address,
       });
-      const me = account.address.toLowerCase();
-      return res.data
-        .filter((ev) => {
-          const t = (ev.parsedJson as { trader?: string }).trader;
-          return t?.toLowerCase() === me;
+      if (orders.length === 0) return [];
+
+      // Re-fetch each commitment with showContent to read the collateral
+      // balance, and resolve the originating tx digest from the object's
+      // previousTransaction (set when the order was first submitted).
+      const enriched = await suiClient.multiGetObjects({
+        ids: orders.map((o) => o.orderId),
+        options: { showContent: true, showPreviousTransaction: true },
+      });
+      const byId = new Map<
+        string,
+        { collateral: bigint; submitDigest: string }
+      >();
+      for (const o of enriched) {
+        if (!o.data?.objectId || o.data?.content?.dataType !== 'moveObject') {
+          continue;
+        }
+        const fields = o.data.content.fields as { collateral?: string };
+        byId.set(o.data.objectId, {
+          collateral: BigInt(fields.collateral ?? '0'),
+          submitDigest: o.data.previousTransaction ?? '',
+        });
+      }
+      return orders
+        .map((o) => {
+          const extra = byId.get(o.orderId);
+          if (!extra) return null;
+          return {
+            orderId: o.orderId,
+            collateralType: o.collateralType,
+            collateralValue: extra.collateral,
+            submitDigest: extra.submitDigest,
+            submittedAtMs: o.submittedAtMs,
+          };
         })
-        .map((ev) => ({
-          digest: ev.id.txDigest,
-          timestamp: Number(ev.timestampMs ?? 0),
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
+        .filter((x): x is NonNullable<typeof x> => x !== null);
     },
+    enabled: !!account,
+    refetchInterval: 10_000,
+  });
+
+  // User's settled receipts — used to mark proposals whose acceptance has
+  // already been consumed by `settle`.
+  const { data: userReceipts } = useQuery({
+    queryKey: ['user-receipts-feed', account?.address],
+    queryFn: () =>
+      account
+        ? getReceipts(suiClient, {
+            shellPackageId: SHELL_PACKAGE_ID,
+            owner: account.address,
+          })
+        : Promise.resolve([]),
     enabled: !!account,
     refetchInterval: 10_000,
   });
@@ -115,7 +161,7 @@ export default function ProposalFeed() {
         order: 'descending',
       });
       const me = account.address.toLowerCase();
-      return res.data
+      const mine = res.data
         .map((ev) => {
           const j = ev.parsedJson as {
             buy_agent: string;
@@ -142,30 +188,89 @@ export default function ProposalFeed() {
           };
         })
         .filter((p): p is NonNullable<typeof p> => p !== null);
+
+      // Enrich each proposal with the BCS-decoded plaintext so we can
+      // compute the exact collateral the acceptance order escrows.
+      // Walrus blobs are content-addressed and immutable, so this is a
+      // one-shot lookup per blob_id.
+      return Promise.all(
+        mine.map(async (p) => {
+          try {
+            const bytes = await getBlob(p.blob);
+            const parsed = MatchProposalBcs.parse(bytes);
+            return {
+              ...p,
+              agreedPrice: BigInt(parsed.agreed_price),
+              agreedSize: BigInt(parsed.agreed_size),
+            };
+          } catch {
+            return { ...p, agreedPrice: BigInt(0), agreedSize: BigInt(0) };
+          }
+        }),
+      );
     },
     enabled: !!account,
     refetchInterval: 5_000,
+    staleTime: 30_000,
   });
 
-  // Greedy mapping: each MatchProposed (asc by ts) claims the next
-  // user-owned OrderSubmitted after it (within 1h window). Heuristic but
-  // resilient — works across browsers and after localStorage clears.
+  // Exact mapping: for each proposal, compute the expected collateral
+  // amount + coin type the acceptance would escrow, then look for a
+  // live OrderCommitment with that exact (type, value). If no live one
+  // matches, check the user's SettlementReceipts for an exact
+  // (filled_price, filled_size, counterparty) match → settled.
+  //
+  // Both paths are deterministic and survive any client state change.
+  // Each on-chain object/receipt can only be claimed by one proposal —
+  // first claim wins (with timestamp asc), so duplicates don't fight.
+  type ChainState =
+    | { status: 'settled'; receiptId: string }
+    | { status: 'accepted'; digest: string };
   const chainAccepted = useMemo(() => {
-    if (!data || !userOrders) return {} as Record<string, string>;
-    const acc: Record<string, string> = {};
-    const remaining = [...userOrders];
-    const sortedProposals = [...data].sort((a, b) => a.timestamp - b.timestamp);
-    for (const p of sortedProposals) {
-      const idx = remaining.findIndex(
-        (o) => o.timestamp > p.timestamp && o.timestamp < p.timestamp + 3_600_000,
+    if (!data) return {} as Record<string, ChainState>;
+    const out: Record<string, ChainState> = {};
+    const remainingOrders = [...(aliveOrders ?? [])];
+    const remainingReceipts = [...(userReceipts ?? [])];
+    const sorted = [...data].sort((a, b) => a.timestamp - b.timestamp);
+    for (const p of sorted) {
+      if (p.agreedSize === BigInt(0)) continue; // blob decode failed
+      // Settled?
+      const rIdx = remainingReceipts.findIndex(
+        (r) =>
+          r.fields.filled_price === p.agreedPrice.toString() &&
+          r.fields.filled_size === p.agreedSize.toString() &&
+          r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase(),
       );
-      if (idx >= 0) {
-        acc[p.blob] = remaining[idx].digest;
-        remaining.splice(idx, 1);
+      if (rIdx >= 0) {
+        out[p.blob] = {
+          status: 'settled',
+          receiptId: remainingReceipts[rIdx].objectId,
+        };
+        remainingReceipts.splice(rIdx, 1);
+        continue;
+      }
+      // Accepted but not yet settled?
+      const expectedType =
+        p.side === 'buy' ? QUOTE_COIN_TYPE : BASE_COIN_TYPE;
+      const expectedValue =
+        p.side === 'sell'
+          ? p.agreedSize
+          : (p.agreedSize * p.agreedPrice) / FLOAT_SCALING;
+      const oIdx = remainingOrders.findIndex(
+        (o) =>
+          o.collateralType === expectedType &&
+          o.collateralValue === expectedValue,
+      );
+      if (oIdx >= 0) {
+        out[p.blob] = {
+          status: 'accepted',
+          digest: remainingOrders[oIdx].submitDigest,
+        };
+        remainingOrders.splice(oIdx, 1);
       }
     }
-    return acc;
-  }, [data, userOrders]);
+    return out;
+  }, [data, aliveOrders, userReceipts]);
 
   // Play a chime when new proposals arrive.
   useEffect(() => {
@@ -323,8 +428,8 @@ export default function ProposalFeed() {
           <tbody>
             {data.map((p) => {
               const isAccepting = accepting === p.blob;
-              const acceptedDigest =
-                chainAccepted[p.blob] ??
+              const state = chainAccepted[p.blob];
+              const localDigest =
                 accepted[`${account.address.toLowerCase()}:${p.blob}`];
               return (
                 <tr
@@ -360,14 +465,33 @@ export default function ProposalFeed() {
                     {timeAgo(p.timestamp)}
                   </td>
                   <td className="py-3 text-right">
-                    {acceptedDigest ? (
+                    {state?.status === 'settled' ? (
                       <a
-                        href={EXPLORER(acceptedDigest)}
+                        href={`https://suiscan.xyz/${NETWORK}/object/${state.receiptId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary border border-primary px-2 py-1 rounded text-[10px] hover:bg-primary/20 transition-colors bg-primary/10"
+                      >
+                        SETTLED ↗
+                      </a>
+                    ) : state?.status === 'accepted' ? (
+                      <a
+                        href={EXPLORER(state.digest)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary border border-primary/30 px-2 py-1 rounded text-[10px] hover:bg-primary/10 transition-colors"
                       >
                         ACCEPTED ↗
+                      </a>
+                    ) : localDigest ? (
+                      <a
+                        href={EXPLORER(localDigest)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-on-surface-variant border border-outline-variant px-2 py-1 rounded text-[10px] hover:bg-surface-container-high transition-colors"
+                        title="Submitted but not yet confirmed on-chain via collateral match"
+                      >
+                        SUBMITTED ↗
                       </a>
                     ) : (
                       <button
