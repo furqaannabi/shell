@@ -65,13 +65,16 @@ export default function IOIForm() {
     staleTime: 5_000,
   });
 
-  function applyMarketRange() {
-    if (!market) return;
+  async function applyMarketRange() {
+    let m = market;
+    if (!m) m = await fetchMidPrice();
+    if (!m) {
+      setError('DeepBook market price unavailable');
+      return;
+    }
     // ±2 % band around mid — wide enough to absorb tick rounding + small drift.
-    const lo = (market.mid * 0.98).toFixed(3);
-    const hi = (market.mid * 1.02).toFixed(3);
-    setPriceLo(lo);
-    setPriceHi(hi);
+    setPriceLo((m.mid * 0.98).toFixed(3));
+    setPriceHi((m.mid * 1.02).toFixed(3));
   }
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -215,7 +218,7 @@ export default function IOIForm() {
           </label>
         </div>
 
-        <div className="flex justify-between items-center font-mono-sm text-[10px] text-on-surface-variant -mb-2">
+        <div className="flex justify-between items-center font-mono-sm text-[10px] text-on-surface-variant">
           <span>
             {market ? (
               <>
@@ -234,9 +237,8 @@ export default function IOIForm() {
           </span>
           <button
             type="button"
-            onClick={applyMarketRange}
-            disabled={!market}
-            className="text-primary border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            onClick={() => void applyMarketRange()}
+            className="text-primary border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors cursor-pointer"
           >
             Use market ±2%
           </button>
