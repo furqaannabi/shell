@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   useCurrentAccount,
   useSignAndExecuteTransaction,
@@ -78,6 +78,33 @@ export default function ProposalFeed() {
   });
   const seenDigests = useRef<Set<string>>(new Set());
 
+  // User's own OrderSubmitted events — used to derive accepted state
+  // from chain so the "ACCEPTED" chip survives reload / browser switch.
+  const { data: userOrders } = useQuery({
+    queryKey: ['user-orders-submitted', account?.address],
+    queryFn: async () => {
+      if (!account) return [];
+      const res = await suiClient.queryEvents({
+        query: { MoveEventType: `${SHELL_PACKAGE_ID}::pool::OrderSubmitted` },
+        limit: 50,
+        order: 'descending',
+      });
+      const me = account.address.toLowerCase();
+      return res.data
+        .filter((ev) => {
+          const t = (ev.parsedJson as { trader?: string }).trader;
+          return t?.toLowerCase() === me;
+        })
+        .map((ev) => ({
+          digest: ev.id.txDigest,
+          timestamp: Number(ev.timestampMs ?? 0),
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
+    },
+    enabled: !!account,
+    refetchInterval: 10_000,
+  });
+
   const { data, isLoading } = useQuery({
     queryKey: ['match-proposed', account?.address],
     queryFn: async () => {
@@ -119,6 +146,26 @@ export default function ProposalFeed() {
     enabled: !!account,
     refetchInterval: 5_000,
   });
+
+  // Greedy mapping: each MatchProposed (asc by ts) claims the next
+  // user-owned OrderSubmitted after it (within 1h window). Heuristic but
+  // resilient — works across browsers and after localStorage clears.
+  const chainAccepted = useMemo(() => {
+    if (!data || !userOrders) return {} as Record<string, string>;
+    const acc: Record<string, string> = {};
+    const remaining = [...userOrders];
+    const sortedProposals = [...data].sort((a, b) => a.timestamp - b.timestamp);
+    for (const p of sortedProposals) {
+      const idx = remaining.findIndex(
+        (o) => o.timestamp > p.timestamp && o.timestamp < p.timestamp + 3_600_000,
+      );
+      if (idx >= 0) {
+        acc[p.blob] = remaining[idx].digest;
+        remaining.splice(idx, 1);
+      }
+    }
+    return acc;
+  }, [data, userOrders]);
 
   // Play a chime when new proposals arrive.
   useEffect(() => {
@@ -277,6 +324,7 @@ export default function ProposalFeed() {
             {data.map((p) => {
               const isAccepting = accepting === p.blob;
               const acceptedDigest =
+                chainAccepted[p.blob] ??
                 accepted[`${account.address.toLowerCase()}:${p.blob}`];
               return (
                 <tr
