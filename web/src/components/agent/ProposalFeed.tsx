@@ -67,7 +67,7 @@ export default function ProposalFeed() {
 
   const [accepting, setAccepting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const ACCEPTED_KEY = 'shell_accepted_proposals';
+  const ACCEPTED_KEY = 'shell_accepted_proposals_v2'; // keyed by `${addr}:${blobId}`
   const [accepted, setAccepted] = useState<Record<string, string>>(() => {
     if (typeof window === 'undefined') return {};
     try {
@@ -217,8 +217,9 @@ export default function ProposalFeed() {
 
       const res = await signAndExecute({ transaction: tx });
       await suiClient.waitForTransaction({ digest: res.digest });
+      const key = `${account.address.toLowerCase()}:${blobId}`;
       setAccepted((m) => {
-        const next = { ...m, [blobId]: res.digest };
+        const next = { ...m, [key]: res.digest };
         try {
           localStorage.setItem(ACCEPTED_KEY, JSON.stringify(next));
         } catch {}
@@ -275,7 +276,8 @@ export default function ProposalFeed() {
           <tbody>
             {data.map((p) => {
               const isAccepting = accepting === p.blob;
-              const acceptedDigest = accepted[p.blob];
+              const acceptedDigest =
+                accepted[`${account.address.toLowerCase()}:${p.blob}`];
               return (
                 <tr
                   key={p.txDigest}
