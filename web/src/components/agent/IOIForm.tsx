@@ -6,12 +6,44 @@ import {
   useSignAndExecuteTransaction,
   useSuiClient,
 } from '@mysten/dapp-kit';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Transaction } from '@mysten/sui/transactions';
 import { encryptIoi } from '@/lib/ioi';
 import { putBlob } from '@/lib/walrus';
 import { friendlyError } from '@/lib/errors';
-import { SHELL_PACKAGE_ID, SHELL_PACKAGE_ID_LATEST, QUOTE_SYMBOL, getSealClient } from '@/lib/sui';
+import {
+  DEEPBOOK_INDEXER_URL,
+  DEEPBOOK_POOL_KEY,
+  QUOTE_SYMBOL,
+  SHELL_PACKAGE_ID,
+  SHELL_PACKAGE_ID_LATEST,
+  getSealClient,
+} from '@/lib/sui';
+
+interface MidPrice {
+  bid: number;
+  ask: number;
+  mid: number;
+}
+
+async function fetchMidPrice(): Promise<MidPrice | null> {
+  try {
+    const res = await fetch(
+      `${DEEPBOOK_INDEXER_URL}/orderbook/${DEEPBOOK_POOL_KEY}?depth=1`,
+    );
+    if (!res.ok) return null;
+    const j = (await res.json()) as {
+      bids: [string, string][];
+      asks: [string, string][];
+    };
+    const bid = parseFloat(j.bids[0]?.[0] ?? '0');
+    const ask = parseFloat(j.asks[0]?.[0] ?? '0');
+    if (!bid || !ask) return null;
+    return { bid, ask, mid: (bid + ask) / 2 };
+  } catch {
+    return null;
+  }
+}
 
 export default function IOIForm() {
   const account = useCurrentAccount();
@@ -25,6 +57,22 @@ export default function IOIForm() {
   const [priceLo, setPriceLo] = useState('');
   const [priceHi, setPriceHi] = useState('');
   const [ttlMin, setTtlMin] = useState('30');
+
+  const { data: market } = useQuery({
+    queryKey: ['deepbook-mid', DEEPBOOK_POOL_KEY],
+    queryFn: fetchMidPrice,
+    refetchInterval: 10_000,
+    staleTime: 5_000,
+  });
+
+  function applyMarketRange() {
+    if (!market) return;
+    // ±2 % band around mid — wide enough to absorb tick rounding + small drift.
+    const lo = (market.mid * 0.98).toFixed(3);
+    const hi = (market.mid * 1.02).toFixed(3);
+    setPriceLo(lo);
+    setPriceHi(hi);
+  }
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -167,6 +215,33 @@ export default function IOIForm() {
           </label>
         </div>
 
+        <div className="flex justify-between items-center font-mono-sm text-[10px] text-on-surface-variant -mb-2">
+          <span>
+            {market ? (
+              <>
+                Market mid{' '}
+                <span className="text-secondary">
+                  {market.mid.toFixed(3)} {QUOTE_SYMBOL}
+                </span>
+                <span className="opacity-60">
+                  {' '}
+                  (bid {market.bid.toFixed(3)} / ask {market.ask.toFixed(3)})
+                </span>
+              </>
+            ) : (
+              <span className="opacity-60">Market price unavailable</span>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={applyMarketRange}
+            disabled={!market}
+            className="text-primary border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            Use market ±2%
+          </button>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">
@@ -176,7 +251,7 @@ export default function IOIForm() {
               className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data"
               value={priceLo}
               onChange={(e) => setPriceLo(e.target.value)}
-              placeholder="1.50"
+              placeholder={market ? (market.mid * 0.98).toFixed(3) : '1.040'}
               inputMode="decimal"
             />
           </label>
@@ -188,7 +263,7 @@ export default function IOIForm() {
               className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data"
               value={priceHi}
               onChange={(e) => setPriceHi(e.target.value)}
-              placeholder="2.50"
+              placeholder={market ? (market.mid * 1.02).toFixed(3) : '1.080'}
               inputMode="decimal"
             />
           </label>
