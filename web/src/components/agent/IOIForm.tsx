@@ -29,7 +29,7 @@ interface MidPrice {
 async function fetchMidPrice(): Promise<MidPrice | null> {
   try {
     const res = await fetch(
-      `${DEEPBOOK_INDEXER_URL}/orderbook/${DEEPBOOK_POOL_KEY}?depth=1`,
+      `${DEEPBOOK_INDEXER_URL}/orderbook/${DEEPBOOK_POOL_KEY}?level=2&depth=2`,
     );
     if (!res.ok) return null;
     const j = (await res.json()) as {
