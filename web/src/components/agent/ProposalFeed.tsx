@@ -67,7 +67,15 @@ export default function ProposalFeed() {
 
   const [accepting, setAccepting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [accepted, setAccepted] = useState<Record<string, string>>({});
+  const ACCEPTED_KEY = 'shell_accepted_proposals';
+  const [accepted, setAccepted] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      return JSON.parse(localStorage.getItem(ACCEPTED_KEY) ?? '{}');
+    } catch {
+      return {};
+    }
+  });
   const seenDigests = useRef<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery({
@@ -209,7 +217,13 @@ export default function ProposalFeed() {
 
       const res = await signAndExecute({ transaction: tx });
       await suiClient.waitForTransaction({ digest: res.digest });
-      setAccepted((m) => ({ ...m, [blobId]: res.digest }));
+      setAccepted((m) => {
+        const next = { ...m, [blobId]: res.digest };
+        try {
+          localStorage.setItem(ACCEPTED_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
       queryClient.invalidateQueries({ queryKey: ['active-commitments'] });
     } catch (err) {
       setError(friendlyError(err, 'Accept failed'));
