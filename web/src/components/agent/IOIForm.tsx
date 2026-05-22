@@ -72,9 +72,15 @@ export default function IOIForm() {
       setError('DeepBook market price unavailable');
       return;
     }
-    // ±2 % band around mid — wide enough to absorb tick rounding + small drift.
-    setPriceLo((m.mid * 0.98).toFixed(3));
-    setPriceHi((m.mid * 1.02).toFixed(3));
+    // Skew range to the user's side so the IOI clearly says "I'm a buyer
+    // up to mid+2%" or "I'm a seller down to mid-2%". Both ranges still
+    // cover the mid → opposite IOIs cross and settle at mid.
+    const lo =
+      side === 'buy' ? m.mid * 0.99 : m.mid * 0.98;
+    const hi =
+      side === 'buy' ? m.mid * 1.02 : m.mid * 1.01;
+    setPriceLo(lo.toFixed(3));
+    setPriceHi(hi.toFixed(3));
   }
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -240,7 +246,7 @@ export default function IOIForm() {
             onClick={() => void applyMarketRange()}
             className="text-primary border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors cursor-pointer"
           >
-            Use market ±2%
+            Use market range
           </button>
         </div>
 
@@ -253,7 +259,11 @@ export default function IOIForm() {
               className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data"
               value={priceLo}
               onChange={(e) => setPriceLo(e.target.value)}
-              placeholder={market ? (market.mid * 0.98).toFixed(3) : '1.040'}
+              placeholder={
+                market
+                  ? (market.mid * (side === 'buy' ? 0.99 : 0.98)).toFixed(3)
+                  : '1.040'
+              }
               inputMode="decimal"
             />
           </label>
@@ -265,7 +275,11 @@ export default function IOIForm() {
               className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data"
               value={priceHi}
               onChange={(e) => setPriceHi(e.target.value)}
-              placeholder={market ? (market.mid * 1.02).toFixed(3) : '1.080'}
+              placeholder={
+                market
+                  ? (market.mid * (side === 'buy' ? 1.02 : 1.01)).toFixed(3)
+                  : '1.080'
+              }
               inputMode="decimal"
             />
           </label>
