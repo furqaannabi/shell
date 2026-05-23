@@ -234,6 +234,22 @@ export default function ProposalFeed() {
     staleTime: 30_000,
   });
 
+  // Dedupe by (side, agreedPrice, agreedSize, counterparty). The enclave
+  // re-emits a fresh MatchProposed every matcher tick while the same IOI
+  // pair remains in its in-memory book, so a single trade can spawn many
+  // identical-content proposals with different blob_ids. Keep the newest
+  // of each group so the UI shows one actionable row per real match.
+  const displayData = useMemo(() => {
+    if (!data) return undefined;
+    const byKey = new Map<string, (typeof data)[number]>();
+    for (const p of data) {
+      const key = `${p.side}|${p.agreedPrice}|${p.agreedSize}|${p.counterparty}`;
+      const existing = byKey.get(key);
+      if (!existing || p.timestamp > existing.timestamp) byKey.set(key, p);
+    }
+    return Array.from(byKey.values()).sort((a, b) => b.timestamp - a.timestamp);
+  }, [data]);
+
   // Exact mapping: for each proposal, compute the expected collateral
   // amount + coin type the acceptance would escrow, then look for a
   // live OrderCommitment with that exact (type, value). If no live one
@@ -422,7 +438,7 @@ export default function ProposalFeed() {
           Match Proposals
         </h2>
         <span className="font-mono-sm text-mono-sm text-on-surface-variant">
-          {data?.length ?? 0} addressed to you
+          {displayData?.length ?? 0} addressed to you
         </span>
       </div>
 
@@ -434,7 +450,7 @@ export default function ProposalFeed() {
         <div className="text-on-surface-variant font-mono-sm text-mono-sm py-6 text-center">
           Loading…
         </div>
-      ) : data && data.length > 0 ? (
+      ) : displayData && displayData.length > 0 ? (
         <table className="w-full text-left font-mono-sm text-mono-sm">
           <thead>
             <tr className="text-on-surface-variant border-b border-outline-variant">
@@ -450,7 +466,7 @@ export default function ProposalFeed() {
             </tr>
           </thead>
           <tbody>
-            {data.map((p) => {
+            {displayData.map((p) => {
               const isAccepting = accepting === p.blob;
               const state = chainAccepted[p.blob];
               const localDigest =
