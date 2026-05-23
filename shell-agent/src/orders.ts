@@ -46,11 +46,11 @@ export async function submitOrderFromProposal(opts: {
     order: plaintext,
   });
 
-  // Collateral coin: buy → quote (DUSDC), sell → base (SUI).
+  // Collateral coin: buy → quote (DBUSDC on testnet), sell → base (SUI).
   const isBuy = proposal.side === "buy";
   const collateralType = isBuy ? QUOTE_COIN_TYPE : "0x2::sui::SUI";
   const FLOAT_SCALING = 1_000_000_000n;
-  // size: base raw (1e9). price: DeepBook quote-per-base scale (1e6 for SUI/DUSDC).
+  // size: base raw (1e9). price: 1e6 scale (matches IOIForm/SealedOrderForm).
   // quote_raw = size * price / 1e9.
   const collateralAmount = isBuy
     ? (proposal.agreedSize * proposal.agreedPrice) / FLOAT_SCALING
@@ -59,12 +59,14 @@ export async function submitOrderFromProposal(opts: {
   const tx = new Transaction();
   let collateralArg;
   if (isBuy) {
-    // Split DUSDC from the agent's USDC coin(s).
     const coins = await opts.suiClient.getCoins({
       owner: opts.keypair.toSuiAddress(),
       coinType: collateralType,
     });
-    if (coins.data.length === 0) throw new Error("no DUSDC coin to use");
+    if (coins.data.length === 0) {
+      const sym = collateralType.split("::").pop() ?? collateralType;
+      throw new Error(`no ${sym} coin in wallet to use as buy collateral`);
+    }
     const primary = tx.object(coins.data[0]!.coinObjectId);
     const [c] = tx.splitCoins(primary, [tx.pure.u64(collateralAmount)]);
     collateralArg = c!;

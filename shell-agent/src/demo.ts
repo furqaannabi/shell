@@ -21,11 +21,13 @@ const TIMEOUT_MS = 5 * 60_000;
 const FLOAT = 1_000_000_000n;
 
 // Quant policy used throughout this demo.
-// Values are 1e9-scaled integers (1 DUSDC = 1_000_000_000, 1 SUI = 1_000_000_000).
+// Size is 1e9-scaled (1 SUI = 1_000_000_000).
+// Price is DeepBook 1e6-scaled (1.00 DBUSDC per SUI = 1_000_000) — same
+// scale used by IOIForm/SealedOrderForm/enclave.
 const DEMO_POLICY =
   "You are a quant trading agent for Shell Finance. " +
   "Accept a match only if ALL conditions hold: " +
-  "(1) agreed_price is between 1_800_000_000 and 2_100_000_000 (i.e. 1.80–2.10 DUSDC); " +
+  "(1) agreed_price is between 1_800_000 and 2_100_000 (i.e. 1.80–2.10 DBUSDC); " +
   "(2) agreed_size is between 1_000_000_000 and 5_000_000_000 (i.e. 1–5 SUI). " +
   "Reject if price or size is outside those bounds. " +
   "Set policy_check=true only when the accepted match provably satisfies both conditions.";
@@ -71,12 +73,12 @@ export async function runDemo(): Promise<void> {
   sep("STEP 1 — AI policy enforcement (synthetic bad proposal)");
   console.log("[demo] policy:", DEMO_POLICY.slice(0, 120) + "…");
 
-  // Manufacture a proposal that violates the policy: price 3.50 DUSDC (above max 2.10).
+  // Manufacture a proposal that violates the policy: price 3.50 DBUSDC (above max 2.10).
   const badProposal: MatchProposal = {
     buyAgent: buyerAddr,
     sellAgent: sellerAddr,
     asset: "0x2::sui::SUI",
-    agreedPrice: 3_500_000_000n, // 3.50 DUSDC — above policy ceiling
+    agreedPrice: 3_500_000n, // 3.50 DBUSDC at 1e6 scale — above policy ceiling
     agreedSize: 2n * FLOAT,
     expiryMs: BigInt(Date.now()) + 60_000n,
     side: "buy",
@@ -84,7 +86,7 @@ export async function runDemo(): Promise<void> {
   };
 
   console.log(
-    `[demo] synthetic proposal: price=3.50 DUSDC  size=2 SUI  (price violates policy max 2.10)`,
+    `[demo] synthetic proposal: price=3.50 DBUSDC  size=2 SUI  (price violates policy max 2.10)`,
   );
   const badDecision = await evaluateProposal(badProposal, DEMO_POLICY);
   console.log(
@@ -115,9 +117,9 @@ export async function runDemo(): Promise<void> {
   const expiryEpoch = BigInt(sys.epoch) + 10n;
 
   // Overlapping terms that satisfy DEMO_POLICY:
-  //   Buyer: 2–4 SUI @ 1.80–2.20 DUSDC
-  //   Seller: 2–4 SUI @ 1.90–2.10 DUSDC
-  //   Enclave midpoint: 2.00 DUSDC, 2 SUI
+  //   Buyer: 2–4 SUI @ 1.80–2.20 DBUSDC
+  //   Seller: 2–4 SUI @ 1.90–2.10 DBUSDC
+  //   Enclave midpoint: 2.00 DBUSDC, 2 SUI
   const asset = "0x2::sui::SUI";
   const ttlMs = BigInt(Date.now()) + 30n * 60_000n;
 
