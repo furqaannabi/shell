@@ -43,12 +43,17 @@ export async function pollProposals(opts: {
   proposals: MatchProposal[];
   nextCursor: { txDigest: string; eventSeq: string } | null;
 }> {
-  const eventType = `${config.shellPackageIdLatest}::ioi::MatchProposed`;
+  // IOI module was introduced in v2 (0x68aae56c…). Event type identity
+  // sticks to the defining package even after subsequent upgrades, so we
+  // can't use the *current* latest id here.
+  const ioiPackageId =
+    "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa";
+  const eventType = `${ioiPackageId}::ioi::MatchProposed`;
   const res = await opts.suiClient.queryEvents({
     query: { MoveEventType: eventType },
     cursor: opts.cursor ?? null,
     limit: 50,
-    order: "ascending",
+    order: "descending",
   });
 
   const proposals: MatchProposal[] = [];

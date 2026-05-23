@@ -78,6 +78,6 @@ These are the kind of corners that don't show up in TS SDK examples; the Rust pa
 
 ## What's still on the side
 
-- **DeepBook v3 settlement leg.** `settlement::settle` currently does a direct collateral swap. Spec calls for `place_limit_order<Base, Quote>` against a real DeepBook pool with a per-trader `BalanceManager`.
+- **External-venue settlement leg.** `settlement::settle_direct` does a direct two-party cross in-protocol. Routing matched fills through a public on-chain CLOB is roadmap — see [`docs/settle-fix-plan.md`](settle-fix-plan.md) Resolution section for why the DeepBook attempt was abandoned.
 - **Partial fills.** The matcher is whole-fill only; partials are out of scope for v1.
 - **Prod-mode PCRs.** The running enclave is debug-mode (zero PCRs). The build and registration scripts are identical for prod; the demo box is debug-pinned to keep the iteration loop fast.

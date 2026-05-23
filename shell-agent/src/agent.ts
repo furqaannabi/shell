@@ -15,6 +15,7 @@ const POLL_INTERVAL_MS = 15_000;
 const SEAL_TESTNET_KEY_SERVER = {
   objectId:
     "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98",
+  aggregatorUrl: 'https://seal-aggregator-testnet.mystenlabs.com',
   weight: 1,
 };
 

@@ -1,6 +1,6 @@
 # @shell-finance/sdk
 
-Client SDK for [Shell Finance](https://github.com/furqaannabi/shell) — a confidential order flow layer on DeepBook (Sui).
+Client SDK for [Shell Finance](https://github.com/furqaannabi/shell) — a confidential order flow layer on Sui.
 
 - Trader-side **Seal** encryption of order envelopes (threshold IBE, Move-policy access control).
 - PTB builders for `submit_order`, `cancel_expired`, and the verify→settle pipeline.
@@ -105,7 +105,7 @@ const tx = settleMatchTx({
   maker, taker, makerOrderId, takerOrderId,
   makerCollateralType: tMaker,
   takerCollateralType: tTaker,
-  filledSize, filledPrice, deepbookTxDigest, signature,
+  filledSize, filledPrice, settlementTxDigest, signature,
 });
 ```
 

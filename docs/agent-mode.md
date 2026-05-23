@@ -183,7 +183,7 @@ Day 3 (stretch):
 ## What this does **not** cover
 
 - Multi-operator cross-matching (Seal-in-Nitro — separate doc).
-- Real DeepBook settlement leg (week-4 work — out of scope here).
+- External-venue settlement routing (roadmap — out of scope here).
 - LLM-powered triggers — possible bolt-on but not required by the Walrus track.
 - Production-grade key management (HSM / MPC) — V2.
 

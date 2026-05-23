@@ -1,4 +1,18 @@
-# DeepBook v3 settlement — design
+# DeepBook v3 settlement — design [SUPERSEDED]
+
+> **Status: superseded — DeepBook is no longer in Shell's settlement path.**
+>
+> Shell now settles each matched pair as a direct two-party collateral swap inside
+> a single PTB via `shell::settlement::settle_direct`. The original DeepBook
+> integration was attempted (see [settle-fix-plan.md](settle-fix-plan.md)) but
+> blocked on DeepBook's `Pool.allowed_versions = {1..5}` not containing
+> `current_version() = 8` from the deployed deepbook v19 package — and Sui's
+> publisher pins downstream packages to the LATEST deepbook published-at, so
+> shell cannot statically link an older deepbook version. The doc below is
+> kept for historical reference of the design that *would have* worked if the
+> on-chain `allowed_versions` set were maintained.
+
+---
 
 Closing the credibility gap in the pitch: `shell::settlement::settle` currently does a direct collateral swap between maker and taker. The pitch says "settlement against DeepBook's depth." This doc scopes the smallest honest change to make the second claim true on testnet, on the existing matched-pair flow, without touching the privacy invariants.
 

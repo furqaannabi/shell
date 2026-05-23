@@ -51,7 +51,7 @@ const SHELL_PACKAGE_ID: &str =
 // latest published-at — used for moveCall targets to v2-only functions (e.g. ioi::propose_match)
 // and event filters on v2-added modules (events tag at the upgrade's namespace, not original-id)
 const SHELL_PACKAGE_ID_LATEST: &str =
-    "0x2c7e80632d1964f24489da0ba6cfeb83379922baab003c476f1b26a79cb129b6";
+    "0x954e90623a2831fbe4bcee5db0418c82db92792425a560b9a06a17327063911d";
 const ENCLAVE_CONFIG_ID: &str =
     "0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8";
 /// Default `Enclave<SHELL>` shared object id. Overridable at boot via
@@ -85,21 +85,10 @@ const WALRUS_PROPOSAL_EPOCHS: u32 = 2;
 /// before the IOI returns to the pool. 60s for hackathon; bump for prod.
 const PROPOSAL_EXPIRY_MS: u64 = 60_000;
 
-// ── DeepBook v3 (testnet) constants ─────────────────────────────────
-const DEEPBOOK_SUI_DBUSDC_POOL: &str =
-    "0x1c19362ca52b8ffd7a33cee805a67d40f31e6ba303753fd3a4cfdfacea7163a5";
-const DEEP_COIN_TYPE: &str =
-    "0x36dbef866a1d62bf7328989a10fb2f07d769f4ee587c0de4a0a256e57e0a58a8::deep::DEEP";
 /// 0x6 — the global Clock shared object, initial_shared_version is 1.
 const SUI_CLOCK_OBJECT_ID: &str =
     "0x0000000000000000000000000000000000000000000000000000000000000006";
 const SUI_CLOCK_INITIAL_SHARED_VERSION: u64 = 1;
-/// Default slippage budget passed to settle. Widened from 50 bps (0.5 %)
-/// to 200 bps (2 %) so both DeepBook legs can clear against the current
-/// thin testnet SUI/DBUSDC book (~1 % spread). See
-/// docs/settle-fix-plan.md for the math. Future work threads the
-/// per-order `max_slippage_bps` from the decrypted plaintext.
-const DEFAULT_SLIPPAGE_BPS: u64 = 200;
 
 // ── Seal-in-Nitro persistent state ───────────────────────────────────
 // ElGamal keypair generated once at enclave boot, used to receive
@@ -935,21 +924,16 @@ async fn submit_settlement(
         .map_err(|e| EnclaveError::GenericError(format!("sender addr: {e}")))?;
 
     // 3. Look up the initial_shared_version for every shared input.
+    // settle_direct doesn't touch DeepBook — no pool/DEEP inputs needed.
     let enclave_isv = fetch_initial_shared_version(http, ENCLAVE_ID.as_str()).await?;
     let maker_isv = fetch_initial_shared_version(http, &maker_order_hex).await?;
     let taker_isv = fetch_initial_shared_version(http, &taker_order_hex).await?;
-    let pool_isv = fetch_initial_shared_version(http, DEEPBOOK_SUI_DBUSDC_POOL).await?;
-
-    // 4. Fetch a DEEP coin (for DeepBook swap fees) owned by the enclave.
-    let deep_ref = fetch_deep_coin(http, &enclave_addr_str).await?;
 
     // 5. Build the ProgrammableTransaction.
     let ptb = build_settle_ptb(
         enclave_isv,
         maker_isv,
         taker_isv,
-        pool_isv,
-        deep_ref,
         timestamp_ms,
         payload,
         &sig_bytes,
@@ -1037,8 +1021,6 @@ fn build_settle_ptb(
     enclave_isv: u64,
     maker_isv: u64,
     taker_isv: u64,
-    pool_isv: u64,
-    deep_ref: ObjectReference,
     timestamp_ms: u64,
     payload: &MatchPayload,
     signature: &[u8],
@@ -1047,7 +1029,11 @@ fn build_settle_ptb(
     maker_order_hex: &str,
     taker_order_hex: &str,
 ) -> Result<ProgrammableTransaction, EnclaveError> {
-    let pkg = Address::from_str(SHELL_PACKAGE_ID)
+    // settle's bytecode (and its deepbook linkage) only exists at the
+    // latest published-at — calling via original-id executes v1 code,
+    // which links to an old deepbook rev no longer in
+    // pool.allowed_versions (EPackageVersionDisabled at runtime).
+    let pkg = Address::from_str(SHELL_PACKAGE_ID_LATEST)
         .map_err(|e| EnclaveError::GenericError(format!("pkg id: {e}")))?;
     let enclave_obj = Address::from_str(ENCLAVE_ID.as_str())
         .map_err(|e| EnclaveError::GenericError(format!("enclave id: {e}")))?;
@@ -1055,10 +1041,6 @@ fn build_settle_ptb(
         .map_err(|e| EnclaveError::GenericError(format!("maker obj id: {e}")))?;
     let taker_obj = Address::from_str(taker_order_hex)
         .map_err(|e| EnclaveError::GenericError(format!("taker obj id: {e}")))?;
-    let pool_obj = Address::from_str(DEEPBOOK_SUI_DBUSDC_POOL)
-        .map_err(|e| EnclaveError::GenericError(format!("pool id: {e}")))?;
-    let clock_obj = Address::from_str(SUI_CLOCK_OBJECT_ID)
-        .map_err(|e| EnclaveError::GenericError(format!("clock id: {e}")))?;
     let maker_addr = Address::new(payload.maker);
     let taker_addr = Address::new(payload.taker);
 
@@ -1073,12 +1055,8 @@ fn build_settle_ptb(
     //  7  filled_price              (pure u64)     → verify
     //  8  deepbook_tx_digest        (pure vec<u8>) → verify
     //  9  signature                 (pure vec<u8>) → verify
-    // 10  maker_order               (shared mut)   → settle
-    // 11  taker_order               (shared mut)   → settle
-    // 12  pool                      (shared mut)   → settle
-    // 13  deep_in                   (owned coin)   → settle
-    // 14  slippage_bps              (pure u64)     → settle
-    // 15  clock                     (shared imm)   → settle
+    // 10  maker_order               (shared mut)   → settle_direct
+    // 11  taker_order               (shared mut)   → settle_direct
     let inputs = vec![
         Input::Shared {
             object_id: enclave_obj,
@@ -1104,18 +1082,6 @@ fn build_settle_ptb(
             initial_shared_version: taker_isv,
             mutable: true,
         },
-        Input::Shared {
-            object_id: pool_obj,
-            initial_shared_version: pool_isv,
-            mutable: true,
-        },
-        Input::ImmutableOrOwned(deep_ref),
-        pure_bcs(&DEFAULT_SLIPPAGE_BPS, "slippage_bps")?,
-        Input::Shared {
-            object_id: clock_obj,
-            initial_shared_version: SUI_CLOCK_INITIAL_SHARED_VERSION,
-            mutable: false,
-        },
     ];
 
     let verify_call = MoveCall {
@@ -1131,7 +1097,7 @@ fn build_settle_ptb(
         package: pkg,
         module: Identifier::new("settlement")
             .map_err(|e| EnclaveError::GenericError(format!("module: {e}")))?,
-        function: Identifier::new("settle")
+        function: Identifier::new("settle_direct")
             .map_err(|e| EnclaveError::GenericError(format!("function: {e}")))?,
         type_arguments: vec![
             TypeTag::from_str(base_type)
@@ -1143,10 +1109,6 @@ fn build_settle_ptb(
             Argument::Result(0),  // MatchInstruction
             Argument::Input(10),  // maker_order
             Argument::Input(11),  // taker_order
-            Argument::Input(12),  // pool
-            Argument::Input(13),  // deep_in
-            Argument::Input(14),  // slippage_bps
-            Argument::Input(15),  // clock
         ],
     };
 
@@ -1164,13 +1126,6 @@ async fn fetch_gas_coin(
     owner: &str,
 ) -> Result<ObjectReference, EnclaveError> {
     fetch_first_coin(http, owner, "0x2::sui::SUI").await
-}
-
-async fn fetch_deep_coin(
-    http: &reqwest::Client,
-    owner: &str,
-) -> Result<ObjectReference, EnclaveError> {
-    fetch_first_coin(http, owner, DEEP_COIN_TYPE).await
 }
 
 async fn fetch_first_coin(
@@ -1409,8 +1364,8 @@ fn match_orders(orders: &[DecryptedOrder]) -> Vec<MatchPayload> {
     let (mut bi, mut ai) = (0usize, 0usize);
 
     while bi < bids.len() && ai < asks.len() {
-        let (b_idx, bid) = bids[bi];
-        let (a_idx, ask) = asks[ai];
+        let (_, bid) = bids[bi];
+        let (_, ask) = asks[ai];
 
         if bid.limit_price < ask.limit_price {
             break;
@@ -1420,7 +1375,10 @@ fn match_orders(orders: &[DecryptedOrder]) -> Vec<MatchPayload> {
             continue;
         }
 
-        let (maker, taker) = if b_idx < a_idx { (bid, ask) } else { (ask, bid) };
+        // settlement.move requires maker.collateral=base (SUI) and
+        // taker.collateral=quote (DBUSDC) so the type args line up with
+        // DeepBook's Pool<TBase, TQuote>. Always pin maker=sell side.
+        let (maker, taker) = (ask, bid);
         fills.push(MatchPayload {
             maker: maker.trader,
             taker: taker.trader,

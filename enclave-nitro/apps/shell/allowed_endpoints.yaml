@@ -5,8 +5,6 @@ endpoints:
   - fullnode.testnet.sui.io
   # Seal aggregator — request decryption-key shares.
   - seal-aggregator-testnet.mystenlabs.com
-  # DeepBook indexer — query CLOB depth for fair-mid reference pricing.
-  - deepbook-indexer.testnet.mystenlabs.com
   # Walrus aggregator — fetch IOI ciphertexts referenced in IoisPosted events.
   - aggregator.walrus-testnet.walrus.space
   # Walrus publisher — upload per-side match-proposal blobs after a pair is matched.

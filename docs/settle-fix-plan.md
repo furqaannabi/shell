@@ -265,3 +265,60 @@ After (1) and (2) ship and the constants are updated:
 - [ ] Web `npx tsc --noEmit` passes after package-id constants update
 - [ ] Six stuck `OrderCommitment` objects refunded via `cancel_anytime`
 - [ ] Fresh test trade mints `SettlementReceipt` on both sides
+
+---
+
+## Resolution — 2026-05-23
+
+The slippage-widening fix alone was insufficient. Working through it
+surfaced **three** additional latent bugs in the settle path:
+
+1. **Type mismatch** — the trader-side stablecoin was DUSDC (`0xe95040…`)
+   but DeepBook's testnet SUI/DBUSDC pool quotes in DBUSDC (`0xf7152c…`).
+   Fix: switched the web frontend, shell-agent, and SDK to use DBUSDC
+   as the trader-side quote coin.
+
+2. **Maker/taker direction** — the enclave matcher pinned `maker = whoever
+   arrived first`. `shell::settlement::settle` required `maker = sell side`
+   (so its TBase/TQuote line up with `Pool<TBase, TQuote>`). Fix: matcher
+   always assigns `maker = ask, taker = bid` in
+   [enclave-nitro/apps/shell/mod.rs](../enclave-nitro/apps/shell/mod.rs)
+   (`match_orders`).
+
+3. **DeepBook package-version disabled** — the SUI/DBUSDC pool's stored
+   `allowed_versions = {1, 2, 3, 4, 5}` (verified on chain via
+   `0x6f656f16…`). The latest deepbook published-at (v19 at `0x74cd5657…`)
+   has `current_version() = 8`. Sui's publisher pins every downstream
+   package's link table to the **latest** published-at of each dep, so
+   shell — no matter which deepbook git rev we pin in `Move.toml`, no
+   matter how we use `addr_subst` overrides — always routes calls through
+   the disabled v19. `pool::load_inner` aborts with
+   `EPackageVersionDisabled` (code 11). The fix would require DeepBook ops
+   to add `8` to the pool's `allowed_versions` set.
+
+Given (3) is outside Shell's control and the testnet deepbook is unmaintained
+for our pool, we removed DeepBook from the settlement path entirely. The
+public function `shell::settlement::settle` is kept as a deprecated stub
+(Sui's `Compatible` upgrade policy forbids removing public functions); the
+real settle is now `settle_direct<TBase, TQuote>` which:
+
+- consumes the hot-potato `MatchInstruction`
+- consumes both `OrderCommitment`s
+- transfers maker's base → taker, taker's quote → maker (direct cross)
+- mints two `SettlementReceipt`s
+
+End-to-end testnet proof (2026-05-23, shell v6 at `0x954e9062…`):
+
+- Sell IOI (deployer 0x8181e2f0…) + buy IOI (counterparty 0x84106a23…) posted
+- Enclave matched, MatchProposed at tx `9ASnmV8r…`
+- Both sides accepted under `OrderCommitment<DBUSDC>` + `OrderCommitment<SUI>`
+- Enclave settle tx [`JAm9MKr6skPhtutq5upT5wzGqcg8S2osEucvuoJ5doqy`](https://suiscan.xyz/testnet/tx/JAm9MKr6skPhtutq5upT5wzGqcg8S2osEucvuoJ5doqy):
+  attestation::verify + settle_direct<SUI, DBUSDC>, status: success
+- Deployer received 0.168750 DBUSDC, counterparty received 0.150000 SUI
+- Two `SettlementReceipt` objects minted
+
+The pitch loses "settled via DeepBook depth"; what it keeps is "MEV- and
+front-running-resistant institutional execution with cryptographically-bound
+atomic settlement." External-venue routing is roadmap (post-hackathon)
+once DeepBook (or any other public on-chain venue) is back to a state
+where downstream Move packages can statically link against it.

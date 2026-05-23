@@ -78,13 +78,13 @@ shell-agent                   Sui chain              Nautilus enclave
     │  fetch blob from Walrus     │                        │
     │  GPT evaluates              │                        │
     │── submitOrder() ──────────► OrderCommitment event ──► │ decrypt order
-    │                             │                        │ settle via DeepBook
+    │                             │                        │ settle_direct (atomic on-chain swap)
 ```
 
 The enclave runs two background loops simultaneously:
 
 - **IOI matcher** — watches `IoisPosted`, decrypts all IOIs via Seal, finds overlapping buy/sell pairs, emits `MatchProposed`
-- **Order settler** — watches `OrderCommitment` (from Terminal + shell-agent accepts), decrypts sealed orders, executes on DeepBook
+- **Order settler** — watches `OrderCommitment` (from Terminal + shell-agent accepts), decrypts sealed orders, atomically crosses both OrderCommitments via shell::settlement::settle_direct
 
 The enclave is the only entity that ever sees plaintext IOI terms. Its code is registered on-chain as PCR hashes — if anyone tampers with it, Seal refuses to release decryption keys and the enclave goes blind. This is the trust guarantee.
 

@@ -1,6 +1,6 @@
 # Shell Finance
 
-> Cryptographically trust-minimized institutional execution. Move enforces the rules, Seal + Nautilus enforce the privacy, DeepBook is the settlement venue — the composition exists nowhere else on-chain.
+> Cryptographically trust-minimized institutional execution. Move enforces the rules, Seal + Nautilus enforce the privacy, the hot-potato `MatchInstruction` enforces atomic on-chain settlement — the composition exists nowhere else on-chain.
 
 Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minimized Finance slot. Full spec lives in [`product.md`](product.md). Track positioning in [`product.md` §7.1](product.md). Honest threat model in [`product.md` §5](product.md).
 
@@ -13,14 +13,14 @@ Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minim
 
 ## Problem
 
-Every public order book on-chain — DeepBook included — exposes order intent before execution. For retail flow that's acceptable; for institutional size it's an execution tax: searchers front-run, market makers fade quotes, and large orders can't be worked without significant slippage. Existing on-chain attempts at hiding flow are each partial:
+Every public order book on-chain exposes order intent before execution. For retail flow that's acceptable; for institutional size it's an execution tax: searchers front-run, market makers fade quotes, and large orders can't be worked without significant slippage. Existing on-chain attempts at hiding flow are each partial:
 
 - **Stealth-address payments** (PIVY, Umbra) hide recipients but not order flow.
 - **Privacy AMMs** (Shroud, Penumbra) hide swaps but pay AMM-curve slippage and can't serve institutional size.
 - **ZK rollups** (Aztec, Aleo) provide privacy but lose access to the host chain's deepest liquidity.
 - **Off-chain dark pools** (sFOX, ErisX) require trusting a single operator and lack on-chain settlement guarantees.
 
-An institutional venue needs four properties at once: pre-trade order privacy, post-trade auditability, settlement against the deepest available liquidity, and zero operator trust. No chain previously had the primitives to deliver all four.
+An institutional venue needs four properties at once: pre-trade order privacy, post-trade auditability, atomic on-chain settlement, and zero operator trust. No chain previously had the primitives to deliver all four.
 
 ## Solution
 
@@ -28,9 +28,9 @@ Shell composes three Sui-native primitives — and nothing else does it:
 
 | Layer    | What it enforces                                                                                                   |
 | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Seal**     | Threshold IBE seals each order envelope. Decryption only fires when an on-chain Move policy says yes.              |
-| **Nautilus** | The matching engine runs in an AWS Nitro Enclave. The binary is PCR-pinned on-chain — the operator can't tamper.   |
-| **DeepBook** | The on-chain CLOB is the settlement venue. Matches land as fait accompli via a hot-potato PTB that can't be split. |
+| **Seal**       | Threshold IBE seals each order envelope. Decryption only fires when an on-chain Move policy says yes.              |
+| **Nautilus**   | The matching engine runs in an AWS Nitro Enclave. The binary is PCR-pinned on-chain — the operator can't tamper.   |
+| **Settlement** | The signed `MatchInstruction` is a hot-potato — it must be consumed in the same PTB that crosses both `OrderCommitment`s and mints a `SettlementReceipt` per side. Settle-or-revert is enforced at the Move type level. |
 
 Pre-match the chain sees only ciphertext + a commit hash. Post-settlement the chain shows a `SettlementReceipt` per side and the swapped balances. Side, size, limit price, and slippage from the original order stay private forever.
 
@@ -41,7 +41,7 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 1. **Connect wallet** — dapp-kit, Sui Wallet / Suiet / etc.
 2. **Place a sealed order** — pick side / size / limit / expiry / slippage. The SDK Seal-IBE-encrypts the BCS plaintext under a random per-order id, builds a PTB calling `shell::pool::submit_order`, the wallet signs. On-chain: a shared `OrderCommitment` lands with the sealed envelope as opaque bytes.
 3. **See it in active orders** — the row shows a commit-hash fingerprint, `SEALED` status. Cancel works after expiry.
-4. **Match (invisible)** — the Nautilus enclave decrypts plaintexts in-TEE, runs price-time matching, signs an `IntentMessage<MatchPayload>` envelope. A settlement PTB lands: `shell::attestation::verify` produces a `MatchInstruction` hot-potato, `shell::settlement::settle` consumes it atomically with both orders, swaps collateral.
+4. **Match (invisible)** — the Nautilus enclave decrypts plaintexts in-TEE, runs price-time matching, signs an `IntentMessage<MatchPayload>` envelope. A settlement PTB lands: `shell::attestation::verify` produces a `MatchInstruction` hot-potato, `shell::settlement::settle_direct` consumes it atomically with both orders, crosses collateral directly between maker and taker.
 5. **See the receipt** — a `SettlementReceipt` per side appears under the trader's address, and the wallet shows the swapped coin balance. The trader's original limit price + slippage are never revealed on-chain.
 
 ## Status
@@ -192,25 +192,22 @@ Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough 
 
 | Object | ID |
 | --- | --- |
-| Shell package (DeepBook-enabled) | `0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd` |
+| Shell package (original-id, event filters + Seal identity) | `0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd` |
+| Shell package latest published-at (v6, `settle_direct`) | `0x954e90623a2831fbe4bcee5db0418c82db92792425a560b9a06a17327063911d` |
 | `EnclaveConfig<SHELL>` | `0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8` |
 | `Cap<SHELL>` (deployer) | `0xfbbcb810f66ac05bb0924237eb488dce80b51afde44f5f68a3aacc2a287b2209` |
-| `Enclave<SHELL>` (**prod-mode**, autonomous) | `0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948` |
-| PCR0 / PCR1 on `EnclaveConfig` | `0x84e4de3710542d0f44468bb101135688ba8846acd24933071c33663e66a723b7cc8b1927eaa26b0d20028a4bc82b7dae` |
-| Shell package latest version (v3, adds `pool::cancel_anytime`) | `0x2c7e80632d1964f24489da0ba6cfeb83379922baab003c476f1b26a79cb129b6` |
+| `Enclave<SHELL>` (current prod-mode) | `0x68dc5a07cf93a6ba990f1866f988f24d366b314130500f045506b024dc134a5f` |
+| PCR0 / PCR1 on `EnclaveConfig` | `0x9b34eeb0d31c71814af1dc2ff9fade520956de8ef16d45686f58533b5c107613ff76b6a42be388e5f2c51c09682fb91c` |
 | PCR2 | `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a` |
-| Previous debug Enclave<SHELL> | `0xa6589585791e4f3aa80164cd98bf8fc3385ebe93ff64d0c371596e21362cc9c3` |
 | Enclave Sui address (derived from eph_kp) | `0xeda60f47715ea94dae92a58467894f3882d18d8690a348df6e03b4e3cfef1114` |
 | Enclave Ed25519 pubkey | `0x6fea82e844451e5c029253ebb91428a08df4868c098a44ebc8289bb0ee114613` |
-| DeepBook testnet SUI/DBUSDC pool | `0x1c19362ca52b8ffd7a33cee805a67d40f31e6ba303753fd3a4cfdfacea7163a5` |
-| Previous package (pre-DeepBook, direct-swap) | `0x5a47e78620e79a131bb8115a8f9e41f0bba0e387ec4c0ed93514853bd9987fbd` |
-| First autonomous direct-swap settlement digest | `4fdfgYhsYuCvwYFX4kfs3KajWrrrY6U8CbEYg2DgcXiw` |
+| First end-to-end IOI → match → accept → `settle_direct` digest | [`JAm9MKr6skPhtutq5upT5wzGqcg8S2osEucvuoJ5doqy`](https://suiscan.xyz/testnet/tx/JAm9MKr6skPhtutq5upT5wzGqcg8S2osEucvuoJ5doqy) |
 
-**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0x84e4de37…` match the published EIF measurement. The on-chain `EnclaveConfig` was updated to those values (digest `HDwqbS7QUzq9vSa7KdAs7xGnDJWLR2GuicANuj3XrQA`) and `register_enclave` was called against a fresh prod-mode attestation (digest `RLZFudQeMvXo3GvWUmL6f32AFUrwHnfDkTb83y1YcGH`). The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the new `SHELL_ENCLAVE_ID` env var (also pushed through the secrets blob) lets the binary follow a re-registration without yet another rebuild.
+**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0x9b34eeb0…` match the published EIF measurement. The on-chain `EnclaveConfig` is kept in sync with each EIF rebuild via `enclave::update_pcrs` + `register_enclave`. The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the `SHELL_ENCLAVE_ID` env var (pushed through the secrets VSOCK at boot) lets the binary follow a re-registration without rebuilding the EIF.
 
 ## Honest list — what's not shipped
 
-- **DeepBook v3 settlement leg — code in, live demo trade pending DBUSDC depth.** `shell::settlement::settle<TBase, TQuote>` now wraps both legs in `swap_exact_base_for_quote` / `swap_exact_quote_for_base` against the SUI/DBUSDC pool, with `min_*_out` derived from the enclave-matched price. Either both legs fill at-or-better or the PTB reverts atomically. Move build clean, EIF rebuilt + deployed, enclave wallet funded with DEEP. A live crossing-pair demo on testnet additionally needs DBUSDC depth on the bid side of `0x1c19362c…` — the testnet pool was thin on the day of writing, so the headline still relies on the on-chain code path rather than a fresh tx digest. See [`docs/deepbook-integration.md`](docs/deepbook-integration.md).
+- **External-venue settlement leg.** Initial design called for settling each cross against DeepBook v3's CLOB. The integration is blocked at the protocol level: DeepBook testnet's pool stores `allowed_versions = {1..5}` but the deployed latest deepbook published-at has `current_version() = 8`, and Sui's publisher pins all downstream Move packages to that latest version's link table — so `pool::load_inner` aborts with `EPackageVersionDisabled`. Backed off to direct two-party settlement; external-venue routing returns to the roadmap when public on-chain venues maintain their allowed-versions invariant. Full forensics in [`docs/settle-fix-plan.md`](docs/settle-fix-plan.md) (Resolution section).
 - **Partial fills in the matcher.** v1 is whole-fill only.
 
 ## Conventions
@@ -222,7 +219,7 @@ Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough 
 
 ## Threat model
 
-In one line: pre-trade privacy via Seal + Nautilus, post-trade auditability via on-chain receipts, settlement against DeepBook's depth, **no operator trust** (the matcher's binary is PCR-pinned). The full table — adversary capability vs mitigation, plus the four things we explicitly do NOT defend against — is in [`product.md` §5](product.md).
+In one line: pre-trade privacy via Seal + Nautilus, post-trade auditability via on-chain receipts, atomic settlement via the hot-potato `MatchInstruction`, **no operator trust** (the matcher's binary is PCR-pinned). The full table — adversary capability vs mitigation, plus the four things we explicitly do NOT defend against — is in [`product.md` §5](product.md).
 
 ## License
 

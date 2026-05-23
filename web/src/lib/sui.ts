@@ -29,15 +29,15 @@ interface NetworkConfig {
 
 const TESTNET: NetworkConfig = {
   shellPackageId: '0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd',
-  shellPackageIdLatest: '0x2c7e80632d1964f24489da0ba6cfeb83379922baab003c476f1b26a79cb129b6',
+  shellPackageIdLatest: '0x954e90623a2831fbe4bcee5db0418c82db92792425a560b9a06a17327063911d',
   poolId: '0x0fbb5658e6e5f0ef13e134b21ed46c264959bdec6976ae52e2667aba2588569b',
   enclaveConfigId: '0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8',
-  enclaveId: '0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948',
+  enclaveId: '0x68dc5a07cf93a6ba990f1866f988f24d366b314130500f045506b024dc134a5f',
   enclaveUrl: 'https://sui.furqaannabi.com',
   deepbookPoolKey: 'SUI_DBUSDC',
-  quoteCoinType: '0xe95040085976bfd54a1a07225cd46c8a2b4e8e2b6732f140a0fc49850ba73e1a::dusdc::DUSDC',
+  quoteCoinType: '0xf7152c05930480cd740d7311b5b8b45c6f488e3a53a11c3f74a6fac36a52e0d7::DBUSDC::DBUSDC',
   quoteCoinScalar: BigInt(1_000_000),
-  quoteSymbol: 'DUSDC',
+  quoteSymbol: 'DBUSDC',
   sealKeyServer: {
     objectId: '0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98',
     aggregatorUrl: 'https://seal-aggregator-testnet.mystenlabs.com',

@@ -3,7 +3,7 @@
 
 **Shell Finance**
 
-_Confidential order flow on DeepBook · Sui Overflow 2026 · DeFi & Payments track_
+_Confidential order flow on Sui · Sui Overflow 2026 · DeFi & Payments track_
 
 | **Project**   | **Track**              | **Team size** | **Build window** |
 | ------------- | ---------------------- | ------------- | ---------------- |
@@ -11,14 +11,14 @@ _Confidential order flow on DeepBook · Sui Overflow 2026 · DeFi & Payments tra
 
 # **1\. Executive Summary**
 
-Shell Finance is the first true on-chain dark pool: a confidential order flow layer for DeepBook where institutional traders submit Seal-encrypted orders, a Nautilus TEE matches and clears them against DeepBook's CLOB, and only post-execution receipts are revealed. The result is MEV-resistant, front-running-resistant institutional execution that retains full on-chain auditability - a combination no chain other than Sui can deliver today.
+Shell Finance is the first true on-chain dark pool: a confidential order flow layer on Sui where institutional traders submit Seal-encrypted orders, a Nautilus TEE matches them privately, and a hot-potato `MatchInstruction` settles the cross atomically on chain. Only post-execution receipts are revealed. The result is MEV-resistant, front-running-resistant institutional execution that retains full on-chain auditability — a combination no chain other than Sui can deliver today.
 
 ### **The wedge**
 
-- DeepBook is the only fully on-chain CLOB with shared liquidity and sub-second finality.
-- Seal provides threshold encryption with Move-policy access control - orders stay sealed until matched.
+- Sui's object model + PTBs let a hot-potato settlement instruction enforce atomic settle-or-revert in one transaction.
+- Seal provides threshold encryption with Move-policy access control — orders stay sealed until matched.
 - Nautilus provides verifiable off-chain compute in AWS Nitro Enclaves, with on-chain PCR registration.
-- The composition of these three is technically possible only on Sui, and no team has shipped it.
+- The composition of these primitives is technically possible only on Sui, and no team has shipped it.
 
 ### **Why now**
 
@@ -34,7 +34,7 @@ Spike GO criterion met and surpassed. The autonomous Seal → Nautilus → on-ch
 
 ## **2.1 Institutional execution on public chains is a leak**
 
-Every public order book - including DeepBook - exposes order intent before execution. For retail flow this is acceptable. For institutional size it is a tax: searchers front-run, market makers fade quotes, and large orders cannot be worked without significant slippage. On centralized venues, dark pools and RFQ desks solve this. On-chain, no equivalent exists.
+Every public order book exposes order intent before execution. For retail flow this is acceptable. For institutional size it is a tax: searchers front-run, market makers fade quotes, and large orders cannot be worked without significant slippage. On centralized venues, dark pools and RFQ desks solve this. On-chain, no equivalent exists.
 
 ## **2.2 Existing on-chain privacy attempts have structural limits**
 
@@ -45,7 +45,7 @@ Every public order book - including DeepBook - exposes order intent before execu
 
 ## **2.3 The unsolved problem**
 
-An institutional venue needs four properties simultaneously: pre-trade order privacy, post-trade auditability, settlement against the deepest available liquidity, and zero operator trust. No chain has previously had the primitives to deliver all four.
+An institutional venue needs four properties simultaneously: pre-trade order privacy, post-trade auditability, atomic on-chain settlement, and zero operator trust. No chain has previously had the primitives to deliver all four.
 
 # **3\. Solution**
 
@@ -53,9 +53,9 @@ Shell Finance composes three Sui-native primitives into a single institutional e
 
 | **Layer**    | **Function**                                                                                                                                                                                                              |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Seal**     | Threshold-encrypts the order envelope with a Move-policy access rule. Decryption keys are released only when the policy fires - i.e. when the enclave's PCR matches and the matching window opens.                        |
-| **Nautilus** | AWS Nitro Enclave (or Marlin Oyster) runs the matching engine. The enclave's PCR measurements are registered on-chain via Move; only that exact binary can request decryption keys. Output is a signed match instruction. |
-| **DeepBook** | Receives the signed match instruction as a single PTB. Move-side verifies the enclave attestation, then settles via DeepBook v3 spot or margin. Trade hits the public book post-execution as a fait accompli.             |
+| **Seal**       | Threshold-encrypts the order envelope with a Move-policy access rule. Decryption keys are released only when the policy fires — i.e. when the enclave's PCR matches and the matching window opens.                        |
+| **Nautilus**   | AWS Nitro Enclave (or Marlin Oyster) runs the matching engine. The enclave's PCR measurements are registered on-chain via Move; only that exact binary can request decryption keys. Output is a signed match instruction. |
+| **Settlement** | Move-side `shell::settlement::settle_direct` consumes the signed `MatchInstruction` (a hot-potato) and atomically crosses both parties' escrowed collateral in a single PTB. Mints a public `SettlementReceipt` to each side. |
 
 ## **3.1 The user flow**
 
@@ -64,8 +64,8 @@ Shell Finance composes three Sui-native primitives into a single institutional e
 - Client encrypts the order under Seal with a policy of the form: "this key may be released only to a TEE whose PCR matches X, during epoch Y."
 - Sealed envelope is published to the Shell shared object on Sui as an OrderCommitment.
 - Nautilus enclave watches for new commitments, requests decryption from Seal key servers (which verify the enclave's attestation), pulls the orders into private memory.
-- Enclave runs the matching algorithm against (a) other sealed orders in the same window and (b) DeepBook's public book, computes optimal fills, and signs a match instruction.
-- Settlement PTB lands on Sui: Move verifies the enclave signature against the registered PCR, executes DeepBook trades, mints a settlement receipt object owned by the trader.
+- Enclave runs the matching algorithm against other sealed orders in the same window, computes price-time-priority fills, and signs a match instruction.
+- Settlement PTB lands on Sui: Move verifies the enclave signature against the registered PCR, atomically crosses both parties' escrowed collateral via `settle_direct`, and mints a settlement receipt object owned by each trader.
 - Receipt is publicly auditable; the original sealed order remains encrypted forever.
 
 ## **3.2 What's revealed, what isn't**
@@ -74,7 +74,7 @@ Shell Finance composes three Sui-native primitives into a single institutional e
 | ------------------- | -------------------------------------------------- | ------------------------------------- |
 | **Pre-match**       | Order exists, trader address, expiry epoch         | Side, size, limit price, slippage     |
 | **Match**           | Match happened, enclave signed it                  | Counterparty identity (until receipt) |
-| **Post-settlement** | Filled price, size, both parties, DeepBook tx hash | Original limit, original max slippage |
+| **Post-settlement** | Filled price, size, both parties, settlement tx hash | Original limit, original max slippage |
 
 # **4\. Architecture**
 
@@ -98,11 +98,11 @@ Shell Finance composes three Sui-native primitives into a single institutional e
 
 │ ┌──────────────┐ ┌────────────────┐ ┌─────────────────────┐ │
 
-│ │ shell::pool │──▶│ seal::policy │ │ deepbook::v3::pool │ │
+│ │ shell::pool │──▶│ seal::policy │ │ shell::settlement   │ │
 
-│ │ (orders, │ │ (PCR-gated │ │ (settlement venue) │ │
+│ │ (orders, │ │ (PCR-gated │ │ (atomic swap +      │ │
 
-│ │ receipts) │ │ decryption) │ │ │ │
+│ │ receipts) │ │ decryption) │ │ receipts)           │ │
 
 │ └──────┬───────┘ └────────┬───────┘ └──────────┬──────────┘ │
 
@@ -119,8 +119,6 @@ Shell Finance composes three Sui-native primitives into a single institutional e
 │ · Decrypt orders · Match engine │───────────┘
 
 │ · Sign match instr · Attestation │ signed PTB
-
-│ · Pyth oracle · DeepBook depth │
 
 └─────────────────────────────────────────┘
 
@@ -174,7 +172,7 @@ filled_size: u64,
 
 filled_price: u64,
 
-deepbook_tx_digest: vector&lt;u8&gt;,
+settlement_tx_digest: vector&lt;u8&gt;,
 
 enclave_signature: vector&lt;u8&gt;,
 
@@ -208,7 +206,7 @@ match_payload: vector&lt;u8&gt;,
 
 ### **shell::settlement**
 
-Hot-potato pattern: the MatchInstruction must be consumed within the same PTB as DeepBook trades, and a SettlementReceipt must be minted before the PTB ends. This prevents the enclave from signing settlements that never reach DeepBook.
+Hot-potato pattern: the `MatchInstruction` must be consumed within the same PTB that crosses both `OrderCommitment`s, and a `SettlementReceipt` must be minted before the PTB ends. This prevents the enclave from signing settlements that never clear on chain.
 
 ## **4.3 Off-chain components**
 
@@ -224,7 +222,7 @@ Hot-potato pattern: the MatchInstruction must be consumed within the same PTB as
 - Runs in AWS Nitro Enclave, built reproducibly via Marlin Oyster's reproducible-build template.
 - Watches Sui RPC for new OrderCommitment events on the Shell pool.
 - Requests decryption keys from Seal key servers - Seal verifies the enclave's attestation against the policy.
-- Runs a price-time-priority matching algorithm; cross-checks against DeepBook depth via Pyth oracle for fair-mid.
+- Runs a price-time-priority matching algorithm; can cross-check against external oracle (Pyth) for fair-mid reference.
 - Signs a match instruction (Ed25519 key generated inside the enclave; pubkey published on-chain at deployment).
 - Submits the settlement PTB on behalf of users, paying gas via Enoki sponsored transactions.
 
@@ -233,7 +231,7 @@ Hot-potato pattern: the MatchInstruction must be consumed within the same PTB as
 - Next.js + @mysten/dapp-kit.
 - Trader view: place orders, view sealed receipts, withdraw fills.
 - Admin view: PCR registry management, enclave health, fee withdrawal.
-- Public view: aggregated volume, fill quality vs. DeepBook, time-to-match histograms.
+- Public view: aggregated volume, fill quality, time-to-match histograms.
 
 # **5\. Threat Model**
 
@@ -260,11 +258,11 @@ _These are honest limitations, called out in the pitch. Mysten judges have expli
 
 | **Week** | **Furqaan (Move + TEE + AWS)**                                                                        | **Co-founder (TS SDK + frontend)**                                       |
 | -------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **0**    | 48-hour spike: Seal encrypt → Nautilus decrypt → DeepBook test trade. GO/NO-GO gate.                  | Spike: order builder UI, signs and submits one OrderCommitment PTB.      |
+| **0**    | 48-hour spike: Seal encrypt → Nautilus decrypt → on-chain settle. GO/NO-GO gate.                      | Spike: order builder UI, signs and submits one OrderCommitment PTB.      |
 | **1**    | shell::pool + shell::attestation Move modules. Unit tests with sui move test.                         | @shell-finance/sdk skeleton, Seal policy builder, npm publish 0.0.1.     |
 | **2**    | Nautilus enclave Rust skeleton. Reproducible build via Marlin Oyster. PCR registry on devnet.         | Operator console scaffold (Next.js, dapp-kit, Tailwind).                 |
-| **3**    | Matching engine v1: price-time-priority, sealed orders only (no DeepBook integration yet).            | Trader view: place + cancel + view sealed receipts.                      |
-| **4**    | DeepBook v3 integration: enclave queries depth, builds settlement PTB.                                | Public stats view, fill-quality charts, time-to-match histograms.        |
+| **3**    | Matching engine v1: price-time-priority, sealed orders.                                              | Trader view: place + cancel + view sealed receipts.                      |
+| **4**    | `settle_direct` PTB plumbing: enclave consumes hot-potato, crosses collateral, mints receipts.       | Public stats view, fill-quality charts, time-to-match histograms.        |
 | **5**    | End-to-end testnet flow. Stress test with 1000 simulated orders.                                      | Enoki sponsored transactions, zkLogin integration for trader onboarding. |
 | **6**    | Mainnet deployment dry run. Failure-mode handling: stale orders, enclave restart, key-server timeout. | Demo flow polish. Recording rig setup.                                   |
 | **7**    | Audit support: OtterSec / OpenZeppelin sponsor bounty submission. Security writeup.                   | 3-minute demo video. Twitter thread. Submission packet.                  |
@@ -272,13 +270,13 @@ _These are honest limitations, called out in the pitch. Mysten judges have expli
 
 ## **6.2 The 48-hour spike (Week 0)**
 
-The single most important decision is whether the Seal + Nautilus + DeepBook composition actually works end-to-end. Spike scope:
+The single most important decision is whether the Seal + Nautilus + Move composition actually works end-to-end. Spike scope:
 
 - Stand up a Nautilus enclave on AWS Nitro using Marlin Oyster's reference build.
 - Register the enclave's PCR on Sui devnet via a minimal Move module.
 - From a TS client, encrypt a hardcoded order under Seal with a PCR-gated policy.
 - Have the enclave fetch the ciphertext, decrypt via Seal key servers, log the plaintext.
-- Have the enclave sign a hardcoded DeepBook trade and submit it via PTB. Verify it lands.
+- Have the enclave sign a hardcoded match instruction and submit the settlement PTB. Verify it lands.
 
 **GO criteria:** all five steps work in <60s end-to-end. **NO-GO:** pivot to HashiPay (alt #1 from idea ranking). Same Move + Nautilus + AWS infra is reusable; no time wasted.
 
@@ -288,7 +286,7 @@ The single most important decision is whether the Seal + Nautilus + DeepBook com
 | -------------------------------------------- | -------------- | -------------------------------------------------------------------------------------- |
 | Seal key-server latency >1s breaks UX        | **Medium**     | Batch matching window of 5-15s - latency is amortized; documented as feature, not bug. |
 | Nautilus reproducible-build fragility        | **Medium**     | Use Marlin Oyster's hosted enclave service to abstract Nitro complexity.               |
-| DeepBook v3 SDK breaking changes             | **Low**        | Pin SDK version. Mysten gives 2-week deprecation windows.                              |
+| External venue integration drift              | **Low**        | Roadmap-only for v1. Direct two-party settle is self-contained.                       |
 | Mysten ships its own confidential-orders SDK | **Low**        | Pivot to being the institutional UX layer on top of their SDK.                         |
 | TEE side-channel disclosure mid-build        | **Low**        | Pre-empt in pitch: Shell is a transparency layer, not a confidentiality fortress.      |
 | Live demo fails                              | **Medium**     | Pre-record demo video Day -3 of submission. Backup plays if live breaks.               |
@@ -305,20 +303,20 @@ The published track problem statement (Sui Overflow 2026) frames DeFi & Payments
 
 **What we explicitly do NOT pitch as.** Vaults, automation, structured products — those exist in the idea bank but aren't Shell. Pitching across categories dilutes.
 
-**Why this track, not DeepBook Predict.** Predict is a separate track with a hard minimum requirement ("Integrate deepbook predict contract on testnet"). Shell uses DeepBook v3 spot/margin, not Predict's vol-surface markets. Cross-pitching is two half-built projects.
+**Why this track, not Predict.** Predict is a separate track with a hard minimum requirement ("Integrate deepbook predict contract on testnet"). Shell does atomic on-chain settlement of matched pairs, not vol-surface prediction markets. Cross-pitching is two half-built projects.
 
 ## **7.2 What Mysten judges score**
 
 - Working demo (highest weight). A 90-second flow showing trader → sealed order → match → settlement.
-- Sui-native primitive composition. Shell uses four: Seal, Nautilus, DeepBook v3, Enoki sponsored tx.
-- Novel PTB use. The hot-potato `MatchInstruction` consumed atomically with DeepBook trades is the explicit example.
+- Sui-native primitive composition. Shell uses three: Seal, Nautilus, Enoki sponsored tx — composed end-to-end on a single PTB.
+- Novel PTB use. The hot-potato `MatchInstruction` consumed atomically with the cross-leg coin transfers is the explicit example.
 - Engineering quality. Public GitHub, clean Move, reproducible enclave build, README that runs.
 - Founder signal. ETH Global, QuickNode hackathon win, prior shipped projects on slide 1.
 - Distribution narrative. Who is the first 10 institutional users and why do they sign Monday?
 
 ## **7.3 The one-line pitch**
 
-_"Cryptographically trust-minimized institutional execution. Move enforces the rules, Seal + Nautilus enforce the privacy, DeepBook is the settlement venue — composition exists nowhere else on-chain."_
+_"Cryptographically trust-minimized institutional execution. Move enforces the rules, Seal + Nautilus enforce the privacy, the hot-potato `MatchInstruction` enforces atomic on-chain settlement — composition exists nowhere else on-chain."_
 
 The previous "first true on-chain dark pool" framing leads with the feature, not the track-aligned thesis. Keep "dark pool" as a colour line in the deck; lead with trust-minimization in the pitch.
 
@@ -327,7 +325,7 @@ The previous "first true on-chain dark pool" framing leads with the feature, not
 - Cover. Shell Finance. Trust-minimized institutional execution on Sui. Team.
 - Problem. Order leak is an execution tax; existing solutions either trust a venue (sFOX, dark pools) or accept AMM slippage (Shroud, Penumbra).
 - Track fit. Trust-Minimized Finance: cryptographic enforcement, not procedural trust. Quote the idea-bank verbatim.
-- Why Sui. The Seal + Nautilus + DeepBook composition exists nowhere else; show what each layer enforces.
+- Why Sui. The Seal + Nautilus + hot-potato PTB composition exists nowhere else; show what each layer enforces.
 - Architecture diagram. The system flow from section 4.1.
 - Demo. 90-second video. Sealed order on testnet → enclave-signed match → settlement receipt.
 - Novel PTB. The hot-potato `MatchInstruction` is the type-level guarantee that a signed match must hit settlement in the same block or revert.
@@ -358,11 +356,11 @@ Shell Finance is designed to be fundable, not just demoable. The progression aft
 
 - Mainnet alpha with 2-3 design partners trading sub-\$10M flow.
 - Pre-seed conversations: Sui ecosystem funds (Sui Foundation, Mysten Ventures), institutional-DeFi funds (1kx, Standard Crypto, Arrington).
-- Add DeepBook Margin support - leveraged dark-pool trades are a unique product.
+- External venue routing: settle large fills against public on-chain CLOBs once the price discovery + liquidity case is proven.
 
 ### **Twelve months out**
 
-- Cross-venue routing: enclave matches across DeepBook, Cetus, Aftermath simultaneously.
+- Cross-venue routing: enclave matches across multiple public on-chain venues simultaneously.
 - RFQ mode: market makers stream quotes encrypted, takers settle privately.
 - Compliance layer: optional ERC-3643-style allowlist for regulated counterparties.
 
@@ -371,7 +369,7 @@ Shell Finance is designed to be fundable, not just demoable. The progression aft
 - Should the matching window be deterministic (every 10s) or adaptive (filled when N orders pool)?
 - How is collateral handled for multi-leg orders that may partially fill across windows?
 - Does the operator run a single enclave or a quorum of enclaves with cross-attestation?
-- Fee model: maker rebate / taker fee in DeepBook style, or flat bps on filled notional?
+- Fee model: maker rebate / taker fee, or flat bps on filled notional?
 - How are stale orders (post-expiry) collateral-released without operator action?
 
 # **Appendix B. Glossary**
@@ -380,7 +378,6 @@ Shell Finance is designed to be fundable, not just demoable. The progression aft
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | **Seal**          | Mysten's threshold-encryption protocol with Move-policy access control. Allows on-chain rules to gate decryption.          |
 | **Nautilus**      | Sui's verifiable off-chain compute primitive using AWS Nitro Enclaves. PCR measurements registered on-chain.               |
-| **DeepBook v3**   | Sui's shared on-chain CLOB. v3 adds Margin and Predict modules.                                                            |
 | **PCR**           | Platform Configuration Register - cryptographic measurement of an enclave binary used as its identity.                     |
 | **PTB**           | Programmable Transaction Block. Sui's atomic multi-call transaction primitive.                                             |
 | **Hot potato**    | Move pattern for objects without store ability - must be consumed in the same transaction. Used here for MatchInstruction. |

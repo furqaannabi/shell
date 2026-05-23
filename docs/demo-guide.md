@@ -24,7 +24,7 @@ Shows the full IOI exchange flow with two traders using only a browser.
 **What this shows**
 - Privacy: price/size never visible on-chain pre-match
 - Enclave as neutral matcher: neither trader sees the other's terms until agreed
-- One-click settlement into DeepBook v3
+- One-click atomic settlement via the hot-potato `MatchInstruction`
 
 ---
 

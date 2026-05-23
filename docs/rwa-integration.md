@@ -1,6 +1,6 @@
 # RWA integration — confidential execution for tokenized real-world assets
 
-Shell's pitch generalises beyond crypto-native pairs. The same Seal + Nautilus + DeepBook stack works for **tokenized real-world assets** (RWAs) already live on Sui: tokenized treasuries, money-market funds, private credit, yield-bearing stables. Institutions trading these size-sensitive instruments want exactly what Shell ships — pre-trade privacy, attested matching, auditable settlement.
+Shell's pitch generalises beyond crypto-native pairs. The same Seal + Nautilus + atomic-settle stack works for **tokenized real-world assets** (RWAs) already live on Sui: tokenized treasuries, money-market funds, private credit, yield-bearing stables. Institutions trading these size-sensitive instruments want exactly what Shell ships — pre-trade privacy, attested matching, auditable settlement.
 
 This doc scopes how Shell plugs into Sui's RWA ecosystem without changing the protocol's invariants.
 
@@ -31,7 +31,7 @@ Shell's existing flow:
 ```
 Trader → Seal-encrypt order → submit OrderCommitment<Base, Quote>
        → enclave decrypts, matches → MatchInstruction (hot potato)
-       → PTB: consume MatchInstruction + DeepBook trade + SettlementReceipt
+       → PTB: consume MatchInstruction + cross collateral + SettlementReceipts
 ```
 
 RWA flow adds **one** step:
@@ -40,13 +40,13 @@ RWA flow adds **one** step:
 Trader → Seal-encrypt order → submit OrderCommitment<Base, Quote>
        → enclave decrypts, matches → MatchInstruction
        → PTB: consume MatchInstruction
-              + DeepBook trade
+              + cross collateral (settle_direct)
               + TransferPolicy.confirm_request(Base)   ← new
               + TransferPolicy.confirm_request(Quote)? ← if Quote also gated
-              + SettlementReceipt
+              + SettlementReceipts
 ```
 
-The settlement PTB grows by one or two `confirm_request` calls. The hot-potato invariant (`MatchInstruction` consumed atomically with DeepBook fill) is unchanged.
+The settlement PTB grows by one or two `confirm_request` calls. The hot-potato invariant (`MatchInstruction` consumed atomically with the cross) is unchanged.
 
 ### What the enclave sees
 
@@ -64,20 +64,13 @@ Identical UX to crypto pairs:
 
 The only new pre-flight check: if trader isn't on the issuer's allowlist, terminal greys out the pair and links to issuer onboarding. Read allowlist via `useQuery` against the registry object — same pattern as the existing pool object reads.
 
-## DeepBook listing requirements
+## Settlement model
 
-Shell settles through DeepBook. Required for each RWA pair:
+Shell settles each matched pair as a direct two-party cross inside a single PTB. RWA pairs work the same way as crypto pairs — `settle_direct<Base, Quote>` consumes both `OrderCommitment`s and crosses the collateral; the only RWA-specific addition is one or two `TransferPolicy.confirm_request` calls inserted in the same PTB. No external CLOB dependency.
 
-- DeepBook pool exists for `<Asset>/USDC` on the target network.
-- Pool has sufficient maker depth to settle Shell matches (Shell doesn't make the price; it executes against the DeepBook book).
-- Tick size and lot size compatible with institutional sizes.
+For pairs that *do* have a liquid public venue (e.g. USDY/USDC), the roadmap covers an optional external-venue routing leg — but it's strictly additive and not required for v1.
 
-If DeepBook doesn't list the pair, Shell can't settle it. Two options:
-
-1. **Wait for DeepBook to list** — Mysten / Ondo / Franklin partnership.
-2. **Stand up a Shell-internal pool** — peer-to-peer matching without an external CLOB. Removes DeepBook dependency but means no external price reference. Reasonable for instruments that don't have a public market anyway (private credit, illiquid tranches).
-
-Day-1 RWA target: **USDY/USDC** — most liquid tokenized treasury, Ondo has good Sui presence, likely first DeepBook RWA pool.
+Day-1 RWA target: **USDY/USDC** — most liquid tokenized treasury, Ondo has good Sui presence.
 
 ## Compliance-grade audit layer
 
@@ -101,8 +94,7 @@ Shell isn't just *another* private DEX. With RWA support it becomes:
 ## Build order (incremental, no protocol changes)
 
 Day 1:
-- Verify DeepBook testnet RWA pool exists (USDY/USDC or stand up a mock pool).
-- Test `TransferPolicy.confirm_request` insertion in settlement PTB end-to-end.
+- Test `TransferPolicy.confirm_request` insertion in `settle_direct` PTB end-to-end.
 - Wallet allowlist precheck in terminal: query issuer registry, gate the pair selector.
 
 Day 2:
@@ -116,7 +108,6 @@ Day 3 (stretch):
 
 ## Risks
 
-- **DeepBook RWA pool availability** — biggest unknown. Without listed pools, Shell can't settle externally. Internal pool fallback is feasible but reduces the "leverage existing CLOB" pitch.
 - **Allowlist staleness** — issuer registries change. Cache aggressively but invalidate on `AllowlistUpdated` events. Settlement PTB is the safety net regardless.
 - **Cross-jurisdiction matching** — enclave could match a US-eligible buyer with a non-US-eligible seller; settlement reverts. Pre-match jurisdiction filter in the matcher is straightforward but requires issuer cooperation (publishable per-address jurisdiction tags).
 - **Privacy vs. reporting obligations** — some regulators require trade reporting in near-real-time. Shell's privacy is pre-trade only; post-settlement the receipts are public on Sui. Confirm this satisfies the reporting regimes targeted (US Reg ATS, EU MiCA reporting). Likely yes; flag if not.
@@ -135,5 +126,4 @@ Day 3 (stretch):
 - Libre Capital — https://libre.cap/
 - Mountain Protocol USDM — https://mountainprotocol.com/
 - Sui RWA overview — https://blog.sui.io/sui-real-world-assets/
-- DeepBook v3 — https://docs.sui.io/standards/deepbookv3
 - Sui `TransferPolicy` — https://docs.sui.io/standards/kiosk#transfer-policy
