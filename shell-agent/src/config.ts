@@ -27,7 +27,7 @@ export const config = {
   // latest published-at — moveCall targets for v2+ functions (e.g. ioi::record_ioi)
   shellPackageIdLatest:
     process.env.SHELL_PACKAGE_ID_LATEST ??
-    "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa",
+    "0x2c7e80632d1964f24489da0ba6cfeb83379922baab003c476f1b26a79cb129b6",
   enclaveId:
     process.env.ENCLAVE_ID ??
     "0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948",

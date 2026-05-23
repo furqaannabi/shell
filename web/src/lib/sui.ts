@@ -29,7 +29,7 @@ interface NetworkConfig {
 
 const TESTNET: NetworkConfig = {
   shellPackageId: '0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd',
-  shellPackageIdLatest: '0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa',
+  shellPackageIdLatest: '0x2c7e80632d1964f24489da0ba6cfeb83379922baab003c476f1b26a79cb129b6',
   poolId: '0x0fbb5658e6e5f0ef13e134b21ed46c264959bdec6976ae52e2667aba2588569b',
   enclaveConfigId: '0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8',
   enclaveId: '0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948',

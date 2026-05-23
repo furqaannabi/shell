@@ -92,6 +92,23 @@ public fun cancel_expired<T>(order: OrderCommitment<T>, ctx: &mut TxContext): Co
     coin::from_balance(collateral, ctx)
 }
 
+/// Trader-initiated cancel that works at any time. Refunds the
+/// escrowed collateral. The enclave matcher will try to settle the
+/// commitment until this is called or the expiry passes.
+public fun cancel_anytime<T>(order: OrderCommitment<T>, ctx: &mut TxContext): Coin<T> {
+    assert!(order.trader == ctx.sender(), EWrongTrader);
+    let OrderCommitment {
+        id,
+        trader: _,
+        sealed_envelope: _,
+        commit_hash: _,
+        collateral,
+        expiry_epoch: _,
+    } = order;
+    id.delete();
+    coin::from_balance(collateral, ctx)
+}
+
 public(package) fun consume<T>(order: OrderCommitment<T>): (address, vector<u8>, Balance<T>) {
     let OrderCommitment {
         id,

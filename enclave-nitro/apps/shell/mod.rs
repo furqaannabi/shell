@@ -51,7 +51,7 @@ const SHELL_PACKAGE_ID: &str =
 // latest published-at — used for moveCall targets to v2-only functions (e.g. ioi::propose_match)
 // and event filters on v2-added modules (events tag at the upgrade's namespace, not original-id)
 const SHELL_PACKAGE_ID_LATEST: &str =
-    "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa";
+    "0x2c7e80632d1964f24489da0ba6cfeb83379922baab003c476f1b26a79cb129b6";
 const ENCLAVE_CONFIG_ID: &str =
     "0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8";
 /// Default `Enclave<SHELL>` shared object id. Overridable at boot via
@@ -94,10 +94,12 @@ const DEEP_COIN_TYPE: &str =
 const SUI_CLOCK_OBJECT_ID: &str =
     "0x0000000000000000000000000000000000000000000000000000000000000006";
 const SUI_CLOCK_INITIAL_SHARED_VERSION: u64 = 1;
-/// Default slippage budget passed to settle. Matches the SDK's default
-/// `max_slippage_bps: 50` for now; future work threads the per-order
-/// value from the decrypted plaintext.
-const DEFAULT_SLIPPAGE_BPS: u64 = 50;
+/// Default slippage budget passed to settle. Widened from 50 bps (0.5 %)
+/// to 200 bps (2 %) so both DeepBook legs can clear against the current
+/// thin testnet SUI/DBUSDC book (~1 % spread). See
+/// docs/settle-fix-plan.md for the math. Future work threads the
+/// per-order `max_slippage_bps` from the decrypted plaintext.
+const DEFAULT_SLIPPAGE_BPS: u64 = 200;
 
 // ── Seal-in-Nitro persistent state ───────────────────────────────────
 // ElGamal keypair generated once at enclave boot, used to receive

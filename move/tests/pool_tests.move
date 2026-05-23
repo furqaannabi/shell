@@ -115,3 +115,36 @@ fun cancel_before_expiry_aborts() {
     refund.burn_for_testing();
     abort 0
 }
+
+#[test]
+fun cancel_anytime_refunds_before_expiry() {
+    let mut s = ts::begin(ADMIN);
+    shell::shell::init_for_testing(s.ctx());
+
+    s.next_tx(TRADER);
+    let coin = coin::mint_for_testing<SUI>(555, s.ctx());
+    pool::submit_order<SUI>(ENV, HASH, coin, /* expiry */ 999, s.ctx());
+
+    s.next_tx(TRADER);
+    let order = s.take_shared<OrderCommitment<SUI>>();
+    let refund = pool::cancel_anytime<SUI>(order, s.ctx());
+    assert!(refund.value() == 555);
+    refund.burn_for_testing();
+    s.end();
+}
+
+#[test, expected_failure(abort_code = pool::EWrongTrader)]
+fun cancel_anytime_by_non_trader_aborts() {
+    let mut s = ts::begin(ADMIN);
+    shell::shell::init_for_testing(s.ctx());
+
+    s.next_tx(TRADER);
+    let coin = coin::mint_for_testing<SUI>(100, s.ctx());
+    pool::submit_order<SUI>(ENV, HASH, coin, /* expiry */ 999, s.ctx());
+
+    s.next_tx(OTHER);
+    let order = s.take_shared<OrderCommitment<SUI>>();
+    let refund = pool::cancel_anytime<SUI>(order, s.ctx());
+    refund.burn_for_testing();
+    abort 0
+}
