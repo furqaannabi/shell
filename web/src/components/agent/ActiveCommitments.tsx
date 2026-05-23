@@ -118,6 +118,9 @@ export default function ActiveCommitments() {
   }
 
   if (!account) return null;
+  // Hide entirely when there's nothing actionable. The panel only
+  // exists to let traders refund stuck collateral — empty = no signal.
+  if (!isLoading && (!data || data.length === 0) && !error) return null;
 
   return (
     <div className="glass-panel rounded border border-outline-variant p-4">
