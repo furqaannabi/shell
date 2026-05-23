@@ -28,6 +28,12 @@ export const config = {
   shellPackageIdLatest:
     process.env.SHELL_PACKAGE_ID_LATEST ??
     "0x954e90623a2831fbe4bcee5db0418c82db92792425a560b9a06a17327063911d",
+  // Package that first introduced the `ioi` module (v2). Event type ids
+  // are rooted at the package that defined the type, so ioi::* events
+  // always tag here even after later upgrades. Event filters only.
+  shellPackageIdIoiTypes:
+    process.env.SHELL_PACKAGE_ID_IOI_TYPES ??
+    "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa",
   enclaveId:
     process.env.ENCLAVE_ID ??
     "0x68dc5a07cf93a6ba990f1866f988f24d366b314130500f045506b024dc134a5f",

@@ -8,8 +8,13 @@ export const NETWORK: Network =
 
 // ── Per-network config ──────────────────────────────────────────────
 interface NetworkConfig {
-  shellPackageId: string;          // original-id — event filters, Seal identity
+  shellPackageId: string;          // original-id — pool::* event filters, Seal identity
   shellPackageIdLatest: string;    // latest published-at — moveCall targets for v2+ functions
+  // Pinned to the upgrade that first introduced the `ioi` module.
+  // Event type ids are rooted at the package that defined the type, so
+  // ioi::MatchProposed / ioi::IoisPosted always tag at v2 even after
+  // later upgrades. Used only for event filters, never for moveCall.
+  shellPackageIdIoiTypes: string;
   poolId: string;
   enclaveConfigId: string;
   enclaveId: string;                // shared Enclave<SHELL> object (empty if not registered)
@@ -30,6 +35,7 @@ interface NetworkConfig {
 const TESTNET: NetworkConfig = {
   shellPackageId: '0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd',
   shellPackageIdLatest: '0x954e90623a2831fbe4bcee5db0418c82db92792425a560b9a06a17327063911d',
+  shellPackageIdIoiTypes: '0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa',
   poolId: '0x0fbb5658e6e5f0ef13e134b21ed46c264959bdec6976ae52e2667aba2588569b',
   enclaveConfigId: '0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8',
   enclaveId: '0x68dc5a07cf93a6ba990f1866f988f24d366b314130500f045506b024dc134a5f',
@@ -50,6 +56,7 @@ const TESTNET: NetworkConfig = {
 const MAINNET: NetworkConfig = {
   shellPackageId: '0x0',
   shellPackageIdLatest: '0x0',
+  shellPackageIdIoiTypes: '0x0',
   poolId: '0x0',
   enclaveConfigId: '0x0',
   enclaveId: '0x0',
@@ -72,6 +79,7 @@ export const NETWORK_CONFIG: NetworkConfig = NETWORK === 'mainnet' ? MAINNET : T
 // ── Convenience re-exports ──────────────────────────────────────────
 export const SHELL_PACKAGE_ID = NETWORK_CONFIG.shellPackageId;
 export const SHELL_PACKAGE_ID_LATEST = NETWORK_CONFIG.shellPackageIdLatest;
+export const SHELL_PACKAGE_ID_IOI_TYPES = NETWORK_CONFIG.shellPackageIdIoiTypes;
 export const POOL_ID = NETWORK_CONFIG.poolId;
 export const ENCLAVE_CONFIG_ID = NETWORK_CONFIG.enclaveConfigId;
 export const ENCLAVE_ID = NETWORK_CONFIG.enclaveId;
