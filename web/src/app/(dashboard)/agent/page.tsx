@@ -1,5 +1,6 @@
 'use client';
 
+import ActiveCommitments from '@/components/agent/ActiveCommitments';
 import IOIForm from '@/components/agent/IOIForm';
 import IOIList from '@/components/agent/IOIList';
 import ProposalFeed from '@/components/agent/ProposalFeed';
@@ -36,6 +37,8 @@ export default function AgentPage() {
       </div>
 
       <IOIList />
+
+      <ActiveCommitments />
     </div>
   );
 }
