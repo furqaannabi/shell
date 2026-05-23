@@ -20,6 +20,7 @@ import { friendlyError } from '@/lib/errors';
 import {
   BASE_COIN_TYPE,
   QUOTE_COIN_TYPE,
+  QUOTE_SYMBOL,
   collateralTypeFor,
   getSealClient,
   NETWORK,
@@ -49,6 +50,25 @@ function timeAgo(ms: number): string {
   if (d < 3_600_000) return `${Math.floor(d / 60_000)}m ago`;
   return `${Math.floor(d / 3_600_000)}h ago`;
 }
+
+// Format a raw u64 with `decimals` implied decimal places, trimming
+// trailing zeros after the dot. Returns '—' for zero (blob-decode fail).
+function formatScaled(raw: bigint, decimals: number): string {
+  if (raw === BigInt(0)) return '—';
+  const scale = BigInt(10 ** decimals);
+  const whole = raw / scale;
+  const frac = raw % scale;
+  if (frac === BigInt(0)) return whole.toString();
+  return `${whole}.${frac
+    .toString()
+    .padStart(decimals, '0')
+    .replace(/0+$/, '')}`;
+}
+
+const BASE_DECIMALS = 9; // SUI
+// quote price is DeepBook-scaled (1e6 for SUI/DBUSDC) regardless of
+// quote-coin actual decimals — see IOIForm price scaling.
+const PRICE_DECIMALS = 6;
 
 function hexToUtf8(hex: string): string {
   const s = hex.startsWith('0x') ? hex.slice(2) : hex;
@@ -419,6 +439,10 @@ export default function ProposalFeed() {
           <thead>
             <tr className="text-on-surface-variant border-b border-outline-variant">
               <th className="pb-2 font-normal">Side</th>
+              <th className="pb-2 font-normal text-right">Size (SUI)</th>
+              <th className="pb-2 font-normal text-right">
+                Price ({QUOTE_SYMBOL})
+              </th>
               <th className="pb-2 font-normal">Counterparty</th>
               <th className="pb-2 font-normal">Blob</th>
               <th className="pb-2 font-normal">Received</th>
@@ -446,6 +470,12 @@ export default function ProposalFeed() {
                     >
                       {p.side.toUpperCase()}
                     </span>
+                  </td>
+                  <td className="py-3 text-right text-on-surface font-mono-data">
+                    {formatScaled(p.agreedSize, BASE_DECIMALS)}
+                  </td>
+                  <td className="py-3 text-right text-on-surface font-mono-data">
+                    {formatScaled(p.agreedPrice, PRICE_DECIMALS)}
                   </td>
                   <td className="py-3 text-on-surface-variant">
                     {shortAddr(p.counterparty)}
