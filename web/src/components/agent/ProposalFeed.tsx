@@ -256,20 +256,39 @@ export default function ProposalFeed() {
   // matches, check the user's SettlementReceipts for an exact
   // (filled_price, filled_size, counterparty) match → settled.
   //
-  // Both paths are deterministic and survive any client state change.
-  // Each on-chain object/receipt can only be claimed by one proposal —
-  // first claim wins (with timestamp asc), so duplicates don't fight.
+  // Keyed by the same (side|price|size|counterparty) string the table
+  // uses for dedup — duplicate-content proposals share the same key so
+  // the displayed row finds the chain state regardless of which blob_id
+  // the greedy claim happened to pick.
   type ChainState =
     | { status: 'settled'; receiptId: string }
     | { status: 'accepted'; digest: string };
+  const proposalKey = (p: {
+    side: string;
+    agreedPrice: bigint;
+    agreedSize: bigint;
+    counterparty: string;
+  }) =>
+    `${p.side}|${p.agreedPrice}|${p.agreedSize}|${p.counterparty}`;
   const chainAccepted = useMemo(() => {
     if (!data) return {} as Record<string, ChainState>;
     const out: Record<string, ChainState> = {};
     const remainingOrders = [...(aliveOrders ?? [])];
     const remainingReceipts = [...(userReceipts ?? [])];
-    const sorted = [...data].sort((a, b) => a.timestamp - b.timestamp);
+    // Dedup by content first so each group claims at most one
+    // receipt / order, then sort asc for stable claim order.
+    const byKey = new Map<string, (typeof data)[number]>();
+    for (const p of data) {
+      const k = proposalKey(p);
+      const existing = byKey.get(k);
+      if (!existing || p.timestamp < existing.timestamp) byKey.set(k, p);
+    }
+    const sorted = Array.from(byKey.values()).sort(
+      (a, b) => a.timestamp - b.timestamp,
+    );
     for (const p of sorted) {
       if (p.agreedSize === BigInt(0)) continue; // blob decode failed
+      const key = proposalKey(p);
       // Settled?
       const rIdx = remainingReceipts.findIndex(
         (r) =>
@@ -278,7 +297,7 @@ export default function ProposalFeed() {
           r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase(),
       );
       if (rIdx >= 0) {
-        out[p.blob] = {
+        out[key] = {
           status: 'settled',
           receiptId: remainingReceipts[rIdx].objectId,
         };
@@ -298,7 +317,7 @@ export default function ProposalFeed() {
           o.collateralValue === expectedValue,
       );
       if (oIdx >= 0) {
-        out[p.blob] = {
+        out[key] = {
           status: 'accepted',
           digest: remainingOrders[oIdx].submitDigest,
         };
@@ -468,7 +487,7 @@ export default function ProposalFeed() {
           <tbody>
             {displayData.map((p) => {
               const isAccepting = accepting === p.blob;
-              const state = chainAccepted[p.blob];
+              const state = chainAccepted[proposalKey(p)];
               const localDigest =
                 accepted[`${account.address.toLowerCase()}:${p.blob}`];
               return (
