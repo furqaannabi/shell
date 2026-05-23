@@ -228,7 +228,7 @@ export default function IOIForm() {
           <span>
             {market ? (
               <>
-                Market mid{' '}
+                <span className="opacity-60">DeepBook ref</span>{' '}
                 <span className="text-secondary">
                   {market.mid.toFixed(3)} {QUOTE_SYMBOL}
                 </span>
@@ -238,15 +238,16 @@ export default function IOIForm() {
                 </span>
               </>
             ) : (
-              <span className="opacity-60">Market price unavailable</span>
+              <span className="opacity-60">DeepBook reference unavailable</span>
             )}
           </span>
           <button
             type="button"
             onClick={() => void applyMarketRange()}
             className="text-primary border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors cursor-pointer"
+            title="Fill price range around DeepBook mid. Shell settles directly between counterparties — this is a reference only, not a constraint."
           >
-            Use market range
+            Use DeepBook ref ±2%
           </button>
         </div>
 
