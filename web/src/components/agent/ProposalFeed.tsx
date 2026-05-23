@@ -438,14 +438,14 @@ export default function ProposalFeed() {
         <table className="w-full text-left font-mono-sm text-mono-sm">
           <thead>
             <tr className="text-on-surface-variant border-b border-outline-variant">
-              <th className="pb-2 font-normal">Side</th>
-              <th className="pb-2 font-normal text-right">Size (SUI)</th>
-              <th className="pb-2 font-normal text-right">
+              <th className="pb-2 pr-3 font-normal">Side</th>
+              <th className="pb-2 pr-3 font-normal text-right">Size (SUI)</th>
+              <th className="pb-2 pr-4 font-normal text-right">
                 Price ({QUOTE_SYMBOL})
               </th>
-              <th className="pb-2 font-normal">Counterparty</th>
-              <th className="pb-2 font-normal">Blob</th>
-              <th className="pb-2 font-normal">Received</th>
+              <th className="pb-2 pr-3 font-normal">Counterparty</th>
+              <th className="pb-2 pr-3 font-normal">Blob</th>
+              <th className="pb-2 pr-3 font-normal">Received</th>
               <th className="pb-2 font-normal text-right">Action</th>
             </tr>
           </thead>
@@ -460,7 +460,7 @@ export default function ProposalFeed() {
                   key={p.txDigest}
                   className="border-b border-[#1E293B] last:border-0 hover:bg-[#1A1D23] transition-colors"
                 >
-                  <td className="py-3">
+                  <td className="py-3 pr-3">
                     <span
                       className={
                         p.side === 'buy'
@@ -471,16 +471,16 @@ export default function ProposalFeed() {
                       {p.side.toUpperCase()}
                     </span>
                   </td>
-                  <td className="py-3 text-right text-on-surface font-mono-data">
+                  <td className="py-3 pr-3 text-right text-on-surface font-mono-data">
                     {formatScaled(p.agreedSize, BASE_DECIMALS)}
                   </td>
-                  <td className="py-3 text-right text-on-surface font-mono-data">
+                  <td className="py-3 pr-4 text-right text-on-surface font-mono-data">
                     {formatScaled(p.agreedPrice, PRICE_DECIMALS)}
                   </td>
-                  <td className="py-3 text-on-surface-variant">
+                  <td className="py-3 pr-3 text-on-surface-variant">
                     {shortAddr(p.counterparty)}
                   </td>
-                  <td className="py-3">
+                  <td className="py-3 pr-3">
                     <a
                       href={`${WALRUS_AGGREGATOR}/v1/blobs/${p.blob}`}
                       target="_blank"
@@ -491,7 +491,7 @@ export default function ProposalFeed() {
                       {shortBlob(p.blob)}
                     </a>
                   </td>
-                  <td className="py-3 text-on-surface-variant">
+                  <td className="py-3 pr-3 text-on-surface-variant">
                     {timeAgo(p.timestamp)}
                   </td>
                   <td className="py-3 text-right">
