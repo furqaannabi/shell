@@ -289,11 +289,13 @@ export default function ProposalFeed() {
     for (const p of sorted) {
       if (p.agreedSize === BigInt(0)) continue; // blob decode failed
       const key = proposalKey(p);
-      // Settled?
+      // Settled? Match by counterparty only — the enclave's order
+      // matcher re-prices/re-sizes via price-time priority over the
+      // live order book, so filled_price/size frequently diverge from
+      // the IOI proposal's agreed_price/size. Counterparty pair within
+      // a short timing window is the unambiguous signal.
       const rIdx = remainingReceipts.findIndex(
         (r) =>
-          r.fields.filled_price === p.agreedPrice.toString() &&
-          r.fields.filled_size === p.agreedSize.toString() &&
           r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase(),
       );
       if (rIdx >= 0) {
