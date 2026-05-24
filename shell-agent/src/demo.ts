@@ -20,17 +20,48 @@ const POLL_MS = 5_000;
 const TIMEOUT_MS = 5 * 60_000;
 const FLOAT = 1_000_000_000n;
 
-// Quant policy used throughout this demo.
-// Size is 1e9-scaled (1 SUI = 1_000_000_000).
-// Price is 1e6-scaled (1.00 USDC per SUI = 1_000_000) — same scale used
-// by IOIForm/SealedOrderForm/enclave.
+const QUOTE_COIN_TYPE =
+  "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC";
+
+// Trade sizing — kept small so a 2 SUI wallet covers gas + collateral.
+//   Sell side escrows SIZE in SUI (size 0.2 → 0.2 SUI locked, ~1.7 SUI left for gas)
+//   Buy  side escrows SIZE * PRICE / 1e9 in USDC (0.2 SUI * 1.00 USDC = 0.20 USDC)
+const SIZE_LO = (FLOAT * 1n) / 10n;   // 0.1 SUI
+const SIZE_HI = (FLOAT * 2n) / 10n;   // 0.2 SUI
+const PRICE_LO = 900_000n;            // 0.90 USDC
+const PRICE_HI = 1_100_000n;          // 1.10 USDC
+
+// Quant policy used throughout this demo. Bounds match SIZE/PRICE above
+// so real proposals pass while a synthetic out-of-band proposal fails.
+// Size is 1e9-scaled, price is 1e6-scaled.
 const DEMO_POLICY =
   "You are a quant trading agent for Shell Finance. " +
   "Accept a match only if ALL conditions hold: " +
-  "(1) agreed_price is between 1_800_000 and 2_100_000 (i.e. 1.80–2.10 USDC); " +
-  "(2) agreed_size is between 1_000_000_000 and 5_000_000_000 (i.e. 1–5 SUI). " +
+  "(1) agreed_price is between 900_000 and 1_100_000 (i.e. 0.90–1.10 USDC); " +
+  "(2) agreed_size is between 100_000_000 and 200_000_000 (i.e. 0.1–0.2 SUI). " +
   "Reject if price or size is outside those bounds. " +
   "Set policy_check=true only when the accepted match provably satisfies both conditions.";
+
+function ts(): string {
+  return new Date().toISOString().split("T")[1]!.slice(0, 12);
+}
+function log(msg: string) {
+  console.log(`[${ts()}] ${msg}`);
+}
+
+async function logBalances(
+  sui: SuiJsonRpcClient,
+  addr: string,
+  label: string,
+) {
+  const suiBal = await sui.getBalance({ owner: addr });
+  const usdcBal = await sui
+    .getBalance({ owner: addr, coinType: QUOTE_COIN_TYPE })
+    .catch(() => ({ totalBalance: "0" }));
+  const suiF = (Number(suiBal.totalBalance) / 1e9).toFixed(4);
+  const usdcF = (Number(usdcBal.totalBalance) / 1e6).toFixed(4);
+  log(`  ${label.padEnd(7)} ${addr.slice(0, 10)}… SUI=${suiF}  USDC=${usdcF}`);
+}
 
 function makeSui() {
   return new SuiJsonRpcClient({ url: config.suiRpcUrl, network: "testnet" });
@@ -70,58 +101,69 @@ export async function runDemo(): Promise<void> {
   const buyerAddr = buyerKp.toSuiAddress();
   const sellerAddr = sellerKp.toSuiAddress();
 
-  sep("STEP 1 — AI policy enforcement (synthetic bad proposal)");
-  console.log("[demo] policy:", DEMO_POLICY.slice(0, 120) + "…");
-
-  // Manufacture a proposal that violates the policy: price 3.50 USDC (above max 2.10).
-  const badProposal: MatchProposal = {
-    buyAgent: buyerAddr,
-    sellAgent: sellerAddr,
-    asset: "0x2::sui::SUI",
-
-    agreedPrice: 3_500_000n, // 3.50 USDC at 1e6 scale — above policy ceiling
-    agreedSize: 2n * FLOAT,
-    expiryMs: BigInt(Date.now()) + 60_000n,
-    side: "buy",
-    blobId: "demo-synthetic-bad-proposal",
-  };
-
-  console.log(
-    `[demo] synthetic proposal: price=3.50 USDC  size=2 SUI  (price violates policy max 2.10)`,
-  );
-  const badDecision = await evaluateProposal(badProposal, DEMO_POLICY);
-  console.log(`[demo] LLM decision : ${badDecision.decision}`);
-  console.log(`[demo] LLM reasoning: ${badDecision.reasoning}`);
-  console.log(`[demo] policy_check : ${badDecision.policy_check}`);
-  if (badDecision.decision === "accept_match") {
-    console.warn(
-      "[demo] WARNING: LLM accepted a bad proposal — demo narrative weakened",
-    );
-  } else {
-    console.log(
-      "[demo] ✓ bad proposal correctly rejected — no order submitted",
-    );
-  }
-
-  sep("STEP 2 — Post encrypted IOIs on-chain (Seal + Walrus)");
-  console.log(`[demo] buyer  ${buyerAddr}`);
-  console.log(`[demo] seller ${sellerAddr}`);
-
   const buyerSui = makeSui();
   const sellerSui = makeSui();
   const buyerSeal = makeSeal(buyerSui);
   const sellerSeal = makeSeal(sellerSui);
 
+  sep("STEP 0 — Pre-flight balance check");
+  await logBalances(buyerSui, buyerAddr, "BUYER");
+  await logBalances(sellerSui, sellerAddr, "SELLER");
+
+  const buyerUsdc = await buyerSui
+    .getBalance({ owner: buyerAddr, coinType: QUOTE_COIN_TYPE })
+    .catch(() => ({ totalBalance: "0" }));
+  const neededUsdc = (SIZE_HI * PRICE_HI) / FLOAT; // worst-case escrow
+  if (BigInt(buyerUsdc.totalBalance) < neededUsdc) {
+    log(
+      `ABORT: buyer needs ≥ ${(Number(neededUsdc) / 1e6).toFixed(4)} USDC; ` +
+        `has ${(Number(buyerUsdc.totalBalance) / 1e6).toFixed(4)}. ` +
+        `Send USDC to ${buyerAddr}.`,
+    );
+    process.exit(1);
+  }
+
+  sep("STEP 1 — AI policy enforcement (synthetic bad proposal)");
+  log(`policy: ${DEMO_POLICY.slice(0, 100)}…`);
+
+  // Manufacture a proposal that violates the policy: price 3.50 USDC (above max 1.10).
+  const badProposal: MatchProposal = {
+    buyAgent: buyerAddr,
+    sellAgent: sellerAddr,
+    asset: "0x2::sui::SUI",
+    agreedPrice: 3_500_000n,
+    agreedSize: SIZE_LO,
+    expiryMs: BigInt(Date.now()) + 60_000n,
+    side: "buy",
+    blobId: "demo-synthetic-bad-proposal",
+  };
+
+  log(`synthetic proposal: price=3.50 USDC size=0.1 SUI (violates policy max 1.10 USDC)`);
+  const badDecision = await evaluateProposal(badProposal, DEMO_POLICY);
+  log(`LLM decision : ${badDecision.decision}`);
+  log(`LLM reasoning: ${badDecision.reasoning}`);
+  log(`policy_check : ${badDecision.policy_check}`);
+  if (badDecision.decision === "accept_match") {
+    log("WARNING: LLM accepted a bad proposal — demo narrative weakened");
+  } else {
+    log("✓ bad proposal rejected — no order submitted");
+  }
+
+  sep("STEP 2 — Post encrypted IOIs on-chain (Seal + Walrus)");
+  log(`buyer  ${buyerAddr}`);
+  log(`seller ${sellerAddr}`);
+  log(
+    `terms: ${Number(SIZE_LO) / 1e9}–${Number(SIZE_HI) / 1e9} SUI @ ` +
+      `${Number(PRICE_LO) / 1e6}–${Number(PRICE_HI) / 1e6} USDC`,
+  );
+
   const sys = await buyerSui.getLatestSuiSystemState();
   const expiryEpoch = BigInt(sys.epoch) + 10n;
 
-  // Overlapping terms that satisfy DEMO_POLICY:
-  //   Buyer: 2–4 SUI @ 1.80–2.20 USDC
-  //   Seller: 2–4 SUI @ 1.90–2.10 USDC
-  //   Enclave midpoint: 2.00 USDC, 2 SUI
   const asset = "0x2::sui::SUI";
   const ttlMs = BigInt(Date.now()) + 30n * 60_000n;
 
+  log("encrypting + uploading both IOIs in parallel…");
   const [buyResult, sellResult] = await Promise.all([
     postIoi({
       suiClient: buyerSui,
@@ -130,10 +172,10 @@ export async function runDemo(): Promise<void> {
       plaintext: {
         side: "buy",
         asset,
-        sizeLo: 2n * FLOAT,
-        sizeHi: 4n * FLOAT,
-        priceLo: 1_800_000n,
-        priceHi: 2_200_000n,
+        sizeLo: SIZE_LO,
+        sizeHi: SIZE_HI,
+        priceLo: PRICE_LO,
+        priceHi: PRICE_HI,
         expiryMs: ttlMs,
       },
       expiryEpoch,
@@ -145,96 +187,115 @@ export async function runDemo(): Promise<void> {
       plaintext: {
         side: "sell",
         asset,
-        sizeLo: 2n * FLOAT,
-        sizeHi: 4n * FLOAT,
-        priceLo: 1_900_000n,
-        priceHi: 2_100_000n,
+        sizeLo: SIZE_LO,
+        sizeHi: SIZE_HI,
+        priceLo: PRICE_LO,
+        priceHi: PRICE_HI,
         expiryMs: ttlMs,
       },
       expiryEpoch,
     }),
   ]);
 
-  console.log(`[demo] buy  IOI encrypted + posted: blob=${buyResult.blobId}`);
-  console.log(`[demo] sell IOI encrypted + posted: blob=${sellResult.blobId}`);
+  log(`✓ buy  IOI posted: blob=${buyResult.blobId}`);
+  log(`✓ sell IOI posted: blob=${sellResult.blobId}`);
 
   sep("STEP 3 — Enclave matches (polling every 5s, timeout 5 min)");
+  log("waiting on enclave to match (matcher polls every 15s)…");
 
   const buyerSeen = new Set<string>();
   const sellerSeen = new Set<string>();
   let buyerDone = false;
   let sellerDone = false;
   const deadline = Date.now() + TIMEOUT_MS;
+  let tickCount = 0;
 
   while (!(buyerDone && sellerDone)) {
     if (Date.now() > deadline) {
-      console.error("[demo] timeout — enclave did not match within 5 min");
-      console.error("[demo] check: Move package upgraded? Enclave running?");
+      log("TIMEOUT — enclave did not match within 5 min");
+      log("check: /shell/status alive? ioi_book_size > 0?");
       process.exit(1);
     }
 
     await new Promise((r) => setTimeout(r, POLL_MS));
-
-    if (!buyerDone) {
-      const { proposals } = await pollProposals({
-        suiClient: buyerSui,
-        agentAddr: buyerAddr,
-      });
-      for (const p of proposals) {
-        if (buyerSeen.has(p.blobId)) continue;
-        buyerSeen.add(p.blobId);
-        console.log(
-          `\n[demo] buyer got proposal: price=${p.agreedPrice} size=${p.agreedSize}`,
-        );
-        const d = await evaluateProposal(p, DEMO_POLICY);
-        console.log(`[demo] buyer LLM decision : ${d.decision}`);
-        console.log(`[demo] buyer LLM reasoning: ${d.reasoning}`);
-        console.log(`[demo] buyer policy_check  : ${d.policy_check}`);
-        if (d.decision !== "accept_match" || !d.policy_check) {
-          console.log("[demo] buyer LLM rejected — skipping");
-          continue;
-        }
-        const digest = await submitOrderFromProposal({
-          suiClient: buyerSui,
-          sealClient: buyerSeal,
-          keypair: buyerKp,
-          proposal: p,
-        });
-        console.log(`[demo] buyer Shell order submitted: ${digest}`);
-        buyerDone = true;
-      }
+    tickCount++;
+    if (tickCount % 6 === 0) {
+      log(
+        `still polling (${tickCount * 5}s elapsed) — buyer=${buyerDone ? "✓" : "·"} seller=${sellerDone ? "✓" : "·"}`,
+      );
     }
 
-    if (!sellerDone) {
-      const { proposals } = await pollProposals({
-        suiClient: sellerSui,
-        agentAddr: sellerAddr,
-      });
+    for (const [role, addr, sui, seal, kp, seen, doneFlag] of [
+      ["buyer", buyerAddr, buyerSui, buyerSeal, buyerKp, buyerSeen, () => (buyerDone = true)],
+      ["seller", sellerAddr, sellerSui, sellerSeal, sellerKp, sellerSeen, () => (sellerDone = true)],
+    ] as const) {
+      if (role === "buyer" ? buyerDone : sellerDone) continue;
+      const { proposals } = await pollProposals({ suiClient: sui, agentAddr: addr });
       for (const p of proposals) {
-        if (sellerSeen.has(p.blobId)) continue;
-        sellerSeen.add(p.blobId);
-        console.log(
-          `\n[demo] seller got proposal: price=${p.agreedPrice} size=${p.agreedSize}`,
+        if (seen.has(p.blobId)) continue;
+        seen.add(p.blobId);
+        console.log();
+        log(
+          `${role} got proposal: price=${(Number(p.agreedPrice) / 1e6).toFixed(4)} USDC ` +
+            `size=${(Number(p.agreedSize) / 1e9).toFixed(4)} SUI  blob=${p.blobId.slice(0, 12)}…`,
         );
         const d = await evaluateProposal(p, DEMO_POLICY);
-        console.log(`[demo] seller LLM decision : ${d.decision}`);
-        console.log(`[demo] seller LLM reasoning: ${d.reasoning}`);
-        console.log(`[demo] seller policy_check  : ${d.policy_check}`);
+        log(`${role} LLM decision : ${d.decision}`);
+        log(`${role} LLM reasoning: ${d.reasoning}`);
+        log(`${role} policy_check : ${d.policy_check}`);
         if (d.decision !== "accept_match" || !d.policy_check) {
-          console.log("[demo] seller LLM rejected — skipping");
+          log(`${role} LLM rejected — skipping`);
           continue;
         }
+        log(`${role} submitting Shell order…`);
         const digest = await submitOrderFromProposal({
-          suiClient: sellerSui,
-          sealClient: sellerSeal,
-          keypair: sellerKp,
+          suiClient: sui,
+          sealClient: seal,
+          keypair: kp,
           proposal: p,
         });
-        console.log(`[demo] seller Shell order submitted: ${digest}`);
-        sellerDone = true;
+        log(`${role} ✓ order submitted: ${digest}`);
+        doneFlag();
       }
     }
   }
+
+  sep("STEP 4 — Wait for enclave to settle (order_poller cadence 5s)");
+  const settleDeadline = Date.now() + TIMEOUT_MS;
+  let buyerReceipt: string | null = null;
+  let sellerReceipt: string | null = null;
+  while (!(buyerReceipt && sellerReceipt)) {
+    if (Date.now() > settleDeadline) {
+      log("TIMEOUT — orders never settled. Check /shell/status.");
+      process.exit(1);
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    const receiptType = `${config.shellPackageId}::pool::SettlementReceipt`;
+    if (!buyerReceipt) {
+      const r = await buyerSui.getOwnedObjects({
+        owner: buyerAddr,
+        filter: { StructType: receiptType },
+      });
+      if (r.data.length > 0) {
+        buyerReceipt = r.data[r.data.length - 1]!.data!.objectId!;
+        log(`✓ buyer  receipt: ${buyerReceipt}`);
+      }
+    }
+    if (!sellerReceipt) {
+      const r = await sellerSui.getOwnedObjects({
+        owner: sellerAddr,
+        filter: { StructType: receiptType },
+      });
+      if (r.data.length > 0) {
+        sellerReceipt = r.data[r.data.length - 1]!.data!.objectId!;
+        log(`✓ seller receipt: ${sellerReceipt}`);
+      }
+    }
+  }
+
+  sep("STEP 5 — Post-settlement balance check");
+  await logBalances(buyerSui, buyerAddr, "BUYER");
+  await logBalances(sellerSui, sellerAddr, "SELLER");
 
   sep("DEMO COMPLETE");
   console.log("[demo] ✓ bad proposal rejected by AI policy enforcement");
