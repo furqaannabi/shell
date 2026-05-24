@@ -537,7 +537,8 @@ export default function ProposalFeed() {
                         href={`https://suiscan.xyz/${NETWORK}/object/${state.receiptId}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary border border-primary px-2 py-1 rounded text-[10px] hover:bg-primary/20 transition-colors bg-primary/10"
+                        className="text-emerald-300 border border-emerald-500/60 bg-emerald-500/15 px-2 py-1 rounded text-[10px] hover:bg-emerald-500/25 transition-colors"
+                        title={`Receipt ${state.receiptId}`}
                       >
                         SETTLED ↗
                       </a>

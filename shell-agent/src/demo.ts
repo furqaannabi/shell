@@ -12,7 +12,7 @@ import { submitOrderFromProposal } from "./orders.js";
 const SEAL_KEY_SERVER = {
   objectId:
     "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98",
-  aggregatorUrl: 'https://seal-aggregator-testnet.mystenlabs.com',
+  aggregatorUrl: "https://seal-aggregator-testnet.mystenlabs.com",
   weight: 1,
 };
 
@@ -78,6 +78,7 @@ export async function runDemo(): Promise<void> {
     buyAgent: buyerAddr,
     sellAgent: sellerAddr,
     asset: "0x2::sui::SUI",
+
     agreedPrice: 3_500_000n, // 3.50 USDC at 1e6 scale — above policy ceiling
     agreedSize: 2n * FLOAT,
     expiryMs: BigInt(Date.now()) + 60_000n,
@@ -89,19 +90,17 @@ export async function runDemo(): Promise<void> {
     `[demo] synthetic proposal: price=3.50 USDC  size=2 SUI  (price violates policy max 2.10)`,
   );
   const badDecision = await evaluateProposal(badProposal, DEMO_POLICY);
-  console.log(
-    `[demo] LLM decision : ${badDecision.decision}`,
-  );
-  console.log(
-    `[demo] LLM reasoning: ${badDecision.reasoning}`,
-  );
-  console.log(
-    `[demo] policy_check : ${badDecision.policy_check}`,
-  );
+  console.log(`[demo] LLM decision : ${badDecision.decision}`);
+  console.log(`[demo] LLM reasoning: ${badDecision.reasoning}`);
+  console.log(`[demo] policy_check : ${badDecision.policy_check}`);
   if (badDecision.decision === "accept_match") {
-    console.warn("[demo] WARNING: LLM accepted a bad proposal — demo narrative weakened");
+    console.warn(
+      "[demo] WARNING: LLM accepted a bad proposal — demo narrative weakened",
+    );
   } else {
-    console.log("[demo] ✓ bad proposal correctly rejected — no order submitted");
+    console.log(
+      "[demo] ✓ bad proposal correctly rejected — no order submitted",
+    );
   }
 
   sep("STEP 2 — Post encrypted IOIs on-chain (Seal + Walrus)");
@@ -239,7 +238,11 @@ export async function runDemo(): Promise<void> {
 
   sep("DEMO COMPLETE");
   console.log("[demo] ✓ bad proposal rejected by AI policy enforcement");
-  console.log("[demo] ✓ matching IOIs posted privately (Seal-encrypted on Walrus)");
+  console.log(
+    "[demo] ✓ matching IOIs posted privately (Seal-encrypted on Walrus)",
+  );
   console.log("[demo] ✓ enclave matched without seeing plaintext order terms");
-  console.log("[demo] ✓ AI accepted real proposals and submitted Shell orders on-chain");
+  console.log(
+    "[demo] ✓ AI accepted real proposals and submitted Shell orders on-chain",
+  );
 }
