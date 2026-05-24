@@ -47,7 +47,7 @@ export async function submitOrderFromProposal(opts: {
     order: plaintext,
   });
 
-  // Collateral coin: buy → quote (DBUSDC on testnet), sell → base (SUI).
+  // Collateral coin: buy → quote (USDC), sell → base (SUI).
   const isBuy = proposal.side === "buy";
   const collateralType = isBuy ? QUOTE_COIN_TYPE : "0x2::sui::SUI";
   const FLOAT_SCALING = 1_000_000_000n;
