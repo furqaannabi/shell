@@ -19,8 +19,7 @@ interface NetworkConfig {
   enclaveConfigId: string;
   enclaveId: string;                // shared Enclave<SHELL> object (empty if not registered)
   enclaveUrl: string;               // base URL of the matching enclave's HTTP server
-  deepbookPoolKey: string;          // key used by @mysten/deepbook-v3
-  quoteCoinType: string;            // USDC / DUSDC type tag (depends on network)
+  quoteCoinType: string;            // USDC type tag (per-network)
   quoteCoinScalar: bigint;          // 1e6 for both
   quoteSymbol: string;              // shown in UI
   sealKeyServer: {
@@ -41,9 +40,9 @@ const TESTNET: NetworkConfig = {
   enclaveId: '0x68dc5a07cf93a6ba990f1866f988f24d366b314130500f045506b024dc134a5f',
   enclaveUrl: 'https://sui.furqaannabi.com',
   deepbookPoolKey: 'SUI_DBUSDC',
-  quoteCoinType: '0xf7152c05930480cd740d7311b5b8b45c6f488e3a53a11c3f74a6fac36a52e0d7::DBUSDC::DBUSDC',
+  quoteCoinType: '0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC',
   quoteCoinScalar: BigInt(1_000_000),
-  quoteSymbol: 'DBUSDC',
+  quoteSymbol: 'USDC',
   sealKeyServer: {
     objectId: '0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98',
     aggregatorUrl: 'https://seal-aggregator-testnet.mystenlabs.com',
@@ -94,7 +93,7 @@ export const BASE_COIN_TYPE = '0x2::sui::SUI';
 
 /**
  * Move type of the collateral coin for a given order side.
- * Buy → post quote (USDC/DBUSDC). Sell → post base (SUI).
+ * Buy → post quote (USDC). Sell → post base (SUI).
  */
 export function collateralTypeFor(side: 'buy' | 'sell'): string {
   return side === 'buy' ? QUOTE_COIN_TYPE : BASE_COIN_TYPE;

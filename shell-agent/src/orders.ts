@@ -12,10 +12,11 @@ import {
 import { config } from "./config.js";
 import type { MatchProposal } from "./proposals.js";
 
-/** Quote coin type — DBUSDC, the quote coin of the DeepBook v3 SUI_DBUSDC
- *  pool on testnet. Must match `Pool<SUI, DBUSDC>` for settlement::settle. */
+/** Quote coin type — Sui testnet USDC. Mirrors web/src/lib/sui.ts. Direct
+ *  two-party settlement (`settle_direct`) is coin-agnostic, so we use the
+ *  standard testnet USDC rather than the deepbook-specific DBUSDC. */
 const QUOTE_COIN_TYPE =
-  "0xf7152c05930480cd740d7311b5b8b45c6f488e3a53a11c3f74a6fac36a52e0d7::DBUSDC::DBUSDC";
+  "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC";
 
 /** Build + submit a Shell sealed order matching the agent's side of a
  *  match proposal. For now uses the proposal's `agreedPrice` as the

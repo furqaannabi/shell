@@ -1376,7 +1376,7 @@ fn match_orders(orders: &[DecryptedOrder]) -> Vec<MatchPayload> {
         }
 
         // settlement.move requires maker.collateral=base (SUI) and
-        // taker.collateral=quote (DBUSDC) so the type args line up with
+        // taker.collateral=quote (USDC) so the type args line up with
         // DeepBook's Pool<TBase, TQuote>. Always pin maker=sell side.
         let (maker, taker) = (ask, bid);
         fills.push(MatchPayload {
