@@ -5,7 +5,7 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { config } from "./config.js";
 import { appendEntry } from "./journal.js";
 import { postIoi } from "./ioi.js";
-import { evaluateProposal } from "./llm.js";
+import { evaluateProposal } from "./llm/index.js";
 import { submitOrderFromProposal } from "./orders.js";
 import { pollProposals } from "./proposals.js";
 

@@ -1,5 +1,5 @@
 import { putBlob } from "./walrus.js";
-import type { LlmDecision } from "./llm.js";
+import type { LlmDecision } from "./llm/index.js";
 import type { MatchProposal } from "./proposals.js";
 
 /** Snapshot of a proposal with BigInts stringified for stable JSON. */

@@ -12,7 +12,15 @@ function optional(name: string, fallback = ""): string {
 
 export const config = {
   agentPrivateKey: optional("AGENT_PRIVATE_KEY"),
+  // ── LLM provider config ──────────────────────────────────────────────
+  // v2: pluggable provider. Defaults preserve pre-v2 OPENAI_API_KEY-only behaviour.
+  llmProvider: optional("LLM_PROVIDER"),       // openai | anthropic | google | openai-compatible
+  llmModel: optional("LLM_MODEL"),
+  llmApiKey: optional("LLM_API_KEY"),
+  llmBaseUrl: optional("LLM_BASE_URL"),
+  // Legacy keys — still honoured when LLM_* are unset.
   openaiApiKey: optional("OPENAI_API_KEY"),
+  openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
   suiRpcUrl: process.env.SUI_RPC_URL ?? "https://fullnode.testnet.sui.io",
   walrusAggregator:
     process.env.WALRUS_AGGREGATOR ??
@@ -40,7 +48,6 @@ export const config = {
   agentPolicy:
     process.env.AGENT_POLICY ??
     "Accept any match within declared range. Reject if size > 1000.",
-  openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
   // IOI parameters used by the auto-posting loop in `run` mode.
   ioiSide: (process.env.AGENT_IOI_SIDE ?? "buy") as "buy" | "sell",
   ioiAsset: process.env.AGENT_IOI_ASSET ?? "0x2::sui::SUI",
