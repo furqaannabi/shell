@@ -33,6 +33,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use sui_crypto::ed25519::Ed25519PrivateKey;
 use sui_crypto::SuiSigner;
@@ -73,6 +74,8 @@ const ORDER_SUBMITTED_EVENT: &str =
     "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd::pool::OrderSubmitted";
 const IOIS_POSTED_EVENT: &str =
     "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa::ioi::IoisPosted";
+const MATCH_PROPOSED_EVENT: &str =
+    "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa::ioi::MatchProposed";
 const POLL_INTERVAL_SECS: u64 = 5;
 const IOI_POLL_INTERVAL_SECS: u64 = 15;
 const SEAL_CERT_TTL_MIN: u16 = 30;
@@ -248,6 +251,19 @@ pub struct ShellState {
     pub order_book: OrderBook,
     pub ioi_book: IoiBook,
     pub http: reqwest::Client,
+    /// IOI pairs we've already emitted MatchProposed for. Keyed by
+    /// (buy_blob_id, sell_blob_id) — pruned by expiry on each cycle.
+    /// Survives across `ioi_poll_once` calls within one process, so the
+    /// matcher won't re-emit a duplicate even if the source IoisPosted
+    /// events get re-scanned (e.g. after a cursor reset on enclave
+    /// restart).
+    pub proposed_pairs: Arc<RwLock<HashMap<(String, String), u64>>>,
+    /// Unix-ms timestamp of the last successful order-poller tick.
+    /// `/health_check` surfaces this so a dead background task is
+    /// observable from outside.
+    pub order_poller_last_ok_ms: Arc<AtomicU64>,
+    /// Unix-ms timestamp of the last successful IOI matcher tick.
+    pub ioi_matcher_last_ok_ms: Arc<AtomicU64>,
 }
 
 impl ShellState {
@@ -256,6 +272,9 @@ impl ShellState {
             order_book: Arc::new(RwLock::new(HashMap::new())),
             ioi_book: Arc::new(RwLock::new(HashMap::new())),
             http: reqwest::Client::new(),
+            proposed_pairs: Arc::new(RwLock::new(HashMap::new())),
+            order_poller_last_ok_ms: Arc::new(AtomicU64::new(0)),
+            ioi_matcher_last_ok_ms: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -264,6 +283,41 @@ impl Default for ShellState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ── Handler: /shell/status ─────────────────────────────────────────
+//
+// Liveness probe for the two background tasks. `/health_check` ships
+// from the Nautilus framework and only reports HTTP-server liveness —
+// it can't see a panicked tokio task. This endpoint exposes the unix-ms
+// timestamp of the last successful tick for each task, so external
+// monitoring can alert when either one stops advancing.
+
+#[derive(serde::Serialize)]
+pub struct ShellStatus {
+    /// Unix-ms of the last successful order-poller tick. 0 = never.
+    pub order_poller_last_ok_ms: u64,
+    /// Unix-ms of the last successful IOI-matcher tick. 0 = never.
+    pub ioi_matcher_last_ok_ms: u64,
+    /// Current open orders in the in-enclave book.
+    pub order_book_size: usize,
+    /// Current open IOIs in the in-enclave book.
+    pub ioi_book_size: usize,
+    /// Number of `(buy_blob, sell_blob)` pairs already proposed within
+    /// the live expiry window. Useful for spotting matcher-restart loops.
+    pub proposed_pairs: usize,
+}
+
+pub async fn shell_status(
+    State(state): State<Arc<AppState>>,
+) -> Json<ShellStatus> {
+    Json(ShellStatus {
+        order_poller_last_ok_ms: state.shell.order_poller_last_ok_ms.load(Ordering::Relaxed),
+        ioi_matcher_last_ok_ms: state.shell.ioi_matcher_last_ok_ms.load(Ordering::Relaxed),
+        order_book_size: state.shell.order_book.read().await.len(),
+        ioi_book_size: state.shell.ioi_book.read().await.len(),
+        proposed_pairs: state.shell.proposed_pairs.read().await.len(),
+    })
 }
 
 // ── Handler: /process_data ──────────────────────────────────────────
@@ -356,18 +410,63 @@ async fn sign_envelopes(
 // ── Autonomous poller ───────────────────────────────────────────────
 
 /// Spawn the background chain-watching task. Call once from the Nautilus
-/// app initialisation hook (mirror seal-example's `on_start`).
+/// app initialisation hook (mirror seal-example's `on_start`). Wrapped
+/// in a supervisor that catches panics + cursor-corruption and restarts
+/// the inner loop after a short cooldown, so the HTTP server can never
+/// silently outlive the matcher.
 pub fn start_poller(state: Arc<AppState>) {
-    tokio::spawn(async move {
-        let http = &state.shell.http;
+    spawn_supervised("shell-poller", state.clone(), move |state| async move {
+        let http = state.shell.http.clone();
         let mut cursor: Option<serde_json::Value> = None;
 
         loop {
-            match poll_once(&state, http, &mut cursor).await {
-                Ok(_) => {}
+            match poll_once(&state, &http, &mut cursor).await {
+                Ok(_) => {
+                    state
+                        .shell
+                        .order_poller_last_ok_ms
+                        .store(now_ms_or_zero(), Ordering::Relaxed);
+                }
                 Err(e) => eprintln!("[shell-poller] error: {e}"),
             }
             sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
+        }
+    });
+}
+
+fn now_ms_or_zero() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Run `inner` inside a `tokio::spawn`. If the future ever returns or the
+/// task panics, log + sleep + restart. This is the difference between
+/// "silently dead background task" and "transient blip in the logs".
+fn spawn_supervised<F, Fut>(name: &'static str, state: Arc<AppState>, inner: F)
+where
+    F: Fn(Arc<AppState>) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let inner = Arc::new(inner);
+    tokio::spawn(async move {
+        loop {
+            let state = state.clone();
+            let inner = inner.clone();
+            let handle = tokio::spawn(async move { inner(state).await });
+            match handle.await {
+                Ok(()) => {
+                    eprintln!("[{name}] task returned unexpectedly; restarting in 5s");
+                }
+                Err(join_err) if join_err.is_panic() => {
+                    eprintln!("[{name}] task PANICKED: {join_err}; restarting in 5s");
+                }
+                Err(e) => {
+                    eprintln!("[{name}] task joined with error: {e}; restarting in 5s");
+                }
+            }
+            sleep(Duration::from_secs(5)).await;
         }
     });
 }
@@ -1407,18 +1506,123 @@ fn match_orders(orders: &[DecryptedOrder]) -> Vec<MatchPayload> {
 //   6. write per-side proposal blobs back to Walrus
 //   7. emit a `MatchProposed` event on Sui so each side can find them
 pub fn start_ioi_matcher(state: Arc<AppState>) {
-    tokio::spawn(async move {
-        let http = &state.shell.http;
+    spawn_supervised("shell-ioi", state, move |state| async move {
+        let http = state.shell.http.clone();
+
+        // Cold-start idempotency: seed proposed_pairs from past
+        // MatchProposed events on chain so we don't re-propose pairs the
+        // previous enclave instance already emitted.
+        if let Err(e) = bootstrap_proposed_pairs(&state, &http).await {
+            eprintln!(
+                "[shell-ioi] bootstrap proposed_pairs failed: {e} \
+                 (continuing without seed; duplicates possible this cycle)"
+            );
+        }
+
         let mut cursor: Option<serde_json::Value> = None;
 
         loop {
-            match ioi_poll_once(&state, http, &mut cursor).await {
-                Ok(_) => {}
+            match ioi_poll_once(&state, &http, &mut cursor).await {
+                Ok(_) => {
+                    state
+                        .shell
+                        .ioi_matcher_last_ok_ms
+                        .store(now_ms_or_zero(), Ordering::Relaxed);
+                }
                 Err(e) => eprintln!("[shell-ioi] error: {e}"),
             }
             sleep(Duration::from_secs(IOI_POLL_INTERVAL_SECS)).await;
         }
     });
+}
+
+/// Read recent `MatchProposed` events from chain and seed
+/// `proposed_pairs` with the `(buy_blob_id, sell_blob_id)` keys. Cheap
+/// enough to run synchronously at matcher startup.
+async fn bootstrap_proposed_pairs(
+    state: &Arc<AppState>,
+    http: &reqwest::Client,
+) -> Result<(), EnclaveError> {
+    let now_ms = now_ms_or_zero();
+    let mut cursor: Option<serde_json::Value> = None;
+    let mut seeded = 0usize;
+
+    loop {
+        let res = sui_rpc(
+            http,
+            "suix_queryEvents",
+            serde_json::json!([
+                { "MoveEventType": MATCH_PROPOSED_EVENT },
+                cursor,
+                50,
+                true // descending: newest first
+            ]),
+        )
+        .await?;
+
+        let empty = vec![];
+        let events = res["data"].as_array().unwrap_or(&empty);
+        if events.is_empty() {
+            break;
+        }
+
+        let mut pp = state.shell.proposed_pairs.write().await;
+        let mut all_too_old = true;
+        for ev in events {
+            let ts_ms: u64 = ev
+                .get("timestampMs")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            // Treat the on-chain emit time as a lower bound on the
+            // proposal's expiry; cap at PROPOSAL_EXPIRY_MS past then.
+            let expiry = ts_ms.saturating_add(PROPOSAL_EXPIRY_MS);
+            if expiry <= now_ms {
+                // older than the longest proposal could still be live —
+                // no point seeding it; also lets us stop paginating.
+                continue;
+            }
+            all_too_old = false;
+
+            let pj = &ev["parsedJson"];
+            let buy = decode_blob_id(&pj["buy_blob_id"]);
+            let sell = decode_blob_id(&pj["sell_blob_id"]);
+            if buy.is_empty() || sell.is_empty() {
+                continue;
+            }
+            pp.entry((buy, sell)).or_insert(expiry);
+            seeded += 1;
+        }
+        drop(pp);
+
+        // If every event on this page is already expired, the next
+        // (older) page would be too. Stop paginating.
+        if all_too_old {
+            break;
+        }
+
+        match res.get("nextCursor") {
+            Some(c) if !c.is_null() => cursor = Some(c.clone()),
+            _ => break,
+        }
+    }
+
+    eprintln!("[shell-ioi] bootstrap: seeded {seeded} proposed pairs from chain");
+    Ok(())
+}
+
+fn decode_blob_id(v: &serde_json::Value) -> String {
+    if let Some(s) = v.as_str() {
+        return s.to_string();
+    }
+    if let Some(arr) = v.as_array() {
+        let bytes: Vec<u8> = arr
+            .iter()
+            .filter_map(|n| n.as_u64().map(|b| b as u8))
+            .collect();
+        return String::from_utf8(bytes).unwrap_or_default();
+    }
+    String::new()
 }
 
 async fn ioi_poll_once(
@@ -1573,7 +1777,28 @@ async fn try_match_and_propose(
 
     let matches = match_iois(&snapshot);
 
+    // Prune expired entries from the proposed-pairs set so it doesn't
+    // grow unboundedly across the lifetime of an enclave process.
+    {
+        let mut pp = state.shell.proposed_pairs.write().await;
+        pp.retain(|_, expiry_ms| now_ms < *expiry_ms);
+    }
+
     for (buy, sell, agreed_price, agreed_size) in matches {
+        // Idempotency: skip if we've already proposed this exact pair
+        // within its expiry window. Survives across cursor resets / book
+        // rebuilds — the matched IoisPosted events on chain are immutable,
+        // so re-scanning them must not re-emit MatchProposed.
+        let pair_key = (buy.blob_id.clone(), sell.blob_id.clone());
+        if state.shell.proposed_pairs.read().await.contains_key(&pair_key) {
+            // Also drop them from the local book so we don't keep
+            // hammering the duplicate check on every cycle.
+            let mut book = state.shell.ioi_book.write().await;
+            book.remove(&buy.blob_id);
+            book.remove(&sell.blob_id);
+            continue;
+        }
+
         let proposal_expiry = now_ms + PROPOSAL_EXPIRY_MS;
         let buy_proposal = MatchProposalPlaintext {
             buy_agent: buy.agent_id,
@@ -1620,6 +1845,16 @@ async fn try_match_and_propose(
             eprintln!("[shell-ioi] propose_match tx failed: {e}");
             continue;
         }
+
+        // Record the (buy_blob, sell_blob) pair so we don't re-propose
+        // it on a future cycle (e.g. after enclave restart / cursor
+        // reset). Expires alongside the proposal itself.
+        state
+            .shell
+            .proposed_pairs
+            .write()
+            .await
+            .insert(pair_key, proposal_expiry);
 
         // Remove the matched IOIs so they don't re-match.
         let mut book = state.shell.ioi_book.write().await;

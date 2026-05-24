@@ -36,7 +36,7 @@ export const config = {
     "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa",
   enclaveId:
     process.env.ENCLAVE_ID ??
-    "0x68dc5a07cf93a6ba990f1866f988f24d366b314130500f045506b024dc134a5f",
+    "0xbd205a59433a34ee48739615e2a14d44141a61b0bf46d167eeb41e5963167ed0",
   enclaveConfigId:
     process.env.ENCLAVE_CONFIG_ID ??
     "0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8",

@@ -41,7 +41,7 @@ const TESTNET: NetworkConfig = {
   shellPackageIdIoiTypes: '0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa',
   poolId: '0x0fbb5658e6e5f0ef13e134b21ed46c264959bdec6976ae52e2667aba2588569b',
   enclaveConfigId: '0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8',
-  enclaveId: '0x68dc5a07cf93a6ba990f1866f988f24d366b314130500f045506b024dc134a5f',
+  enclaveId: '0xbd205a59433a34ee48739615e2a14d44141a61b0bf46d167eeb41e5963167ed0',
   enclaveUrl: 'https://sui.furqaannabi.com',
   deepbookPoolKey: 'SUI_DBUSDC',
   quoteCoinType: '0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC',
