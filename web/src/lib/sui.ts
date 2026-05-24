@@ -19,6 +19,10 @@ interface NetworkConfig {
   enclaveConfigId: string;
   enclaveId: string;                // shared Enclave<SHELL> object (empty if not registered)
   enclaveUrl: string;               // base URL of the matching enclave's HTTP server
+  // DeepBook pool key for the reference orderbook display only (Shell
+  // settles via settle_direct, not through DeepBook). Testnet has no
+  // SUI_USDC pool, so we use SUI_DBUSDC as a near-equivalent SUI/$ ref.
+  deepbookPoolKey: string;
   quoteCoinType: string;            // USDC type tag (per-network)
   quoteCoinScalar: bigint;          // 1e6 for both
   quoteSymbol: string;              // shown in UI
