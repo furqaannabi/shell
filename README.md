@@ -50,14 +50,15 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 
 | Layer    | What works                                                                              | Where                                                            |
 | -------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; 10/10 tests | [`move/`](move/)                                                 |
-| Move     | Published to testnet at `0x6a9fb5d2…` (original), upgraded to v2 `0x68aae56c…` (adds `shell::ioi`) | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
-| Enclave  | Autonomous poller: Seal decrypt → match → sign → on-chain settle, all in-TEE             | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) |
-| Nitro    | **Prod-mode** `Enclave<SHELL>` `0xe342ee55…`, real PCR0/1 `0x84e4de37…`, persistent eph_kp | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
+| Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; `ioi` module; `settle_direct<TBase, TQuote>`; 9/9 tests | [`move/`](move/)                                                 |
+| Move     | Fresh-published 2026-05-24 to testnet at `0x23d1e8b5…` (clean-slate reset — see [`docs/republish-brief.md`](docs/republish-brief.md)) | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
+| Enclave  | Autonomous order-poller + IOI-matcher under a panic-catching supervisor; bootstrap-seeds proposed_pairs from chain on cold start so restarts don't re-emit duplicates | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) |
+| Nitro    | **Prod-mode** `Enclave<SHELL>` `0x92101a18…`, real PCR0/1 `0xd7849795…`, persistent eph_kp via host seed | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
-| Demo     | Six consecutive autonomous on-chain settlements in ~20s (first digest `4fdfgYhsYuCvwY…`) | [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md)                |
+| Demo     | E2E retest 2026-05-24 ~3 min total: IOI → match → accept → settle_direct → SettlementReceipts ([`2b96TNRe…`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig)) | [`docs/republish-brief.md`](docs/republish-brief.md) §"E2E re-test" |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | <https://shell-finance.vercel.app/> ([source](web/))             |
 | Agents   | Walrus + MemWal MCP server (11 typed tools); stdio for local + Streamable HTTP at `https://sui.furqaannabi.com/mcp` | [`mcp/walrus-mcp/`](mcp/walrus-mcp/), [`skills/walrus/`](skills/walrus/) |
+| Liveness | `GET /shell/status` returns task-tick timestamps + book sizes; external monitoring can alert on stale ticks | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) (search `shell_status`) |
 
 ## Repo layout
 
@@ -68,7 +69,7 @@ move/                      Sui Move package — published to testnet
     shell.move             SHELL OTW + init bootstrap + seal_approve policy
     pool.move              Pool, OrderCommitment, SettlementReceipt
     attestation.move       MatchPayload + MatchInstruction hot-potato (wraps enclave::verify_signature)
-    settlement.move        settle<TMaker, TTaker> consumes hot-potato + both orders
+    settlement.move        settle_direct<TBase, TQuote> consumes hot-potato + both orders
 ts-sdk/                    @shell-finance/sdk
   src/                     encryptOrder, submitOrderTx, OrderPlaintext BCS schema
   scripts/                 submit-test-order.mjs, spike-end-to-end.mjs
@@ -99,7 +100,7 @@ ui-guide/                  Static HTML mockups (design intent, not code to impor
 ```bash
 cd move
 sui move build                # requires sui 1.71+
-sui move test                 # 10 tests pass
+sui move test                 # 9 tests pass
 ```
 
 ### Nautilus enclave overlay
@@ -171,7 +172,7 @@ The enclave is autonomous: submit a sealed order from any client and the matchin
 ( cd ts-sdk && npm run build && node scripts/submit-test-order.mjs )
 ```
 
-Either path produces an `OrderCommitment` shared object on testnet. The enclave's poller picks it up within ~5s, requests Seal key shares (`shell::shell::seal_approve` gates this — only this enclave's registered pubkey can request), decrypts in-TEE, runs price-time matching, and submits a `Transaction` chaining `attestation::verify` → `settlement::settle<TMaker, TTaker>` signed by the enclave's eph_kp. Two `SettlementReceipt`s mint, one per trader.
+Either path produces an `OrderCommitment` shared object on testnet. The enclave's poller picks it up within ~5s, requests Seal key shares (`shell::shell::seal_approve` gates this — only this enclave's registered pubkey can request), decrypts in-TEE, runs price-time matching, and submits a `Transaction` chaining `attestation::verify` → `settlement::settle_direct<TBase, TQuote>` signed by the enclave's eph_kp. Two `SettlementReceipt`s mint, one per trader.
 
 ## Frontend integration
 
@@ -184,29 +185,40 @@ See [`ts-sdk/docs/frontend-integration.md`](ts-sdk/docs/frontend-integration.md)
 3. Enclave's poller (running inside Nitro) sees the `OrderSubmitted` event, fetches the ciphertext, requests Seal key shares — `shell::shell::seal_approve` dry-runs on the key server and only passes if the requester address matches the on-chain registered enclave pubkey.
 4. Enclave decrypts inside the TEE, BCS-checks the on-chain `commit_hash`, runs price-time matching against its in-memory book.
 5. Enclave builds a `Transaction` chaining `shell::attestation::verify` → `shell::settlement::settle<TMaker, TTaker>`, signs it with `sui-crypto::SuiSigner` (IntentMessage + blake2b + Ed25519), BCS-serializes, and submits via `sui_executeTransactionBlock`.
-6. Move side: `verify` re-derives the BCS bytes and checks the enclave signature, produces a `MatchInstruction` hot-potato; `settle` consumes it atomically with both `OrderCommitment`s and mints a `SettlementReceipt` per trader.
+6. Move side: `verify` re-derives the BCS bytes and checks the enclave signature, produces a `MatchInstruction` hot-potato; `settle_direct` consumes it atomically with both `OrderCommitment`s, crosses collateral directly between maker and taker, and mints a `SettlementReceipt` per trader.
 
 Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough in [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md).
 
 ## On-chain testnet artifacts
 
+Current testnet IDs after the 2026-05-24 clean-slate republish (full
+context in [`docs/republish-brief.md`](docs/republish-brief.md)):
+
 | Object | ID |
 | --- | --- |
-| Shell package (original-id, event filters + Seal identity) | `0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd` |
-| Shell package latest published-at (v6, `settle_direct`) | `0x954e90623a2831fbe4bcee5db0418c82db92792425a560b9a06a17327063911d` |
-| `EnclaveConfig<SHELL>` | `0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8` |
-| `Cap<SHELL>` (deployer) | `0xfbbcb810f66ac05bb0924237eb488dce80b51afde44f5f68a3aacc2a287b2209` |
-| `Enclave<SHELL>` (current prod-mode) | `0x68dc5a07cf93a6ba990f1866f988f24d366b314130500f045506b024dc134a5f` |
-| PCR0 / PCR1 on `EnclaveConfig` | `0x9b34eeb0d31c71814af1dc2ff9fade520956de8ef16d45686f58533b5c107613ff76b6a42be388e5f2c51c09682fb91c` |
+| Shell package (== original-id == latest published-at on fresh publish) | `0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e` |
+| `Pool` (shared) | `0x33682a9652567989b094989fcabe9eda53fbde32c4a3e0204657a06510bab22b` |
+| `EnclaveConfig<SHELL>` (shared) | `0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504` |
+| `Cap<SHELL>` (deployer) | `0x0c71e66d311f26a6dfa7ebbfb0dfc924439f503a5e7ac70280f92544c11770ef` |
+| `UpgradeCap` | `0x85f63ef069759e511e9d82281071978e71d9b0e2a15930bcf86dae02c02ced55` |
+| `Enclave<SHELL>` (current prod-mode) | `0x92101a18928039d3da63ea9e8c1fa300bdce3edb473c69ce686d2a413bd1848a` |
+| PCR0 / PCR1 on `EnclaveConfig` | `0xd7849795f42536b18b704a623625415863093a6583ddda8d8569eb641c7c763322d2d29bc30a84d5ecbe172dd9a3a88c` |
 | PCR2 | `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a` |
-| Enclave Sui address (derived from eph_kp) | `0xeda60f47715ea94dae92a58467894f3882d18d8690a348df6e03b4e3cfef1114` |
-| Enclave Ed25519 pubkey | `0x6fea82e844451e5c029253ebb91428a08df4868c098a44ebc8289bb0ee114613` |
-| First end-to-end IOI → match → accept → `settle_direct` digest | [`JAm9MKr6skPhtutq5upT5wzGqcg8S2osEucvuoJ5doqy`](https://suiscan.xyz/testnet/tx/JAm9MKr6skPhtutq5upT5wzGqcg8S2osEucvuoJ5doqy) |
+| Enclave Sui address (eph_kp-derived) | `0xeda60f47715ea94dae92a58467894f3882d18d8690a348df6e03b4e3cfef1114` |
+| Enclave Ed25519 pubkey (seed-derived, persistent) | `0x6fea82e844451e5c029253ebb91428a08df4868c098a44ebc8289bb0ee114613` |
+| First green E2E on new package: IOI → match → accept → `settle_direct` | [`2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig) |
 
-**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0x9b34eeb0…` match the published EIF measurement. The on-chain `EnclaveConfig` is kept in sync with each EIF rebuild via `enclave::update_pcrs` + `register_enclave`. The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the `SHELL_ENCLAVE_ID` env var (pushed through the secrets VSOCK at boot) lets the binary follow a re-registration without rebuilding the EIF.
+**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0xd7849795…` match the published EIF measurement. The on-chain `EnclaveConfig` is kept in sync with each EIF rebuild via `enclave::update_pcrs` + `register_enclave`. The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the `SHELL_ENCLAVE_ID` env var (pushed through the secrets VSOCK at boot) lets the binary follow a re-registration without rebuilding the EIF.
+
+Previous (now-orphaned) IDs from the pre-republish chain are preserved in
+[`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) under
+`previous*` fields. Locked collateral in the old pool can still be
+recovered by owners via the *old* package's `pool::cancel_anytime`; Shell
+deliberately did not migrate any of it.
 
 ## Honest list — what's not shipped
 
+- **Matcher binding by `commit_hash`.** The IOI matcher currently pairs decrypted orders by free price-time priority over the whole in-enclave book; it does **not** bind acceptances back to the `commit_hash` baked into the originating IOI's `MatchInstruction`. Today's clean-slate package has zero stale `OrderCommitment` objects, so this isn't *currently* exploitable — but the moment a partially-finished test leaves a stale commitment behind, a new accept can match against it instead of the intended counterparty. The 2026-05-24 republish ([`docs/republish-brief.md`](docs/republish-brief.md)) was triggered by exactly this bug. Proper fix is sketched in the brief's "Known follow-up" section: extend `MatchPayload` with both expected `commit_hash` fields, assert them in `settle_direct` before crossing collateral.
 - **External-venue settlement leg.** Initial design called for settling each cross against DeepBook v3's CLOB. The integration is blocked at the protocol level: DeepBook testnet's pool stores `allowed_versions = {1..5}` but the deployed latest deepbook published-at has `current_version() = 8`, and Sui's publisher pins all downstream Move packages to that latest version's link table — so `pool::load_inner` aborts with `EPackageVersionDisabled`. Backed off to direct two-party settlement; external-venue routing returns to the roadmap when public on-chain venues maintain their allowed-versions invariant. Full forensics in [`docs/settle-fix-plan.md`](docs/settle-fix-plan.md) (Resolution section).
 - **Partial fills in the matcher.** v1 is whole-fill only.
 
