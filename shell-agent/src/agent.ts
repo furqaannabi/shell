@@ -5,9 +5,12 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { config } from "./config.js";
 import { appendEntry } from "./journal.js";
 import { postIoi } from "./ioi.js";
-import { evaluateProposal } from "./llm/index.js";
+import { makeLlmClient } from "./llm/index.js";
+import { decideOnProposal } from "./llm/loop.js";
 import { submitOrderFromProposal } from "./orders.js";
 import { pollProposals } from "./proposals.js";
+import { ToolRegistry } from "./tools/registry.js";
+import { builtinTools } from "./tools/builtin.js";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -35,6 +38,14 @@ export async function runAgent(): Promise<void> {
     serverConfigs: [SEAL_TESTNET_KEY_SERVER],
     verifyKeyServers: false,
   });
+
+  const llm = makeLlmClient();
+  const tools = new ToolRegistry();
+  tools.registerMany(builtinTools);
+  const toolCtx = { suiClient, sealClient, keypair, address: agentAddr };
+  console.log(
+    `[agent] tools registered: ${tools.list().map((t) => t.name).join(", ")}`,
+  );
 
   let cursor: { txDigest: string; eventSeq: string } | undefined;
   const seenProposals = new Set<string>();
@@ -104,8 +115,14 @@ export async function runAgent(): Promise<void> {
           },
         });
 
-        // LLM decision.
-        const decision = await evaluateProposal(p);
+        // LLM decision — multi-turn tool-use loop.
+        const decision = await decideOnProposal({
+          proposal: p,
+          llm,
+          tools,
+          ctx: toolCtx,
+          policy: config.agentPolicy,
+        });
         console.log(
           `[agent] decision: ${decision.decision} (policy_ok=${decision.policy_check}) — ${decision.reasoning}`,
         );

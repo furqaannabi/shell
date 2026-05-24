@@ -5,9 +5,12 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 
 import { config } from "./config.js";
 import { postIoi } from "./ioi.js";
-import { evaluateProposal } from "./llm/index.js";
+import { makeLlmClient } from "./llm/index.js";
+import { decideOnProposal } from "./llm/loop.js";
 import { pollProposals, type MatchProposal } from "./proposals.js";
 import { submitOrderFromProposal } from "./orders.js";
+import { ToolRegistry, type ToolCtx } from "./tools/registry.js";
+import { builtinTools } from "./tools/builtin.js";
 
 const SEAL_KEY_SERVER = {
   objectId:
@@ -106,6 +109,23 @@ export async function runDemo(): Promise<void> {
   const buyerSeal = makeSeal(buyerSui);
   const sellerSeal = makeSeal(sellerSui);
 
+  // Shared LLM client + per-role tool ctx for the v2 tool-use loop.
+  const llm = makeLlmClient();
+  const tools = new ToolRegistry();
+  tools.registerMany(builtinTools);
+  const buyerCtx: ToolCtx = {
+    suiClient: buyerSui,
+    sealClient: buyerSeal,
+    keypair: buyerKp,
+    address: buyerAddr,
+  };
+  const sellerCtx: ToolCtx = {
+    suiClient: sellerSui,
+    sealClient: sellerSeal,
+    keypair: sellerKp,
+    address: sellerAddr,
+  };
+
   sep("STEP 0 — Pre-flight balance check");
   await logBalances(buyerSui, buyerAddr, "BUYER");
   await logBalances(sellerSui, sellerAddr, "SELLER");
@@ -139,7 +159,13 @@ export async function runDemo(): Promise<void> {
   };
 
   log(`synthetic proposal: price=3.50 USDC size=0.1 SUI (violates policy max 1.10 USDC)`);
-  const badDecision = await evaluateProposal(badProposal, DEMO_POLICY);
+  const badDecision = await decideOnProposal({
+    proposal: badProposal,
+    llm,
+    tools,
+    ctx: buyerCtx,
+    policy: DEMO_POLICY,
+  });
   log(`LLM decision : ${badDecision.decision}`);
   log(`LLM reasoning: ${badDecision.reasoning}`);
   log(`policy_check : ${badDecision.policy_check}`);
@@ -225,9 +251,9 @@ export async function runDemo(): Promise<void> {
       );
     }
 
-    for (const [role, addr, sui, seal, kp, seen, doneFlag] of [
-      ["buyer", buyerAddr, buyerSui, buyerSeal, buyerKp, buyerSeen, () => (buyerDone = true)],
-      ["seller", sellerAddr, sellerSui, sellerSeal, sellerKp, sellerSeen, () => (sellerDone = true)],
+    for (const [role, addr, sui, seal, kp, seen, doneFlag, ctx] of [
+      ["buyer", buyerAddr, buyerSui, buyerSeal, buyerKp, buyerSeen, () => (buyerDone = true), buyerCtx],
+      ["seller", sellerAddr, sellerSui, sellerSeal, sellerKp, sellerSeen, () => (sellerDone = true), sellerCtx],
     ] as const) {
       if (role === "buyer" ? buyerDone : sellerDone) continue;
       const { proposals } = await pollProposals({ suiClient: sui, agentAddr: addr });
@@ -239,7 +265,13 @@ export async function runDemo(): Promise<void> {
           `${role} got proposal: price=${(Number(p.agreedPrice) / 1e6).toFixed(4)} USDC ` +
             `size=${(Number(p.agreedSize) / 1e9).toFixed(4)} SUI  blob=${p.blobId.slice(0, 12)}…`,
         );
-        const d = await evaluateProposal(p, DEMO_POLICY);
+        const d = await decideOnProposal({
+          proposal: p,
+          llm,
+          tools,
+          ctx,
+          policy: DEMO_POLICY,
+        });
         log(`${role} LLM decision : ${d.decision}`);
         log(`${role} LLM reasoning: ${d.reasoning}`);
         log(`${role} policy_check : ${d.policy_check}`);

@@ -57,4 +57,13 @@ export const config = {
   ioiPriceLo: BigInt(process.env.AGENT_IOI_PRICE_LO ?? "1800000"), // 1.80
   ioiPriceHi: BigInt(process.env.AGENT_IOI_PRICE_HI ?? "2200000"), // 2.20
   ioiTtlMin: parseInt(process.env.AGENT_IOI_TTL_MIN ?? "60", 10),
+  // ── Trading-data constants exposed to built-in tools ─────────────────
+  deepbookIndexerUrl:
+    process.env.DEEPBOOK_INDEXER_URL ??
+    "https://deepbook-indexer.testnet.mystenlabs.com",
+  deepbookPoolKey: process.env.DEEPBOOK_POOL_KEY ?? "SUI_DBUSDC",
+  // Quote coin — Sui testnet USDC. Mirrors web/src/lib/sui.ts.
+  quoteCoinType:
+    process.env.QUOTE_COIN_TYPE ??
+    "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC",
 };
