@@ -1,11 +1,13 @@
 import { z } from "zod";
-import { getReceipts } from "@shell-finance/sdk";
+import { getActiveOrders, getReceipts } from "@shell-finance/sdk";
 
 import { config } from "../config.js";
+import { appendEntry } from "../journal.js";
+import { pollProposals } from "../proposals.js";
+import { cancelOrderTx } from "@shell-finance/sdk";
 import type { Tool } from "./registry.js";
 
-/** DeepBook indexer mid/bid/ask for the configured reference pool.
- *  Mirrors `fetchMidPrice` in web/src/components/agent/IOIForm.tsx. */
+/** DeepBook indexer mid/bid/ask for the configured reference pool. */
 const getRefPrice: Tool = {
   name: "get_ref_price",
   description:
@@ -28,8 +30,7 @@ const getRefPrice: Tool = {
   },
 };
 
-/** Agent's own SUI + USDC balance. Useful for the LLM to verify it can
- *  cover collateral before accepting a buy/sell. */
+/** Agent's own SUI + USDC balance. */
 const getMyBalance: Tool = {
   name: "get_my_balance",
   description:
@@ -53,8 +54,7 @@ const getMyBalance: Tool = {
   },
 };
 
-/** Agent's recent SettlementReceipts (own fills). Helps the LLM
- *  reason about position size and recent execution price. */
+/** Agent's recent SettlementReceipts (own fills). */
 const getMyRecentFills: Tool = {
   name: "get_my_recent_fills",
   description:
@@ -79,5 +79,204 @@ const getMyRecentFills: Tool = {
   },
 };
 
+/** Agent's live OrderCommitments (collateral still locked on-chain). */
+const getMyActiveOrders: Tool = {
+  name: "get_my_active_orders",
+  description:
+    "Returns the agent's active (unfilled, unexpired) OrderCommitments. " +
+    "Each entry: { order_id, collateral_type, expiry_epoch, submitted_at_ms }. " +
+    "Empty array if no orders live.",
+  parameters: z.object({
+    limit: z.number().int().min(1).max(50).optional(),
+  }),
+  async execute(args, ctx) {
+    const orders = await getActiveOrders(ctx.suiClient, {
+      shellPackageId: config.shellPackageId,
+      trader: ctx.address,
+      limit: args.limit ?? 20,
+    });
+    return orders.map((o) => ({
+      order_id: o.orderId,
+      collateral_type: o.collateralType,
+      expiry_epoch: o.expiryEpoch,
+      submitted_at_ms: o.submittedAtMs,
+    }));
+  },
+};
+
+/** MatchProposed events involving this agent (pending proposals). */
+const getMyActiveProposals: Tool = {
+  name: "get_my_active_proposals",
+  description:
+    "Returns recent MatchProposed events where this agent is buy or sell side. " +
+    "Each entry: { side, agreed_price, agreed_size, expiry_ms, blob_id }. " +
+    "Useful to avoid double-filling the same match.",
+  parameters: z.object({}),
+  async execute(_args, ctx) {
+    const { proposals } = await pollProposals({
+      suiClient: ctx.suiClient,
+      agentAddr: ctx.address,
+    });
+    const nowMs = BigInt(Date.now());
+    return proposals
+      .filter((p) => p.expiryMs > nowMs)
+      .map((p) => ({
+        side: p.side,
+        agreed_price: p.agreedPrice.toString(),
+        agreed_size: p.agreedSize.toString(),
+        expiry_ms: p.expiryMs.toString(),
+        blob_id: p.blobId,
+      }));
+  },
+};
+
+/** Cancel an expired OrderCommitment and reclaim collateral. */
+const cancelOrder: Tool = {
+  name: "cancel_order",
+  description:
+    "Cancels an expired OrderCommitment and returns collateral to the agent. " +
+    "Requires order_id (from get_my_active_orders) and collateral_type. " +
+    "On-chain check: aborts with EOrderNotExpired if order not yet expired — " +
+    "Shell has no pre-expiry cancel by design.",
+  parameters: z.object({
+    order_id: z.string(),
+    collateral_type: z.string(),
+  }),
+  async execute(args, ctx) {
+    const tx = cancelOrderTx({
+      shellPackageId: config.shellPackageId,
+      orderId: args.order_id,
+      collateralType: args.collateral_type,
+      recipient: ctx.address,
+    });
+    const result = await ctx.suiClient.signAndExecuteTransaction({
+      transaction: tx,
+      signer: ctx.keypair,
+    });
+    return { digest: result.digest };
+  },
+};
+
+/** Position + daily volume vs configured risk caps. */
+const checkRiskCap: Tool = {
+  name: "check_risk_cap",
+  description:
+    "Returns { within_cap, current_position_sui, daily_volume_sui, " +
+    "cap_position_sui, cap_daily_sui }. " +
+    "within_cap=true means accepting this proposal won't breach limits. " +
+    "cap values come from RISK_MAX_POSITION_SUI / RISK_DAILY_VOLUME_SUI env (0 = no cap).",
+  parameters: z.object({
+    proposed_size_sui: z
+      .number()
+      .describe("Size of the candidate proposal in SUI (human-readable, not raw)."),
+  }),
+  async execute(args, ctx) {
+    const capPosition = config.riskMaxPositionSui;
+    const capDaily = config.riskDailyVolumeSui;
+
+    // Aggregate fills from today (UTC day).
+    const fills = await getReceipts(ctx.suiClient, {
+      shellPackageId: config.shellPackageId,
+      owner: ctx.address,
+    });
+
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const todayMs = todayStart.getTime();
+
+    // All fills regardless of timestamp contribute to net position;
+    // only today's fills count toward daily volume.
+    let netSui = 0;
+    let dailyVolSui = 0;
+    for (const r of fills) {
+      const size = Number(r.fields.filled_size) / 1e9;
+      netSui += size;
+      // SettlementReceipt has no timestamp in fields; use all as conservative.
+      dailyVolSui += size;
+    }
+
+    // Also count open orders as position.
+    const orders = await getActiveOrders(ctx.suiClient, {
+      shellPackageId: config.shellPackageId,
+      trader: ctx.address,
+      limit: 50,
+    });
+    const openSui = orders.length * args.proposed_size_sui; // rough estimate
+
+    const projectedPosition = netSui + openSui + args.proposed_size_sui;
+    const projectedDaily = dailyVolSui + args.proposed_size_sui;
+
+    const breachPosition = capPosition > 0 && projectedPosition > capPosition;
+    const breachDaily = capDaily > 0 && projectedDaily > capDaily;
+
+    return {
+      within_cap: !breachPosition && !breachDaily,
+      current_position_sui: netSui,
+      daily_volume_sui: dailyVolSui,
+      proposed_size_sui: args.proposed_size_sui,
+      cap_position_sui: capPosition,
+      cap_daily_sui: capDaily,
+      breach_position: breachPosition,
+      breach_daily: breachDaily,
+    };
+  },
+};
+
+/** Append a free-text note to the agent's Walrus journal. */
+const appendJournal: Tool = {
+  name: "append_journal",
+  description:
+    "Appends a note/reasoning entry to the agent's Walrus journal. " +
+    "Returns { blob_id } on success. Use sparingly — each call writes a Walrus blob.",
+  parameters: z.object({
+    note: z.string().max(2000),
+  }),
+  async execute(args, ctx) {
+    const blobId = await appendEntry({
+      timestamp_ms: Date.now(),
+      agent_id: ctx.address,
+      event: "decision",
+      notes: args.note,
+    });
+    return { blob_id: blobId };
+  },
+};
+
+/** POST JSON to WEBHOOK_URL if configured; no-op otherwise. */
+const notifyWebhook: Tool = {
+  name: "notify_webhook",
+  description:
+    "POSTs a JSON payload to WEBHOOK_URL env if set. No-op if unset. " +
+    "Returns { sent: true } or { sent: false, reason }.",
+  parameters: z.object({
+    event: z.string(),
+    data: z.record(z.unknown()).optional(),
+  }),
+  async execute(args) {
+    const url = config.webhookUrl;
+    if (!url) return { sent: false, reason: "WEBHOOK_URL not set" };
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: args.event, data: args.data ?? {}, ts: Date.now() }),
+      });
+      return { sent: true, status: res.status };
+    } catch (e) {
+      return { sent: false, reason: (e as Error).message };
+    }
+  },
+};
+
 /** All built-in tools, in stable registration order. */
-export const builtinTools: Tool[] = [getRefPrice, getMyBalance, getMyRecentFills];
+export const builtinTools: Tool[] = [
+  getRefPrice,
+  getMyBalance,
+  getMyRecentFills,
+  getMyActiveOrders,
+  getMyActiveProposals,
+  cancelOrder,
+  checkRiskCap,
+  appendJournal,
+  notifyWebhook,
+];

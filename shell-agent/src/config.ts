@@ -66,4 +66,10 @@ export const config = {
   quoteCoinType:
     process.env.QUOTE_COIN_TYPE ??
     "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC",
+  // ── Risk caps (optional) ──────────────────────────────────────────────
+  // check_risk_cap tool uses these. Leave 0 to disable cap enforcement.
+  riskMaxPositionSui: parseFloat(process.env.RISK_MAX_POSITION_SUI ?? "0"),
+  riskDailyVolumeSui: parseFloat(process.env.RISK_DAILY_VOLUME_SUI ?? "0"),
+  // ── Webhook (optional) ────────────────────────────────────────────────
+  webhookUrl: optional("WEBHOOK_URL"),
 };
