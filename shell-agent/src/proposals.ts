@@ -43,9 +43,10 @@ export async function pollProposals(opts: {
   proposals: MatchProposal[];
   nextCursor: { txDigest: string; eventSeq: string } | null;
 }> {
-  // IOI module was introduced in v2 (0x68aae56c…). Event type identity
-  // sticks to the defining package even after subsequent upgrades, so we
-  // can't use the *current* latest id here.
+  // Event type id is rooted at the package that first defined the type
+  // (`shellPackageIdIoiTypes`). On a clean-slate publish this matches the
+  // current packageId; on legacy chains where ioi was added in an
+  // upgrade, it stays pinned to the introducing version.
   const eventType = `${config.shellPackageIdIoiTypes}::ioi::MatchProposed`;
   const res = await opts.suiClient.queryEvents({
     query: { MoveEventType: eventType },

@@ -46,21 +46,23 @@ use tokio::sync::RwLock;
 use tokio::time::sleep;
 
 // ── On-chain constants ──────────────────────────────────────────────
-// original-id — used for event filters on v1 modules + Seal identity (preserved across upgrades)
+// Fresh publish 2026-05-24 (republish-brief.md): new packageId resets all
+// event-type identities and the shared Pool object, so original-id and
+// latest-published-at are the same value on this clean-slate publish.
 const SHELL_PACKAGE_ID: &str =
-    "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd";
-// latest published-at — used for moveCall targets to v2-only functions (e.g. ioi::propose_match)
-// and event filters on v2-added modules (events tag at the upgrade's namespace, not original-id)
+    "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e";
 const SHELL_PACKAGE_ID_LATEST: &str =
-    "0x954e90623a2831fbe4bcee5db0418c82db92792425a560b9a06a17327063911d";
+    "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e";
 const ENCLAVE_CONFIG_ID: &str =
-    "0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8";
+    "0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504";
 /// Default `Enclave<SHELL>` shared object id. Overridable at boot via
 /// the `SHELL_ENCLAVE_ID` env var (pushed in through the host secrets
 /// blob) so a prod-mode re-registration produces a new Enclave<SHELL>
-/// without requiring yet another EIF rebuild.
+/// without requiring yet another EIF rebuild. Set to a zero address
+/// here because register_enclave runs after the EIF first lands; the
+/// real value gets pushed via VSOCK secrets at boot.
 const DEFAULT_ENCLAVE_ID: &str =
-    "0xe342ee55ef3b0107669318d9d9b3ced045afe5424e7dec265ee39e28d25cf948";
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 lazy_static::lazy_static! {
     static ref ENCLAVE_ID: String = std::env::var("SHELL_ENCLAVE_ID")
@@ -71,11 +73,11 @@ const SEAL_TESTNET_KEY_SERVER: &str =
 const SUI_FULLNODE: &str = "https://fullnode.testnet.sui.io";
 const SEAL_AGGREGATOR: &str = "https://seal-aggregator-testnet.mystenlabs.com";
 const ORDER_SUBMITTED_EVENT: &str =
-    "0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd::pool::OrderSubmitted";
+    "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e::pool::OrderSubmitted";
 const IOIS_POSTED_EVENT: &str =
-    "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa::ioi::IoisPosted";
+    "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e::ioi::IoisPosted";
 const MATCH_PROPOSED_EVENT: &str =
-    "0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa::ioi::MatchProposed";
+    "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e::ioi::MatchProposed";
 const POLL_INTERVAL_SECS: u64 = 5;
 const IOI_POLL_INTERVAL_SECS: u64 = 15;
 const SEAL_CERT_TTL_MIN: u16 = 30;

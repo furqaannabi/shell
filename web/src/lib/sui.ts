@@ -36,12 +36,12 @@ interface NetworkConfig {
 }
 
 const TESTNET: NetworkConfig = {
-  shellPackageId: '0x6a9fb5d245856d9c81da6952b431dceebf870820766df0bee8a6339cb06a56fd',
-  shellPackageIdLatest: '0x954e90623a2831fbe4bcee5db0418c82db92792425a560b9a06a17327063911d',
-  shellPackageIdIoiTypes: '0x68aae56cb6571f9dd95f9225f2afc778181406edc9c6b0a6ed9e3d67910933aa',
-  poolId: '0x0fbb5658e6e5f0ef13e134b21ed46c264959bdec6976ae52e2667aba2588569b',
-  enclaveConfigId: '0xd33555df99c5065a610e479ad39f711ba0219da1f04276b3c2be71101f8f7bb8',
-  enclaveId: '0xbd205a59433a34ee48739615e2a14d44141a61b0bf46d167eeb41e5963167ed0',
+  shellPackageId: '0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e',
+  shellPackageIdLatest: '0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e',
+  shellPackageIdIoiTypes: '0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e',
+  poolId: '0x33682a9652567989b094989fcabe9eda53fbde32c4a3e0204657a06510bab22b',
+  enclaveConfigId: '0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504',
+  enclaveId: '0x92101a18928039d3da63ea9e8c1fa300bdce3edb473c69ce686d2a413bd1848a',
   enclaveUrl: 'https://sui.furqaannabi.com',
   deepbookPoolKey: 'SUI_DBUSDC',
   quoteCoinType: '0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC',
