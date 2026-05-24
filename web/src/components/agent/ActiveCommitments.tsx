@@ -40,7 +40,7 @@ function formatScaled(raw: bigint, decimals: number): string {
     .replace(/0+$/, '')}`;
 }
 
-// SUI = 9 decimals; testnet DUSDC and DBUSDC are both 6.
+// SUI = 9 decimals; USDC is 6.
 function coinMetaFor(coinType: string): { symbol: string; decimals: number } {
   if (coinType === '0x2::sui::SUI') return { symbol: 'SUI', decimals: 9 };
   const sym = coinType.split('::').pop() ?? 'COIN';

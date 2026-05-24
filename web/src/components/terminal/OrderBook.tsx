@@ -74,7 +74,7 @@ export default function OrderBook() {
           {NETWORK.toUpperCase()}
         </span>
       </div>
-      <p className="text-[9px] text-outline-variant mb-2">SUI/DBUSDC pool · indicative prices only</p>
+      <p className="text-[9px] text-outline-variant mb-2">SUI/USDC reference book · indicative prices only</p>
 
       <div className="flex-1 overflow-auto flex flex-col text-[11px] font-mono-data text-on-surface-variant min-h-[200px]">
         <div className="flex flex-col-reverse">

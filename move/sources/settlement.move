@@ -15,15 +15,10 @@ const EDeprecated: u64 = 3;
 const BPS_DENOM: u64 = 10_000;
 const FLOAT_SCALING: u128 = 1_000_000_000;
 
-/// DEPRECATED — this signature is retained for Sui upgrade-compatibility
-/// (`compatible` policy forbids removing/changing public functions).
-/// The body is gone because the deepbook static linkage is unsettleable
-/// on testnet: shell's link table forcibly resolves deepbook → latest
-/// published-at (v19, `current_version()=8`), which is NOT in the
-/// SUI_DBUSDC pool's `allowed_versions={1..5}`. Sui's publisher rewrites
-/// `Move.toml addr_subst` overrides, so we can't statically link an
-/// older deepbook version. Aborts unconditionally; callers should use
-/// `settle_direct` instead.
+/// DEPRECATED — this signature is retained only for Sui
+/// upgrade-compatibility (`compatible` policy forbids removing or
+/// changing public functions). The body aborts unconditionally;
+/// callers must use `settle_direct` instead.
 public fun settle<TBase, TQuote>(
     _instruction: MatchInstruction,
     _maker_order: OrderCommitment<TBase>,

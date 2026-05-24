@@ -66,8 +66,8 @@ function formatScaled(raw: bigint, decimals: number): string {
 }
 
 const BASE_DECIMALS = 9; // SUI
-// quote price is DeepBook-scaled (1e6 for SUI/DBUSDC) regardless of
-// quote-coin actual decimals — see IOIForm price scaling.
+// Quote price uses a 1e6 scale (matches IOIForm / SealedOrderForm /
+// enclave). Independent of the quote coin's actual decimals.
 const PRICE_DECIMALS = 6;
 
 function hexToUtf8(hex: string): string {

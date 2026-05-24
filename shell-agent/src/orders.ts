@@ -12,9 +12,7 @@ import {
 import { config } from "./config.js";
 import type { MatchProposal } from "./proposals.js";
 
-/** Quote coin type — Sui testnet USDC. Mirrors web/src/lib/sui.ts. Direct
- *  two-party settlement (`settle_direct`) is coin-agnostic, so we use the
- *  standard testnet USDC rather than the deepbook-specific DBUSDC. */
+/** Quote coin type — Sui testnet USDC. Mirrors web/src/lib/sui.ts. */
 const QUOTE_COIN_TYPE =
   "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC";
 
