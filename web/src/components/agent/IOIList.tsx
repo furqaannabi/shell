@@ -25,6 +25,16 @@ export default function IOIList() {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
 
+  const { data: currentEpoch } = useQuery({
+    queryKey: ['sui-epoch'],
+    queryFn: async () => {
+      const state = await suiClient.getLatestSuiSystemState();
+      return BigInt(state.epoch);
+    },
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+  });
+
   const { data, isLoading } = useQuery({
     queryKey: ['iois-posted', account?.address],
     queryFn: async () => {
@@ -64,6 +74,38 @@ export default function IOIList() {
     refetchInterval: 10_000,
   });
 
+  const { data: matchCount } = useQuery({
+    queryKey: ['ioi-match-count', account?.address],
+    queryFn: async () => {
+      if (!account) return 0;
+      const res = await suiClient.queryEvents({
+        query: { MoveEventType: `${SHELL_PACKAGE_ID_IOI_TYPES}::ioi::MatchProposed` },
+        limit: 50,
+        order: 'descending',
+      });
+      const me = account.address.toLowerCase();
+      return res.data.filter((ev) => {
+        const j = ev.parsedJson as { buy_agent?: string; sell_agent?: string };
+        return j.buy_agent?.toLowerCase() === me || j.sell_agent?.toLowerCase() === me;
+      }).length;
+    },
+    enabled: !!account,
+    refetchInterval: 10_000,
+  });
+
+  // Filter expired IOIs, then remove oldest N to account for matched ones.
+  // MatchProposed events have no direct link back to original IOI blob_ids,
+  // so we pair by recency: oldest non-expired IOIs are assumed consumed by matches.
+  const activeIois = (() => {
+    if (!data) return [];
+    const nonExpired = currentEpoch !== undefined
+      ? data.filter((ioi) => ioi.expiry > currentEpoch)
+      : data;
+    const sorted = [...nonExpired].sort((a, b) => a.timestamp - b.timestamp);
+    const consumed = matchCount ?? 0;
+    return sorted.slice(consumed);
+  })();
+
   if (!account) {
     return (
       <div className="text-on-surface-variant font-mono-sm text-mono-sm py-8 text-center">
@@ -79,7 +121,7 @@ export default function IOIList() {
           Active IOIs
         </h2>
         <span className="font-mono-sm text-mono-sm text-on-surface-variant">
-          {data?.length ?? 0} posted
+          {activeIois.length} active
         </span>
       </div>
 
@@ -87,7 +129,7 @@ export default function IOIList() {
         <div className="text-on-surface-variant font-mono-sm text-mono-sm py-6 text-center">
           Loading…
         </div>
-      ) : data && data.length > 0 ? (
+      ) : activeIois.length > 0 ? (
         <table className="w-full text-left font-mono-sm text-mono-sm">
           <thead>
             <tr className="text-on-surface-variant border-b border-outline-variant">
@@ -98,7 +140,7 @@ export default function IOIList() {
             </tr>
           </thead>
           <tbody>
-            {data.map((ioi) => (
+            {activeIois.map((ioi) => (
               <tr
                 key={ioi.txDigest}
                 className="border-b border-[#1E293B] last:border-0 hover:bg-[#1A1D23] transition-colors"
