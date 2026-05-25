@@ -10,7 +10,6 @@ export default function TopNavBar({ onMenuToggle }: { onMenuToggle?: () => void 
   const links = [
     { href: '/terminal', label: 'Terminal' },
     { href: '/agent', label: 'IOI Desk' },
-    { href: '/operator', label: 'Operator' },
     { href: '/analytics', label: 'Analytics' },
   ];
 
