@@ -97,22 +97,20 @@ Fund it:
 
 ### 3. Configure `.env`
 
+**Default LLM is OpenAI.** Set `OPENAI_API_KEY` and nothing else — the agent defaults to `gpt-4o-mini` automatically. No `LLM_PROVIDER` needed unless switching to a different provider.
+
 ```bash
-# Required — wallet
+# Minimum viable .env (OpenAI default)
 AGENT_PRIVATE_KEY=suiprivkey1...
+OPENAI_API_KEY=sk-...
+AGENT_POLICY=Accept matches priced between 900000 and 1100000 AND size between 100000000 and 200000000. Call check_risk_cap first.
+```
 
-# Required — LLM (pick one provider)
-LLM_PROVIDER=openai           # openai | anthropic | google | openai-compatible
-LLM_MODEL=gpt-4o-mini         # any model the provider accepts
-LLM_API_KEY=sk-...
+To switch provider, add `LLM_PROVIDER` + `LLM_MODEL` + `LLM_API_KEY` (see `.env.example` for all provider blocks). `LLM_API_KEY` overrides `OPENAI_API_KEY` when set.
 
-# Legacy fallback — still works if LLM_* unset
-# OPENAI_API_KEY=sk-...
+Full IOI parameters (optional — these are the defaults):
 
-# Trading policy (plain English, LLM enforces)
-AGENT_POLICY=Accept matches priced between 900000 and 1100000 AND size between 100000000 and 200000000. Reject all others.
-
-# IOI parameters
+```bash
 AGENT_IOI_SIDE=buy
 AGENT_IOI_SIZE_LO=100000000     # 0.1 SUI  (1e9-scaled)
 AGENT_IOI_SIZE_HI=200000000     # 0.2 SUI
@@ -218,14 +216,16 @@ Set these and add `check_risk_cap` guidance to `AGENT_POLICY`. Leave at `0` to d
 
 ## Pluggable LLM providers
 
-| `LLM_PROVIDER` | Example `LLM_MODEL` | Notes |
-|---|---|---|
-| `openai` | `gpt-4o-mini`, `gpt-4o` | Default when only `OPENAI_API_KEY` set |
-| `anthropic` | `claude-haiku-4-5-20251001`, `claude-sonnet-4-6` | Requires `LLM_API_KEY` |
-| `google` | `gemini-2.0-flash`, `gemini-2.5-pro` | Requires `LLM_API_KEY` |
-| `openai-compatible` | any | Set `LLM_BASE_URL` to your endpoint |
+**Default: OpenAI + `gpt-4o-mini`.** Set `OPENAI_API_KEY` and the agent works with no other LLM config.
 
-OpenAI-compatible works with Ollama, vLLM, OpenRouter, Together, Groq, and any other provider with an OpenAI-shaped API.
+| `LLM_PROVIDER` | Example `LLM_MODEL` | How to activate |
+|---|---|---|
+| `openai` **(default)** | `gpt-4o-mini`, `gpt-4o` | Set `OPENAI_API_KEY` — no `LLM_PROVIDER` needed |
+| `anthropic` | `claude-haiku-4-5-20251001`, `claude-sonnet-4-6` | `LLM_PROVIDER=anthropic` + `LLM_API_KEY=sk-ant-...` |
+| `google` | `gemini-2.0-flash`, `gemini-2.5-pro` | `LLM_PROVIDER=google` + `LLM_API_KEY=AIza...` |
+| `openai-compatible` | any model the endpoint accepts | `LLM_PROVIDER=openai-compatible` + `LLM_BASE_URL=...` |
+
+OpenAI-compatible works with Ollama (local), vLLM, OpenRouter, Together, Groq — any provider with an OpenAI-shaped API. Some need no key (`LLM_API_KEY=` blank).
 
 ---
 
