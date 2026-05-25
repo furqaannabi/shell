@@ -57,6 +57,7 @@ export const config = {
   ioiPriceLo: BigInt(process.env.AGENT_IOI_PRICE_LO ?? "1800000"), // 1.80
   ioiPriceHi: BigInt(process.env.AGENT_IOI_PRICE_HI ?? "2200000"), // 2.20
   ioiTtlMin: parseInt(process.env.AGENT_IOI_TTL_MIN ?? "60", 10),
+  pollIntervalSec: parseInt(process.env.AGENT_POLL_INTERVAL_SEC ?? "15", 10),
   // ── Trading-data constants exposed to built-in tools ─────────────────
   deepbookIndexerUrl:
     process.env.DEEPBOOK_INDEXER_URL ??

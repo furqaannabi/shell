@@ -136,7 +136,7 @@ node dist/index.js run
 node dist/index.js run
 ```
 
-On every 15s tick the agent:
+On every tick (default 15s, configurable via `AGENT_POLL_INTERVAL_SEC`) the agent:
 
 1. **Auto-posts IOI** if none active or expiring within 60s
 2. **Polls** `MatchProposed` events for this wallet

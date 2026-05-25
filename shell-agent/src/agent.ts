@@ -14,7 +14,7 @@ import { builtinTools } from "./tools/builtin.js";
 import { loadPlugins } from "./tools/plugins.js";
 import { loadMcpTools, closeMcpClients } from "./tools/mcp.js";
 
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = (config.pollIntervalSec ?? 15) * 1_000;
 
 /** Seal testnet key server — same one the enclave and web use. */
 const SEAL_TESTNET_KEY_SERVER = {
