@@ -231,7 +231,7 @@ On each 15s tick:
 - **BYO key** — your private key never leaves your machine. Self-hosted like any algo trading bot on Binance or dYdX.
 - **BYO LLM** — `LLM_PROVIDER=openai|anthropic|google|openai-compatible`. Bring your own key, model, or endpoint (Ollama, vLLM, OpenRouter, etc.).
 - **Policy in plain English** — write compliance rules in `AGENT_POLICY`; the LLM enforces them against real market data from tools.
-- **Extensible** — drop `.ts` files into `plugins/` for custom oracles or signals. Connect any MCP server via `mcp.json` for external data feeds.
+- **Extensible** — drop `.js`/`.mjs` files into `plugins/` for custom oracles or signals. Connect any MCP server via `mcp.json` for external data feeds.
 - **Risk caps** — `RISK_MAX_POSITION_SUI` / `RISK_DAILY_VOLUME_SUI` env vars gate the `check_risk_cap` tool. LLM sees real position data instead of hallucinating.
 
 ### LLM providers
