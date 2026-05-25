@@ -3,7 +3,7 @@ const channels = [
     icon: 'bug_report',
     label: 'GitHub Issues',
     description: 'Bug reports, feature requests, and technical questions',
-    href: 'https://github.com/TODO/TODO/issues', // TODO: replace with real repo URL
+    href: 'https://github.com/furqaannabi/shell/issues',
     cta: 'Open an issue',
   },
   {
