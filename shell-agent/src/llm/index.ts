@@ -1,5 +1,7 @@
 import { config } from "../config.js";
 import { OpenAILlmClient } from "./openai.js";
+import { AnthropicLlmClient } from "./anthropic.js";
+import { GoogleLlmClient } from "./google.js";
 import type { MatchProposal } from "../proposals.js";
 
 // ── Provider-neutral chat interface ────────────────────────────────────
@@ -68,10 +70,9 @@ export function makeLlmClient(): LlmClient {
         baseUrl: config.llmBaseUrl || undefined,
       });
     case "anthropic":
+      return new AnthropicLlmClient({ apiKey, model });
     case "google":
-      throw new Error(
-        `LLM_PROVIDER=${provider} not wired yet (step 6 of shell-agent v2)`,
-      );
+      return new GoogleLlmClient({ apiKey, model });
   }
 }
 
