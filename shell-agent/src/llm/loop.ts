@@ -76,11 +76,15 @@ export async function decideOnProposal(opts: {
 }
 
 function parseDecision(text: string): LlmDecision {
-  // Models occasionally wrap JSON in fenced blocks even with json_mode.
-  const trimmed = text.trim().replace(/^```(?:json)?|```$/g, "").trim();
+  // Strip leading/trailing fences, then find the outermost JSON object.
+  // Models sometimes return prose + an embedded ```json block.
+  const stripped = text.trim().replace(/^```(?:json)?\s*/m, "").replace(/```\s*$/m, "").trim();
+  const start = stripped.indexOf("{");
+  const end = stripped.lastIndexOf("}");
+  const json = start !== -1 && end !== -1 ? stripped.slice(start, end + 1) : stripped;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(trimmed);
+    parsed = JSON.parse(json);
   } catch {
     throw new Error(`LLM returned non-JSON final answer: ${text}`);
   }

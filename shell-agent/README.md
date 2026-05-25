@@ -233,14 +233,13 @@ OpenAI-compatible works with Ollama (local), vLLM, OpenRouter, Together, Groq â€
 
 ### Local plugins
 
-Drop `.ts` or `.js` files into `plugins/` (gitignored). Each is auto-loaded at startup and registered as `plugin__<name>`:
+Drop `.js` or `.mjs` files into `plugins/` (gitignored). Each is auto-loaded at startup and registered as `plugin__<name>`. TypeScript plugins must be compiled to `.js` first â€” Node.js ESM can't import raw `.ts` files.
 
-```ts
-// plugins/my_oracle.ts
-import type { Tool } from "../src/tools/registry.js";
+```js
+// plugins/my_oracle.mjs
 import { z } from "zod";
 
-const myOracle: Tool = {
+const myOracle = {
   name: "my_oracle",
   description: "Returns my proprietary SUI/USDC fair value.",
   parameters: z.object({}),
@@ -252,7 +251,7 @@ const myOracle: Tool = {
 export default myOracle;
 ```
 
-See `plugins/README.md` for the full `ToolCtx` interface (suiClient, sealClient, keypair, address).
+See `plugins/README.md` for the full `ToolCtx` interface (suiClient, sealClient, keypair, address). `plugins/sample.mjs` is a working two-tool example.
 
 ### MCP servers
 

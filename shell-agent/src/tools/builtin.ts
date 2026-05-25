@@ -164,13 +164,17 @@ const checkRiskCap: Tool = {
     "Returns { within_cap, current_position_sui, daily_volume_sui, " +
     "cap_position_sui, cap_daily_sui }. " +
     "within_cap=true means accepting this proposal won't breach limits. " +
-    "cap values come from RISK_MAX_POSITION_SUI / RISK_DAILY_VOLUME_SUI env (0 = no cap).",
+    "cap values come from RISK_MAX_POSITION_SUI / RISK_DAILY_VOLUME_SUI env (0 = no cap). " +
+    "Pass proposed_size_sui = agreed_size / 1e9 (e.g. agreed_size=150000000 → proposed_size_sui=0.15). " +
+    "If you don't know the size yet, pass 0.",
   parameters: z.object({
     proposed_size_sui: z
       .number()
-      .describe("Size of the candidate proposal in SUI (human-readable, not raw)."),
+      .optional()
+      .describe("Size in SUI (human-readable). agreed_size / 1e9. Omit or pass 0 if unknown."),
   }),
   async execute(args, ctx) {
+    const proposedSui = args.proposed_size_sui ?? 0;
     const capPosition = config.riskMaxPositionSui;
     const capDaily = config.riskDailyVolumeSui;
 
@@ -180,18 +184,12 @@ const checkRiskCap: Tool = {
       owner: ctx.address,
     });
 
-    const todayStart = new Date();
-    todayStart.setUTCHours(0, 0, 0, 0);
-    const todayMs = todayStart.getTime();
-
-    // All fills regardless of timestamp contribute to net position;
-    // only today's fills count toward daily volume.
+    // All fills contribute to net position and daily volume (no timestamp in receipts).
     let netSui = 0;
     let dailyVolSui = 0;
     for (const r of fills) {
       const size = Number(r.fields.filled_size) / 1e9;
       netSui += size;
-      // SettlementReceipt has no timestamp in fields; use all as conservative.
       dailyVolSui += size;
     }
 
@@ -201,10 +199,10 @@ const checkRiskCap: Tool = {
       trader: ctx.address,
       limit: 50,
     });
-    const openSui = orders.length * args.proposed_size_sui; // rough estimate
+    const openSui = orders.length * proposedSui; // rough estimate
 
-    const projectedPosition = netSui + openSui + args.proposed_size_sui;
-    const projectedDaily = dailyVolSui + args.proposed_size_sui;
+    const projectedPosition = netSui + openSui + proposedSui;
+    const projectedDaily = dailyVolSui + proposedSui;
 
     const breachPosition = capPosition > 0 && projectedPosition > capPosition;
     const breachDaily = capDaily > 0 && projectedDaily > capDaily;
@@ -213,7 +211,7 @@ const checkRiskCap: Tool = {
       within_cap: !breachPosition && !breachDaily,
       current_position_sui: netSui,
       daily_volume_sui: dailyVolSui,
-      proposed_size_sui: args.proposed_size_sui,
+      proposed_size_sui: proposedSui,
       cap_position_sui: capPosition,
       cap_daily_sui: capDaily,
       breach_position: breachPosition,

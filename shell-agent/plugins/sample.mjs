@@ -10,14 +10,13 @@
  * and drop it in plugins/. It auto-loads on next start.
  */
 
-import type { Tool } from "../src/tools/registry.js";
 import { z } from "zod";
 
 const ENCLAVE_BASE = "https://sui.furqaannabi.com";
 
 /** Checks Shell enclave liveness — useful before the LLM accepts a match,
  *  to verify the enclave is alive and its IOI book is non-empty. */
-const getEnclaveStatus: Tool = {
+const getEnclaveStatus = {
   name: "get_enclave_status",
   description:
     "Returns Shell enclave health: { alive, ioi_book_size, order_book_size, " +
@@ -28,14 +27,14 @@ const getEnclaveStatus: Tool = {
   async execute() {
     const res = await fetch(`${ENCLAVE_BASE}/shell/status`, {
       signal: AbortSignal.timeout(5_000),
-    }).catch((e: Error) => ({ ok: false as const, error: e.message }));
+    }).catch((e) => ({ ok: false, error: e.message }));
 
     if (!("ok" in res) || !res.ok) {
-      const err = "error" in res ? res.error : `HTTP ${(res as Response).status}`;
+      const err = "error" in res ? res.error : `HTTP ${res.status}`;
       return { alive: false, error: err };
     }
 
-    const j = (await (res as Response).json()) as Record<string, unknown>;
+    const j = await res.json();
 
     const ioiTickMs = Number(j.ioi_matcher_last_tick_ms ?? 0);
     const orderTickMs = Number(j.order_poller_last_tick_ms ?? 0);
@@ -54,7 +53,7 @@ const getEnclaveStatus: Tool = {
 
 /** Returns the Sui network's current reference gas price. Useful context
  *  before submitting an order — very high gas prices may affect profitability. */
-const getNetworkGasPrice: Tool = {
+const getNetworkGasPrice = {
   name: "get_network_gas_price",
   description:
     "Returns { reference_gas_price_mist, reference_gas_price_sui } for the " +

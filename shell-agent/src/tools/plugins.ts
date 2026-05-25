@@ -14,8 +14,13 @@ export async function loadPlugins(registry: ToolRegistry): Promise<void> {
   let entries: string[];
   try {
     entries = readdirSync(PLUGINS_DIR).filter((f) =>
-      /\.(ts|js|mjs)$/.test(f) && !f.startsWith("_"),
+      /\.(js|mjs)$/.test(f) && !f.startsWith("_"),
     );
+    // Warn about .ts files — must be compiled to .js first
+    const tsFiles = readdirSync(PLUGINS_DIR).filter((f) => f.endsWith(".ts") && !f.startsWith("_") && f !== "README.md");
+    for (const f of tsFiles) {
+      console.warn(`[plugins] ${f}: load error — Unknown file extension ".ts" for TypeScript plugins. Compile to .js/.mjs first, or run via tsx.`);
+    }
   } catch {
     // plugins/ dir absent — normal for fresh installs
     return;
