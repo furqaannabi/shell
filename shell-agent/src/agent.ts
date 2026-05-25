@@ -55,12 +55,19 @@ export async function runAgent(): Promise<void> {
   );
 
   let cursor: { txDigest: string; eventSeq: string } | undefined;
-  const seenProposals = new Set<string>();
+  // blobId → expiryMs; pruned each tick so memory stays bounded.
+  const seenProposals = new Map<string, number>();
   // Track when the active IOI expires so we re-post before it lapses.
   let ioiExpiryMs = 0;
 
   while (true) {
     try {
+      // Prune proposals whose on-chain expiry has passed.
+      const nowMs = Date.now();
+      for (const [id, exp] of seenProposals) {
+        if (exp < nowMs) seenProposals.delete(id);
+      }
+
       // Auto-post IOI if none active (or expiring within 60s).
       if (Date.now() >= ioiExpiryMs - 60_000) {
         const ttlMs = config.ioiTtlMin * 60_000;
@@ -105,7 +112,7 @@ export async function runAgent(): Promise<void> {
 
       for (const p of proposals) {
         if (seenProposals.has(p.blobId)) continue;
-        seenProposals.add(p.blobId);
+        seenProposals.set(p.blobId, Number(p.expiryMs));
 
         console.log(
           `[agent] new proposal: side=${p.side} price=${p.agreedPrice} size=${p.agreedSize}`,
