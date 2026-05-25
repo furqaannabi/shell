@@ -114,8 +114,10 @@ export async function runAgent(): Promise<void> {
         if (seenProposals.has(p.blobId)) continue;
         seenProposals.set(p.blobId, Number(p.expiryMs));
 
+        const priceUsdc = (Number(p.agreedPrice) / 1e6).toFixed(4);
+        const sizeSui   = (Number(p.agreedSize)  / 1e9).toFixed(4);
         console.log(
-          `[agent] new proposal: side=${p.side} price=${p.agreedPrice} size=${p.agreedSize}`,
+          `[agent] new proposal: side=${p.side} price=${priceUsdc} USDC size=${sizeSui} SUI blob=${p.blobId.slice(0, 12)}…`,
         );
         await appendEntry({
           timestamp_ms: Date.now(),
@@ -129,32 +131,33 @@ export async function runAgent(): Promise<void> {
           },
         });
 
-        // LLM decision — multi-turn tool-use loop.
-        const decision = await decideOnProposal({
-          proposal: p,
-          llm,
-          tools,
-          ctx: toolCtx,
-          policy: config.agentPolicy,
-        });
-        console.log(
-          `[agent] decision: ${decision.decision} (policy_ok=${decision.policy_check}) — ${decision.reasoning}`,
-        );
-        await appendEntry({
-          timestamp_ms: Date.now(),
-          agent_id: agentAddr,
-          event: "decision",
-          decision,
-        });
-
-        if (decision.decision !== "accept_match") continue;
-        if (!decision.policy_check) {
-          console.log("[agent] policy_check=false → skipping auto-execute");
-          continue;
-        }
-
-        // Execute: submit Shell sealed order with proposal terms.
+        // Per-proposal try/catch: one bad LLM response must not skip the rest.
         try {
+          // LLM decision — multi-turn tool-use loop.
+          const decision = await decideOnProposal({
+            proposal: p,
+            llm,
+            tools,
+            ctx: toolCtx,
+            policy: config.agentPolicy,
+          });
+          console.log(
+            `[agent] decision: ${decision.decision} (policy_ok=${decision.policy_check}) — ${decision.reasoning}`,
+          );
+          await appendEntry({
+            timestamp_ms: Date.now(),
+            agent_id: agentAddr,
+            event: "decision",
+            decision,
+          });
+
+          if (decision.decision !== "accept_match") continue;
+          if (!decision.policy_check) {
+            console.log("[agent] policy_check=false → skipping auto-execute");
+            continue;
+          }
+
+          // Execute: submit Shell sealed order with proposal terms.
           const digest = await submitOrderFromProposal({
             suiClient,
             sealClient,
@@ -169,7 +172,7 @@ export async function runAgent(): Promise<void> {
             action_digest: digest,
           });
         } catch (e) {
-          console.error(`[agent] submit order failed: ${(e as Error).message}`);
+          console.error(`[agent] proposal ${p.blobId.slice(0, 12)} error: ${(e as Error).message}`);
         }
       }
     } catch (e) {
