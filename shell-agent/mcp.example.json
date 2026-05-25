@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "walrus": {
+      "transport": "http",
+      "url": "https://sui.furqaannabi.com/mcp"
+    },
+    "pyth": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "pyth-mcp-server"],
+      "env": { "PYTH_NETWORK": "testnet" }
+    }
+  }
+}

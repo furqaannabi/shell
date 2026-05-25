@@ -5,3 +5,5 @@ dist/
 # User plugins are local-only; README.md is checked in as an example.
 plugins/*
 !plugins/README.md
+# User's live MCP config stays local; mcp.example.json is checked in.
+mcp.json

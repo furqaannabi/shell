@@ -12,6 +12,7 @@ import { pollProposals } from "./proposals.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { builtinTools } from "./tools/builtin.js";
 import { loadPlugins } from "./tools/plugins.js";
+import { loadMcpTools, closeMcpClients } from "./tools/mcp.js";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -44,7 +45,11 @@ export async function runAgent(): Promise<void> {
   const tools = new ToolRegistry();
   tools.registerMany(builtinTools);
   await loadPlugins(tools);
+  await loadMcpTools(tools);
   const toolCtx = { suiClient, sealClient, keypair, address: agentAddr };
+
+  process.once("SIGTERM", () => void closeMcpClients());
+  process.once("SIGINT", () => void closeMcpClients());
   console.log(
     `[agent] tools registered: ${tools.list().map((t) => t.name).join(", ")}`,
   );

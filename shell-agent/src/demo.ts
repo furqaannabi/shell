@@ -12,6 +12,7 @@ import { submitOrderFromProposal } from "./orders.js";
 import { ToolRegistry, type ToolCtx } from "./tools/registry.js";
 import { builtinTools } from "./tools/builtin.js";
 import { loadPlugins } from "./tools/plugins.js";
+import { loadMcpTools } from "./tools/mcp.js";
 
 const SEAL_KEY_SERVER = {
   objectId:
@@ -115,6 +116,7 @@ export async function runDemo(): Promise<void> {
   const tools = new ToolRegistry();
   tools.registerMany(builtinTools);
   await loadPlugins(tools);
+  await loadMcpTools(tools);
   const buyerCtx: ToolCtx = {
     suiClient: buyerSui,
     sealClient: buyerSeal,
