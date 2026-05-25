@@ -225,16 +225,17 @@ const appendJournal: Tool = {
   name: "append_journal",
   description:
     "Appends a note/reasoning entry to the agent's Walrus journal. " +
-    "Returns { blob_id } on success. Use sparingly — each call writes a Walrus blob.",
+    "Returns { blob_id } on success. Use sparingly — each call writes a Walrus blob. " +
+    "Pass note as the text to record (e.g. your decision reasoning).",
   parameters: z.object({
-    note: z.string().max(2000),
+    note: z.string().max(2000).optional(),
   }),
   async execute(args, ctx) {
     const blobId = await appendEntry({
       timestamp_ms: Date.now(),
       agent_id: ctx.address,
       event: "decision",
-      notes: args.note,
+      notes: args.note ?? "",
     });
     return { blob_id: blobId };
   },

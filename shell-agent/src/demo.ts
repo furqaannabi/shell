@@ -39,13 +39,14 @@ const DEMO_POLICY =
   "Before evaluating any proposal, you MUST call tools in this order: " +
   "(1) get_ref_price — check that agreed_price is within 20% of live mid price. " +
   "(2) get_my_balance — verify you have enough balance to cover collateral. " +
-  "(3) check_risk_cap — pass proposed_size_sui (agreed_size / 1e9). Reject if within_cap=false. " +
+  "(3) check_risk_cap — pass proposed_size_sui (the human-readable SUI size shown in the proposal). " +
   "(4) get_my_active_orders — check for existing open positions. " +
   "Accept only if ALL conditions hold: " +
   "(a) agreed_price is between 900_000 and 1_100_000 (0.90–1.10 USDC, 1e6 scale); " +
   "(b) agreed_size is between 100_000_000 and 200_000_000 (0.1–0.2 SUI, 1e9 scale); " +
-  "(c) check_risk_cap returned within_cap=true. " +
-  "Reject if any condition fails. Set policy_check=true only when all checks passed via tools.";
+  "(c) balance is sufficient for collateral. " +
+  "Reject if price or size is out of range or balance is insufficient. " +
+  "Set policy_check=true only when all checks passed via tools.";
 
 // Risk cap step uses a separate policy — only enforces cap, ignores size bounds,
 // so we can isolate the check_risk_cap tool as the rejection cause.

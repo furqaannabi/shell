@@ -29,13 +29,16 @@ export function buildSystemPrompt(opts: {
 
 /** Format the user-message describing a proposal for the LLM. */
 export function buildUserMessage(p: MatchProposal): string {
+  const priceSui = (Number(p.agreedPrice) / 1e6).toFixed(6);
+  const sizeSui  = (Number(p.agreedSize)  / 1e9).toFixed(9);
   return (
     `Match proposal (your side = ${p.side}):\n` +
-    `  asset: ${p.asset}\n` +
-    `  agreed_price: ${p.agreedPrice}    (1e6 scale; USDC per SUI)\n` +
-    `  agreed_size:  ${p.agreedSize}     (1e9 scale; raw SUI)\n` +
+    `  asset:        ${p.asset}\n` +
+    `  agreed_price: ${p.agreedPrice} (1e6 USDC scale) = ${priceSui} USDC\n` +
+    `  agreed_size:  ${p.agreedSize} (1e9 SUI scale)  = ${sizeSui} SUI\n` +
     `  counterparty: ${p.side === "buy" ? p.sellAgent : p.buyAgent}\n` +
     `  expiry_ms:    ${p.expiryMs}\n` +
+    `If calling check_risk_cap, pass proposed_size_sui=${sizeSui} (that is agreed_size / 1e9).\n` +
     `Decide.`
   );
 }
