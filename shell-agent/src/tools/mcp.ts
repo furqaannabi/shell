@@ -78,7 +78,8 @@ async function connectServer(
 
     const { tools } = await client.listTools();
     for (const tool of tools) {
-      const toolName = `mcp__${name}__${tool.name}`;
+      // OpenAI requires ^[a-zA-Z0-9_-]+$ — replace dots/spaces with underscores.
+      const toolName = `mcp__${name}__${tool.name}`.replace(/[^a-zA-Z0-9_-]/g, "_");
       registry.register({
         name: toolName,
         description: `[MCP:${name}] ${tool.description ?? ""}`,
