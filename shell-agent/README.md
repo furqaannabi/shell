@@ -1,6 +1,6 @@
 # shell-agent
 
-Autonomous trading bot for Shell Finance. Fund a wallet, set a policy, run the agent — it posts IOIs, evaluates match proposals with GPT-4o-mini, and submits Shell sealed orders on-chain without human intervention.
+Autonomous trading bot for Shell Finance. Fund a wallet, set a policy, run the agent — it posts IOIs, evaluates match proposals with an LLM (your choice of provider), and submits Shell sealed orders on-chain without human intervention.
 
 ---
 
@@ -12,21 +12,11 @@ Shell Finance has two interfaces — pick the one that fits:
 |---|---|---|
 | Who | Regular traders | Quants, bot operators |
 | How | Connect Slush wallet, use browser | Clone repo, fill `.env`, run on machine/VPS |
-| Decisions | Human clicks Accept | GPT enforces policy automatically |
+| Decisions | Human clicks Accept | LLM enforces policy automatically |
 | Key custody | Wallet extension (user controls) | Private key in `.env` (self-hosted, nobody else touches it) |
 | Runs | When browser is open | 24/7 on any Node 20 server |
 
-**The CLI is self-hosted by design.** Quants never hand their private key to a third party — same model as every algo trading bot on Binance, dYdX, or any other exchange. You clone, configure, deploy on your own infrastructure.
-
-Regular users never need to touch the CLI. It is an optional power-user path.
-
----
-
-## Who this is for
-
-- **Quants** who want policy-driven automated execution without a custodian
-- **Bot operators** running 24/7 strategies on Sui testnet
-- **Hackathon judges** who want to see the AI execution layer in action
+**The CLI is self-hosted by design.** Quants never hand their private key to a third party — same model as every algo trading bot on Binance, dYdX, or any other exchange.
 
 ---
 
@@ -44,13 +34,14 @@ Regular users never need to touch the CLI. It is an optional power-user path.
 │  2. POLL MatchProposed events on Sui                    │
 │     enclave matched your IOI with a counterparty        │
 │                                                         │
-│  3. EVALUATE with GPT-4o-mini                           │
-│     "Does this match satisfy my policy?"                │
-│     decision: accept_match / reject_match / wait        │
+│  3. EVALUATE with LLM (tool-use loop, up to 6 rounds)   │
+│     LLM calls built-in tools to check market data,      │
+│     balance, risk caps, and recent fills before         │
+│     returning: accept_match / reject_match / wait       │
 │                                                         │
 │  4. EXECUTE (if accepted + policy_check = true)         │
 │     Seal-encrypt Shell order → sign TX → submit         │
-│     Collateral split: buy → DUSDC, sell → SUI           │
+│     Collateral split: buy → USDC, sell → SUI            │
 │                                                         │
 │  5. LOG to Walrus (every event, every decision)         │
 └─────────────────────────────────────────────────────────┘
@@ -65,7 +56,7 @@ Regular users never need to touch the CLI. It is an optional power-user path.
 
 ## Role of the enclave
 
-shell-agent never calls the enclave directly. All coordination happens through Sui events — the enclave and the agent both watch the chain independently.
+shell-agent never calls the enclave directly. All coordination happens through Sui events.
 
 ```
 shell-agent                   Sui chain              Nautilus enclave
@@ -76,17 +67,10 @@ shell-agent                   Sui chain              Nautilus enclave
     │                             │ ◄── MatchProposed ──── │ emit event
     │ ◄── pollProposals() ────────│                        │
     │  fetch blob from Walrus     │                        │
-    │  GPT evaluates              │                        │
+    │  LLM evaluates (+ tools)    │                        │
     │── submitOrder() ──────────► OrderCommitment event ──► │ decrypt order
-    │                             │                        │ settle_direct (atomic on-chain swap)
+    │                             │                        │ settle_direct
 ```
-
-The enclave runs two background loops simultaneously:
-
-- **IOI matcher** — watches `IoisPosted`, decrypts all IOIs via Seal, finds overlapping buy/sell pairs, emits `MatchProposed`
-- **Order settler** — watches `OrderCommitment` (from Terminal + shell-agent accepts), decrypts sealed orders, atomically crosses both OrderCommitments via shell::settlement::settle_direct
-
-The enclave is the only entity that ever sees plaintext IOI terms. Its code is registered on-chain as PCR hashes — if anyone tampers with it, Seal refuses to release decryption keys and the enclave goes blind. This is the trust guarantee.
 
 ---
 
@@ -102,37 +86,39 @@ cp .env.example .env
 
 ### 2. Create a funded Sui testnet wallet
 
-Generate a new keypair (keep the `suiprivkey1…` output):
-
 ```bash
-# Using Sui CLI
 sui client new-address ed25519
-
-# Or any Sui wallet — export the private key in bech32 format (suiprivkey1…)
+# Outputs: suiprivkey1… bech32 key — put this in AGENT_PRIVATE_KEY
 ```
 
 Fund it:
-- SUI for gas + sell-side collateral → from [faucet.testnet.sui.io](https://faucet.testnet.sui.io)
-- DUSDC for buy-side collateral → get from testnet DUSDC faucet
+- SUI for gas + sell-side collateral → [faucet.testnet.sui.io](https://faucet.testnet.sui.io)
+- USDC for buy-side collateral → testnet USDC faucet
 
 ### 3. Configure `.env`
 
 ```bash
-# Required
-AGENT_PRIVATE_KEY=suiprivkey1...    # bech32 secret key
-OPENAI_API_KEY=sk-...               # GPT-4o-mini access
+# Required — wallet
+AGENT_PRIVATE_KEY=suiprivkey1...
 
-# Your trading policy (plain English — GPT enforces this)
-AGENT_POLICY=Accept matches priced between 1.90 and 2.10 DUSDC. Reject if size exceeds 5 SUI. Reject if price deviates more than 5% from 2.00.
+# Required — LLM (pick one provider)
+LLM_PROVIDER=openai           # openai | anthropic | google | openai-compatible
+LLM_MODEL=gpt-4o-mini         # any model the provider accepts
+LLM_API_KEY=sk-...
 
-# IOI terms (1e9-scaled integers)
-# 1 SUI = 1000000000  |  1.80 DUSDC = 1800000000
+# Legacy fallback — still works if LLM_* unset
+# OPENAI_API_KEY=sk-...
+
+# Trading policy (plain English, LLM enforces)
+AGENT_POLICY=Accept matches priced between 900000 and 1100000 AND size between 100000000 and 200000000. Reject all others.
+
+# IOI parameters
 AGENT_IOI_SIDE=buy
-AGENT_IOI_SIZE_LO=1000000000      # min 1 SUI
-AGENT_IOI_SIZE_HI=10000000000     # max 10 SUI
-AGENT_IOI_PRICE_LO=1800000000     # min 1.80 DUSDC
-AGENT_IOI_PRICE_HI=2200000000     # max 2.20 DUSDC
-AGENT_IOI_TTL_MIN=60              # re-post IOI every 60 min
+AGENT_IOI_SIZE_LO=100000000     # 0.1 SUI  (1e9-scaled)
+AGENT_IOI_SIZE_HI=200000000     # 0.2 SUI
+AGENT_IOI_PRICE_LO=900000       # 0.90 USDC (1e6-scaled)
+AGENT_IOI_PRICE_HI=1100000      # 1.10 USDC
+AGENT_IOI_TTL_MIN=60
 ```
 
 ### 4. Run
@@ -152,29 +138,36 @@ node dist/index.js run
 node dist/index.js run
 ```
 
-Starts the agent. On every 15s tick:
+On every 15s tick the agent:
 
-1. **Auto-post IOI** if none active or expiring within 60s
-   - Encrypts plaintext under Shell Seal identity
-   - Uploads to Walrus (2 epochs)
-   - Calls `shell::ioi::record_ioi` on-chain
+1. **Auto-posts IOI** if none active or expiring within 60s
+2. **Polls** `MatchProposed` events for this wallet
+3. **Evaluates** each new proposal using the LLM tool-use loop (see below)
+4. **Executes** if `decision === "accept_match"` AND `policy_check === true`
+5. **Logs** every event to Walrus
 
-2. **Poll** `shell::ioi::MatchProposed` events for this wallet address
+---
 
-3. **Evaluate** each new proposal with GPT:
-   ```
-   System: "You are a trading agent. Your policy is: {AGENT_POLICY}"
-   User:   "Match proposal: price=X size=Y side=buy. Decide."
-   ```
-   Returns `{ decision, reasoning, policy_check }`
+### `demo` — full end-to-end demo (two wallets)
 
-4. **Execute** if `decision === "accept_match"` AND `policy_check === true`:
-   - Encrypts Shell sealed order with proposal terms
-   - Splits collateral from wallet (DUSDC for buy, SUI for sell)
-   - Signs and submits transaction
+```bash
+# Add to .env:
+DEMO_BUYER_KEY=suiprivkey1...
+DEMO_SELLER_KEY=suiprivkey1...
 
-5. **Log** every event to Walrus (proposal received, decision, order submitted)
-   - Prints journal `blob_id` — paste into IOI Desk → Audit Journal tab in the web UI
+node dist/index.js demo
+```
+
+Scripted five-step demo:
+
+| Step | What happens |
+|---|---|
+| 0 | Pre-flight balance check |
+| 1 | AI rejects a synthetic bad proposal (price out of range) |
+| 2 | Both wallets post overlapping encrypted IOIs on-chain |
+| 3 | Enclave matches → LLM evaluates with tools → orders submitted |
+| 4 | Wait for enclave to settle |
+| 5 | Post-settlement balance check (balances swap correctly) |
 
 ---
 
@@ -183,64 +176,131 @@ Starts the agent. On every 15s tick:
 ```bash
 node dist/index.js post-ioi \
   --side buy \
-  --size-lo 1000000000 \
-  --size-hi 5000000000 \
-  --price-lo 1900000000 \
-  --price-hi 2100000000 \
-  --ttl-ms 1800000
+  --size-lo 100000000 \
+  --size-hi 200000000 \
+  --price-lo 900000 \
+  --price-hi 1100000 \
+  --ttl-ms 3600000
 ```
 
-Posts a single IOI and exits. Useful for testing or manually seeding a position before starting `run`.
+Posts a single IOI and exits. Useful for testing or seeding a position.
 
 ---
 
-### `demo` — full end-to-end demo (two wallets)
+## LLM tool-use loop
+
+Before accepting or rejecting a proposal, the LLM runs a **bounded tool-use loop** (max 6 rounds). It can call any registered tool to gather data, then return a final decision.
+
+### Built-in tools
+
+| Tool | What it does |
+|---|---|
+| `get_ref_price` | DeepBook SUI/USDC bid/ask/mid (live market data) |
+| `get_my_balance` | Agent's SUI + USDC balance |
+| `get_my_recent_fills` | Last N SettlementReceipts (own fills) |
+| `get_my_active_orders` | Live OrderCommitments with collateral locked |
+| `get_my_active_proposals` | Recent MatchProposed events for this agent |
+| `cancel_order` | Cancel an expired OrderCommitment and reclaim collateral |
+| `check_risk_cap` | Net position + daily volume vs `RISK_MAX_POSITION_SUI` / `RISK_DAILY_VOLUME_SUI` |
+| `append_journal` | Write a note to the agent's Walrus journal |
+| `notify_webhook` | POST a JSON event to `WEBHOOK_URL` if set |
+
+### Risk caps (optional)
 
 ```bash
-# Add to .env:
-DEMO_BUYER_KEY=suiprivkey1...   # funded wallet A
-DEMO_SELLER_KEY=suiprivkey1...  # funded wallet B
-
-node dist/index.js demo
+RISK_MAX_POSITION_SUI=5.0      # refuse trades that push net position above 5 SUI
+RISK_DAILY_VOLUME_SUI=20.0     # refuse trades that push daily volume above 20 SUI
 ```
 
-Runs a three-step scripted demo:
+Set these and add `check_risk_cap` guidance to `AGENT_POLICY`. Leave at `0` to disable.
 
-**Step 1 — AI policy enforcement**
-Sends a synthetic bad proposal (price 3.50 DUSDC, above policy max) to GPT. Shows `reject_match` with reasoning. No on-chain action.
+---
 
-**Step 2 — Post IOIs**
-Both wallets post overlapping IOIs simultaneously:
-- Buyer: 2–4 SUI @ 1.80–2.20 DUSDC
-- Seller: 2–4 SUI @ 1.90–2.10 DUSDC
+## Pluggable LLM providers
 
-**Step 3 — Enclave matches, AI accepts**
-Polls every 5s (5 min timeout). When the enclave emits `MatchProposed`:
-- GPT evaluates the real proposal against the demo policy
-- Prints full reasoning
-- Submits Shell orders for both sides
+| `LLM_PROVIDER` | Example `LLM_MODEL` | Notes |
+|---|---|---|
+| `openai` | `gpt-4o-mini`, `gpt-4o` | Default when only `OPENAI_API_KEY` set |
+| `anthropic` | `claude-haiku-4-5-20251001`, `claude-sonnet-4-6` | Requires `LLM_API_KEY` |
+| `google` | `gemini-2.0-flash`, `gemini-2.5-pro` | Requires `LLM_API_KEY` |
+| `openai-compatible` | any | Set `LLM_BASE_URL` to your endpoint |
+
+OpenAI-compatible works with Ollama, vLLM, OpenRouter, Together, Groq, and any other provider with an OpenAI-shaped API.
+
+---
+
+## Extending the agent
+
+### Local plugins
+
+Drop `.ts` or `.js` files into `plugins/` (gitignored). Each is auto-loaded at startup and registered as `plugin__<name>`:
+
+```ts
+// plugins/my_oracle.ts
+import type { Tool } from "../src/tools/registry.js";
+import { z } from "zod";
+
+const myOracle: Tool = {
+  name: "my_oracle",
+  description: "Returns my proprietary SUI/USDC fair value.",
+  parameters: z.object({}),
+  async execute() {
+    const res = await fetch("https://my-oracle.example.com/sui-usdc");
+    return await res.json();
+  },
+};
+export default myOracle;
+```
+
+See `plugins/README.md` for the full `ToolCtx` interface (suiClient, sealClient, keypair, address).
+
+### MCP servers
+
+Copy `mcp.example.json` to `mcp.json` and add any MCP server:
+
+```json
+{
+  "mcpServers": {
+    "walrus": {
+      "transport": "http",
+      "url": "https://sui.furqaannabi.com/mcp"
+    },
+    "my-feed": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "my-mcp-server"]
+    }
+  }
+}
+```
+
+Every tool from every server is registered as `mcp__<server>__<tool>` and available to the LLM automatically. Both stdio and HTTP (StreamableHTTP) transports supported.
 
 ---
 
 ## Policy writing guide
 
-`AGENT_POLICY` is a free-text string passed as GPT's system prompt. Write it like a compliance rule:
+`AGENT_POLICY` is free-text passed as the LLM's system instruction. Write it like a compliance rule.
+
+**Price scale: 1e6 (USDC).** 1.00 USDC = `1_000_000`. 0.90 USDC = `900_000`.  
+**Size scale: 1e9 (SUI).** 0.1 SUI = `100_000_000`. 1 SUI = `1_000_000_000`.
 
 ```
-# Conservative (tight range, small size)
-Accept if agreed_price is between 1900000000 and 2100000000 AND agreed_size <= 3000000000. Reject all others.
+# Tight range
+Accept only if agreed_price is between 900000 and 1100000 (0.90–1.10 USDC)
+AND agreed_size is between 100000000 and 200000000 (0.1–0.2 SUI).
+Reject all others. Call check_risk_cap before accepting.
 
-# Aggressive (wide range)
-Accept any match where agreed_price is above 1500000000. Reject if agreed_size exceeds 20000000000.
+# Reference-price anchored
+Call get_ref_price first. Accept only if agreed_price is within 2% of mid.
+Reject if agreed_size exceeds 500000000 (0.5 SUI).
 
-# Multi-condition
-Accept if price is within 5% of 2000000000 (i.e. between 1900000000 and 2100000000).
-Reject if size exceeds 5000000000 (5 SUI). Wait if market conditions are unclear.
+# Aggressive buy-side
+Accept any buy match where agreed_price is below 1050000 (1.05 USDC).
+Reject if balance check shows less than 5 USDC available.
 ```
 
-**Important:** prices and sizes are 1e9-scaled integers. 1 SUI = `1000000000`. 1.80 DUSDC = `1800000000`. Include this note in your policy so GPT interprets the numbers correctly.
-
-GPT returns `policy_check: true` only if it can prove the decision follows the policy. The agent skips execution if `policy_check` is false even when `decision` is `accept_match`.
+The LLM returns `policy_check: true` only if it can prove the decision follows the policy. The agent skips execution if `policy_check` is false even when `decision` is `accept_match`.
 
 ---
 
@@ -249,10 +309,10 @@ GPT returns `policy_check: true` only if it can prove the decision follows the p
 Every event is appended as a JSON-Lines blob to Walrus:
 
 ```json
-{"timestamp_ms":1716200000000,"agent_id":"0xabc...","event":"decision","decision":{"decision":"accept_match","reasoning":"Price 2.00 DUSDC is within policy range 1.90–2.10. Size 2 SUI is under limit 5 SUI.","policy_check":true}}
+{"timestamp_ms":1716200000000,"agent_id":"0xabc...","event":"decision","decision":{"decision":"accept_match","reasoning":"Price 1000000 USDC is within range 900000–1100000. Balance sufficient.","policy_check":true}}
 ```
 
-The agent prints each `blob_id` to stdout. Paste it into **IOI Desk → Audit Journal** in the web UI to view the full decision log.
+The agent prints each `blob_id` to stdout. Paste it into **IOI Desk → Audit Journal** in the web UI to view the decision log.
 
 ---
 
@@ -261,88 +321,72 @@ The agent prints each `blob_id` to stdout. Paste it into **IOI Desk → Audit Jo
 ```
 shell-agent/
   src/
-    index.ts      CLI entry — routes run / demo / post-ioi
-    config.ts     Env var loader with defaults
-    agent.ts      Main loop — auto-post IOI + poll + evaluate + execute
-    ioi.ts        Seal-encrypt IOI → Walrus → on-chain record_ioi
-    proposals.ts  Poll MatchProposed events → fetch + BCS-decode blobs
-    llm.ts        OpenAI chat.completions → structured LlmDecision
-    orders.ts     Build + sign Shell sealed order from proposal terms
-    walrus.ts     PUT / GET blobs to Walrus testnet
-    journal.ts    Append JSON-Lines entries to Walrus
-    demo.ts       Scripted two-wallet E2E demo
+    index.ts           CLI entry — routes run / demo / post-ioi
+    config.ts          Env var loader with defaults
+    agent.ts           Main loop — auto-post IOI + poll + evaluate + execute
+    ioi.ts             Seal-encrypt IOI → Walrus → on-chain record_ioi
+    proposals.ts       Poll MatchProposed events → fetch + BCS-decode blobs
+    orders.ts          Build + sign Shell sealed order from proposal terms
+    walrus.ts          PUT / GET blobs to Walrus testnet
+    journal.ts         Append JSON-Lines entries to Walrus
+    demo.ts            Scripted two-wallet E2E demo
+    llm/
+      index.ts         LlmClient interface + factory (dispatches on LLM_PROVIDER)
+      openai.ts        OpenAI adapter (also used for openai-compatible)
+      anthropic.ts     Anthropic Claude adapter
+      google.ts        Google Gemini adapter
+      loop.ts          Bounded tool-use loop (max 6 rounds)
+      prompt.ts        System prompt + user message builders
+    tools/
+      registry.ts      ToolRegistry — register, list, execute by name
+      builtin.ts       9 built-in tools (ref price, balance, fills, risk, etc.)
+      plugins.ts       Auto-load plugins/*.{ts,js} at startup
+      mcp.ts           MCP client loader — connects servers from mcp.json
+  plugins/             User plugins (gitignored; README.md checked in)
+  mcp.example.json     MCP config template
 ```
 
 ### Key dependencies
 
-| Package | Version | Purpose |
-|---|---|---|
-| `@mysten/sui` | 2.16.2 | Sui RPC, keypairs, transactions |
-| `@mysten/seal` | 1.1.3 | Threshold IBE encryption |
-| `@mysten/bcs` | 2.0.5 | Binary serialization (matches enclave + web) |
-| `@shell-finance/sdk` | local | `encryptOrder`, `submitOrderTx` |
-| `openai` | ^4.77.0 | GPT-4o-mini decisions |
+| Package | Purpose |
+|---|---|
+| `@mysten/sui` | Sui RPC, keypairs, transactions |
+| `@mysten/seal` | Threshold IBE encryption |
+| `@mysten/bcs` | Binary serialization (matches enclave + web) |
+| `@shell-finance/sdk` | `encryptOrder`, `submitOrderTx`, `getActiveOrders`, `getReceipts` |
+| `openai` | OpenAI + openai-compatible adapter |
+| `@anthropic-ai/sdk` | Anthropic Claude adapter |
+| `@google/genai` | Google Gemini adapter |
+| `@modelcontextprotocol/sdk` | MCP client (stdio + HTTP transports) |
+| `zod` | Tool parameter schemas + validation |
 
 ---
 
 ## Running on a VPS (24/7)
 
-Any Linux VPS with Node 20 works. Recommended: keep it running with `pm2`.
-
 ```bash
-# Install pm2 globally
 npm install -g pm2
-
-# Build first
 npm run build
-
-# Start the agent as a managed process
 pm2 start dist/index.js --name shell-agent -- run
+pm2 save && pm2 startup
 
-# Auto-restart on reboot
-pm2 save
-pm2 startup
-
-# Useful commands
-pm2 logs shell-agent        # tail live logs
-pm2 status                  # check running/stopped
-pm2 stop shell-agent        # stop
-pm2 restart shell-agent     # restart after config change
-```
-
-Or use `screen` if you prefer:
-
-```bash
-screen -S shell-agent
-node dist/index.js run
-# Ctrl+A then D to detach
-# screen -r shell-agent to re-attach
+pm2 logs shell-agent      # tail live logs
+pm2 restart shell-agent   # restart after config change
 ```
 
 ---
 
 ## Getting your private key
 
-**From Sui CLI (generated with `sui client new-address`):**
-
 ```bash
-# List all addresses
+# List addresses
 sui client addresses
 
-# Export the key — outputs suiprivkey1... bech32 format
+# Export bech32 key (suiprivkey1…)
 sui keytool export --key-identity <ADDRESS>
 ```
 
-**From Slush / other wallets:**
-Slush does not expose private keys. Create a dedicated agent wallet using Sui CLI instead — never use your main wallet.
-
-**Check balance before running:**
-
-```bash
-sui client balance --address <YOUR_ADDRESS>
-```
-
-Need both SUI (gas + sell collateral) and DUSDC (buy collateral). Get testnet SUI from [faucet.testnet.sui.io](https://faucet.testnet.sui.io).
+Slush does not expose private keys. Use a dedicated agent wallet created with the Sui CLI — never use your main wallet.
 
 ---
 
@@ -351,17 +395,19 @@ Need both SUI (gas + sell collateral) and DUSDC (buy collateral). Get testnet SU
 | Error | Cause | Fix |
 |---|---|---|
 | `missing env var: AGENT_PRIVATE_KEY` | `.env` not filled | Set `AGENT_PRIVATE_KEY=suiprivkey1...` |
-| `record_ioi failed: function not found` | Move package not upgraded | Teammate must run `sui client upgrade` |
-| `no DUSDC coin to use` | Wallet has no DUSDC | Get DUSDC from testnet faucet, or switch `AGENT_IOI_SIDE=sell` |
-| `walrus put 429` | Walrus rate limit | Increase `AGENT_IOI_TTL_MIN` to reduce re-post frequency |
-| `LLM returned non-JSON` | GPT hallucinated | Retry; if recurring, simplify `AGENT_POLICY` |
-| `timeout — enclave did not match` | Enclave down or no counterparty | Check enclave status with teammate; verify a counterparty IOI exists |
+| `no LLM API key` | Neither `LLM_API_KEY` nor `OPENAI_API_KEY` set | Add the appropriate key |
+| `unknown LLM_PROVIDER=X` | Typo in provider name | Valid values: `openai`, `anthropic`, `google`, `openai-compatible` |
+| `record_ioi failed: function not found` | Move package not upgraded | Teammate runs `sui client upgrade` |
+| `no USDC coin to use` | Wallet has no USDC | Get USDC from testnet faucet, or switch `AGENT_IOI_SIDE=sell` |
+| `walrus put 429` | Rate limit | Increase `AGENT_IOI_TTL_MIN` |
+| `LLM returned non-JSON` | Model hallucinated | Retry; if recurring, simplify `AGENT_POLICY` |
+| `timeout — enclave did not match` | Enclave down or no counterparty | Check enclave status; verify counterparty IOI exists |
 
 ---
 
 ## Prerequisites
 
-- Move package upgraded to include `shell::ioi` module (teammate runs `sui client upgrade`)
-- Nautilus enclave running on testnet (teammate's AWS instance)
+- Move package upgraded to include `shell::ioi` module
+- Nautilus enclave running on testnet
 - Node.js >= 20
-- Funded testnet wallet (SUI + DUSDC)
+- Funded testnet wallet (SUI + USDC)
