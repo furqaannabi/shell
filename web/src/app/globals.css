@@ -73,10 +73,8 @@ button, a {
 
 /* Glassmorphism utility for Level 1 (Sealed Containers) */
 .glass-panel {
-  background-color: rgba(26, 29, 35, 0.8);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid transparent; /* Fallback */
   border-top: 1px solid rgba(255, 255, 255, 0.1); /* 1px top-highlight */
 }
 
@@ -123,4 +121,21 @@ button, a {
   0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(87, 241, 219, 0.7); }
   70% { transform: scale(1); box-shadow: 0 0 0 4px rgba(87, 241, 219, 0); }
   100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(87, 241, 219, 0); }
+}
+
+@keyframes crypto-drop {
+  0% { transform: translateY(-100vh); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+@keyframes pan-bg {
+  0% { background-position: 0 0; }
+  100% { background-position: 120px 207.846px; }
+}
+
+.crypto-drop {
+  animation: crypto-drop 4s infinite linear;
+  will-change: transform, opacity;
 }
