@@ -11,6 +11,7 @@ import { pollProposals, type MatchProposal } from "./proposals.js";
 import { submitOrderFromProposal } from "./orders.js";
 import { ToolRegistry, type ToolCtx } from "./tools/registry.js";
 import { builtinTools } from "./tools/builtin.js";
+import { loadPlugins } from "./tools/plugins.js";
 
 const SEAL_KEY_SERVER = {
   objectId:
@@ -113,6 +114,7 @@ export async function runDemo(): Promise<void> {
   const llm = makeLlmClient();
   const tools = new ToolRegistry();
   tools.registerMany(builtinTools);
+  await loadPlugins(tools);
   const buyerCtx: ToolCtx = {
     suiClient: buyerSui,
     sealClient: buyerSeal,

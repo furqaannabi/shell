@@ -11,6 +11,7 @@ import { submitOrderFromProposal } from "./orders.js";
 import { pollProposals } from "./proposals.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { builtinTools } from "./tools/builtin.js";
+import { loadPlugins } from "./tools/plugins.js";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -42,6 +43,7 @@ export async function runAgent(): Promise<void> {
   const llm = makeLlmClient();
   const tools = new ToolRegistry();
   tools.registerMany(builtinTools);
+  await loadPlugins(tools);
   const toolCtx = { suiClient, sealClient, keypair, address: agentAddr };
   console.log(
     `[agent] tools registered: ${tools.list().map((t) => t.name).join(", ")}`,
