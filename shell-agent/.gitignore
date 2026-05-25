@@ -6,5 +6,5 @@ dist/
 plugins/*
 !plugins/README.md
 !plugins/sample.mjs
-# User's live MCP config stays local; mcp.example.json is checked in.
-mcp.json
+# mcp.json is checked in with the walrus demo server pre-configured.
+# Users can extend it with private servers locally.

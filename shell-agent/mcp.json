@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "walrus": {
+      "transport": "http",
+      "url": "https://sui.furqaannabi.com/mcp"
+    }
+  }
+}
