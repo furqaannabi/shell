@@ -76,12 +76,17 @@ export async function decideOnProposal(opts: {
 }
 
 function parseDecision(text: string): LlmDecision {
-  // Strip leading/trailing fences, then find the outermost JSON object.
-  // Models sometimes return prose + an embedded ```json block.
-  const stripped = text.trim().replace(/^```(?:json)?\s*/m, "").replace(/```\s*$/m, "").trim();
-  const start = stripped.indexOf("{");
-  const end = stripped.lastIndexOf("}");
-  const json = start !== -1 && end !== -1 ? stripped.slice(start, end + 1) : stripped;
+  // Priority 1: extract content from a fenced ```json … ``` block.
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  let json = fenceMatch ? fenceMatch[1]!.trim() : "";
+
+  // Priority 2: find the last { … } pair (avoids false hits in prose/LaTeX).
+  if (!json) {
+    const end = text.lastIndexOf("}");
+    const start = end !== -1 ? text.lastIndexOf("{", end) : -1;
+    json = start !== -1 ? text.slice(start, end + 1) : text.trim();
+  }
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
