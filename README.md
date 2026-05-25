@@ -57,6 +57,7 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
 | Demo     | E2E retest 2026-05-24 ~3 min total: IOI → match → accept → settle_direct → SettlementReceipts ([`2b96TNRe…`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig)) | [`docs/republish-brief.md`](docs/republish-brief.md) §"E2E re-test" |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | <https://shell-finance.vercel.app/> ([source](web/))             |
+| shell-agent | Autonomous Node daemon (v2): pluggable LLM (OpenAI / Anthropic / Google / any OpenAI-compatible), bounded tool-use loop, 9 built-in trading tools, local plugin loader, MCP client. E2E demo runs end-to-end with tool calls visible in logs. | [`shell-agent/`](shell-agent/) |
 | Agents   | Walrus + MemWal MCP server (11 typed tools); stdio for local + Streamable HTTP at `https://sui.furqaannabi.com/mcp` | [`mcp/walrus-mcp/`](mcp/walrus-mcp/), [`skills/walrus/`](skills/walrus/) |
 | Liveness | `GET /shell/status` returns task-tick timestamps + book sizes; external monitoring can alert on stale ticks | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) (search `shell_status`) |
 
@@ -80,6 +81,12 @@ enclave-nitro/             Nautilus app overlay (drops into a MystenLabs/nautilu
   framework-patches/       lib.rs + main.rs overlays (persistent eph_kp, AppState.shell)
   scripts/assemble.sh      Clones nautilus, applies patches, copies the overlay
 web/                       Trader-facing Next.js app (dapp-kit wallet, sealed-order form, receipts)
+shell-agent/               Autonomous quant/bot daemon — see below
+  src/agent.ts             Main loop: auto-post IOI → poll → LLM eval (tool-use) → execute
+  src/llm/                 Pluggable LLM layer: OpenAI, Anthropic, Google, openai-compatible
+  src/tools/               9 built-in tools + plugin loader + MCP client
+  plugins/                 Drop-in local tools (gitignored; README.md checked in)
+  mcp.example.json         MCP server config template (walrus, pyth examples)
 mcp/walrus-mcp/            Walrus + MemWal MCP server — 11 typed tools over stdio
   src/server.ts            Tool registration + dispatch
   src/tools/               put / get / status / extend / delete / put_quilt /
@@ -119,6 +126,22 @@ cd ts-sdk
 npm install
 npm run build
 ```
+
+### shell-agent (autonomous quant/bot daemon)
+
+```bash
+cd shell-agent
+npm install
+cp .env.example .env
+# Set AGENT_PRIVATE_KEY + LLM_API_KEY (or OPENAI_API_KEY for legacy compat)
+npm run build
+node dist/index.js run        # 24/7 autonomous loop
+node dist/index.js demo       # scripted two-wallet E2E demo
+```
+
+See [`shell-agent/README.md`](shell-agent/README.md) for full setup, policy writing guide, and extension docs.
+
+---
 
 ### Walrus MCP server (agent surface)
 
@@ -173,6 +196,77 @@ The enclave is autonomous: submit a sealed order from any client and the matchin
 ```
 
 Either path produces an `OrderCommitment` shared object on testnet. The enclave's poller picks it up within ~5s, requests Seal key shares (`shell::shell::seal_approve` gates this — only this enclave's registered pubkey can request), decrypts in-TEE, runs price-time matching, and submits a `Transaction` chaining `attestation::verify` → `settlement::settle_direct<TBase, TQuote>` signed by the enclave's eph_kp. Two `SettlementReceipt`s mint, one per trader.
+
+## Agent execution layer (shell-agent)
+
+Shell Finance has two client interfaces. The web UI is for human traders. `shell-agent` is for quants and bots.
+
+```
+┌──────────────────────┐     ┌──────────────────────────────────────────┐
+│      Web UI          │     │            shell-agent                   │
+│  (human trader)      │     │         (quant / bot operator)           │
+│                      │     │                                          │
+│  Connect wallet      │     │  Fund a wallet, set AGENT_POLICY         │
+│  Place sealed order  │     │  node dist/index.js run                  │
+│  Accept proposals    │     │                                          │
+│  View receipts       │     │  Every 15s — auto-posts IOIs,            │
+│                      │     │  polls proposals, runs LLM tool-use      │
+│  Key: wallet ext     │     │  loop, executes accepted matches         │
+└──────────────────────┘     │                                          │
+                             │  Key: AGENT_PRIVATE_KEY in .env          │
+                             └──────────────────────────────────────────┘
+```
+
+### What the agent actually does
+
+On each 15s tick:
+
+1. **Auto-post IOI** — Seal-encrypts your indication of interest (side/size range/price range) and records it on-chain. Only the Nautilus enclave can decrypt it.
+2. **Poll** `MatchProposed` events for this wallet address. Each event means the enclave found a counterparty whose IOI overlaps yours.
+3. **LLM tool-use loop** — The LLM (your choice of provider) can call any registered tool before deciding. Built-in tools include live DeepBook market data, wallet balance, recent fills, active orders, and risk cap checks. The loop runs up to 6 rounds before forcing a final `accept_match / reject_match / wait` decision.
+4. **Execute** if `decision === "accept_match"` AND `policy_check === true` — Seal-encrypts a Shell sealed order and submits the PTB on-chain.
+
+### Why quants care
+
+- **BYO key** — your private key never leaves your machine. Self-hosted like any algo trading bot on Binance or dYdX.
+- **BYO LLM** — `LLM_PROVIDER=openai|anthropic|google|openai-compatible`. Bring your own key, model, or endpoint (Ollama, vLLM, OpenRouter, etc.).
+- **Policy in plain English** — write compliance rules in `AGENT_POLICY`; the LLM enforces them against real market data from tools.
+- **Extensible** — drop `.ts` files into `plugins/` for custom oracles or signals. Connect any MCP server via `mcp.json` for external data feeds.
+- **Risk caps** — `RISK_MAX_POSITION_SUI` / `RISK_DAILY_VOLUME_SUI` env vars gate the `check_risk_cap` tool. LLM sees real position data instead of hallucinating.
+
+### LLM providers
+
+| `LLM_PROVIDER` | Models |
+|---|---|
+| `openai` | `gpt-4o-mini`, `gpt-4o` (default when only `OPENAI_API_KEY` set) |
+| `anthropic` | `claude-haiku-4-5-20251001`, `claude-sonnet-4-6` |
+| `google` | `gemini-2.0-flash`, `gemini-2.5-pro` |
+| `openai-compatible` | Any OpenAI-shaped endpoint — Ollama, vLLM, OpenRouter, Together, Groq |
+
+### Demo output (verified testnet run)
+
+```
+STEP 1 — AI policy enforcement (synthetic bad proposal)
+[tool] get_ref_price({}) → {"bid":1.04,"ask":1.048,"mid":1.044}
+[tool] get_my_balance({}) → {"sui":2.14,"usdc":19.85}
+LLM decision : reject_match
+✓ bad proposal rejected — no order submitted
+
+STEP 3 — Enclave matches
+buyer got proposal: price=1.0000 USDC size=0.1500 SUI
+[tool] get_ref_price({}) → {"bid":1.04,"ask":1.048,"mid":1.044}
+[tool] get_my_balance({}) → {"sui":2.14,"usdc":19.85}
+buyer LLM decision : accept_match  policy_check: true
+buyer ✓ order submitted: EJndeAzDkzQTzLKtP33ewXQ84mrRCjQeXsyEpJqkHkV2
+
+STEP 5 — Post-settlement
+BUYER  SUI=2.2870  USDC=19.7000   (+0.15 SUI, -0.15 USDC ✓)
+SELLER SUI=1.6861  USDC=40.3000   (-0.15 SUI, +0.15 USDC ✓)
+```
+
+Full output in [`docs/report.txt`](docs/report.txt).
+
+---
 
 ## Frontend integration
 
