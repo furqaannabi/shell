@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useConnectWallet, useCurrentAccount, useWallets } from '@mysten/dapp-kit';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Landing page wallet connect button.
@@ -14,11 +14,12 @@ export default function LandingConnectButton() {
   const wallets = useWallets();
   const { mutate: connect, isPending } = useConnectWallet();
   const [mounted, setMounted] = useState(false);
+  const userClicked = useRef(false);
   useEffect(() => { setMounted(true); }, []);
 
-  // Redirect when wallet is connected (including autoConnect)
+  // Only redirect on explicit user-initiated connect, not autoConnect
   useEffect(() => {
-    if (account) {
+    if (account && userClicked.current) {
       router.push('/terminal');
     }
   }, [account, router]);
@@ -27,7 +28,12 @@ export default function LandingConnectButton() {
     <button
       onClick={() => {
         if (wallets.length > 0) {
-          connect({ wallet: wallets[0] });
+          userClicked.current = true;
+          if (account) {
+            router.push('/terminal');
+          } else {
+            connect({ wallet: wallets[0] });
+          }
         }
       }}
       disabled={mounted && (isPending || wallets.length === 0)}
@@ -41,7 +47,7 @@ export default function LandingConnectButton() {
       ) : (
         <>
           <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>account_balance_wallet</span>
-          Connect Sui Wallet
+          Connect Wallet
         </>
       )}
     </button>

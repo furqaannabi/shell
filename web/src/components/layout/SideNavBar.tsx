@@ -18,6 +18,7 @@ export default function SideNavBar({ isOpen, onClose }: { isOpen?: boolean, onCl
   const bottomLinks = [
     { href: '/support', icon: 'help', label: 'Support' },
     { href: '/logs', icon: 'terminal', label: 'Logs' },
+    { href: '/', icon: 'home', label: 'Home' },
   ];
 
   return (

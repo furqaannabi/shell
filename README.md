@@ -310,12 +310,6 @@ Previous (now-orphaned) IDs from the pre-republish chain are preserved in
 recovered by owners via the *old* package's `pool::cancel_anytime`; Shell
 deliberately did not migrate any of it.
 
-## Honest list — what's not shipped
-
-- **Matcher binding by `commit_hash`.** The IOI matcher currently pairs decrypted orders by free price-time priority over the whole in-enclave book; it does **not** bind acceptances back to the `commit_hash` baked into the originating IOI's `MatchInstruction`. Today's clean-slate package has zero stale `OrderCommitment` objects, so this isn't *currently* exploitable — but the moment a partially-finished test leaves a stale commitment behind, a new accept can match against it instead of the intended counterparty. The 2026-05-24 republish ([`docs/republish-brief.md`](docs/republish-brief.md)) was triggered by exactly this bug. Proper fix is sketched in the brief's "Known follow-up" section: extend `MatchPayload` with both expected `commit_hash` fields, assert them in `settle_direct` before crossing collateral.
-- **External-venue settlement leg.** Initial design called for settling each cross against DeepBook v3's CLOB. The integration is blocked at the protocol level: DeepBook testnet's pool stores `allowed_versions = {1..5}` but the deployed latest deepbook published-at has `current_version() = 8`, and Sui's publisher pins all downstream Move packages to that latest version's link table — so `pool::load_inner` aborts with `EPackageVersionDisabled`. Backed off to direct two-party settlement; external-venue routing returns to the roadmap when public on-chain venues maintain their allowed-versions invariant. Full forensics in [`docs/settle-fix-plan.md`](docs/settle-fix-plan.md) (Resolution section).
-- **Partial fills in the matcher.** v1 is whole-fill only.
-
 ## Conventions
 
 - Spec is the source of truth — design changes belong in [`product.md`](product.md) before code.

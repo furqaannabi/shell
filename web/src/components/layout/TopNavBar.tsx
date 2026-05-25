@@ -22,7 +22,7 @@ export default function TopNavBar({ onMenuToggle }: { onMenuToggle?: () => void 
         >
           <span className="material-symbols-outlined">menu</span>
         </button>
-        <div className="text-headline-md font-headline-md font-bold tracking-tighter text-primary">SHELL FINANCE</div>
+        <Link href="/" className="text-headline-md font-headline-md font-bold tracking-tighter text-primary hover:opacity-80 transition-opacity">SHELL FINANCE</Link>
         <div className="hidden md:flex gap-4 h-full items-center">
           {links.map(link => {
             const isActive = pathname === link.href;
