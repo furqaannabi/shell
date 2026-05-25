@@ -12,8 +12,7 @@ export default function SideNavBar({ isOpen, onClose }: { isOpen?: boolean, onCl
     { href: '/analytics', icon: 'insights', label: 'Analytics', mobileOnly: true },
     { href: '/agent', icon: 'handshake', label: 'IOI Desk' },
     { href: '/enclaves', icon: 'dns', label: 'Enclaves' },
-    { href: '/vaults', icon: 'account_balance_wallet', label: 'Vaults' },
-    { href: '/settings', icon: 'settings', label: 'Settings' },
+    { href: '/vaults', icon: 'account_balance_wallet', label: 'Portfolio' },
   ];
 
   const bottomLinks = [

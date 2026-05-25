@@ -1,8 +1,9 @@
 'use client';
 
-import { useSuiClient } from '@mysten/dapp-kit';
+import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
-import { ENCLAVE_ID, ENCLAVE_CONFIG_ID, ENCLAVE_URL, NETWORK, SHELL_PACKAGE_ID } from '@/lib/sui';
+import { ENCLAVE_ID, ENCLAVE_CONFIG_ID, ENCLAVE_URL, NETWORK, SHELL_PACKAGE_ID, QUOTE_SYMBOL } from '@/lib/sui';
+import { getReceipts } from '@/lib/shell-sdk';
 
 function truncate(addr: string, chars = 6): string {
   if (!addr || addr === '0x0') return '—';
@@ -12,7 +13,22 @@ function truncate(addr: string, chars = 6): string {
 
 const EXPLORER = (id: string) => `https://suiscan.xyz/${NETWORK}/object/${id}`;
 
+function truncateAddr(addr: string, chars = 4): string {
+  if (addr.length <= chars * 2 + 2) return addr;
+  return `${addr.slice(0, chars + 2)}...${addr.slice(-chars)}`;
+}
+
+function formatScaled(raw: string, decimals: number): string {
+  const n = BigInt(raw);
+  const scale = BigInt(10 ** decimals);
+  const whole = n / scale;
+  const frac = n % scale;
+  if (frac === BigInt(0)) return whole.toString();
+  return `${whole}.${frac.toString().padStart(decimals, '0').replace(/0+$/, '')}`;
+}
+
 export default function EnclavesPage() {
+  const account = useCurrentAccount();
   const suiClient = useSuiClient();
 
   const { data: configObj, isLoading: configLoading } = useQuery({
@@ -28,6 +44,21 @@ export default function EnclavesPage() {
     enabled: !!ENCLAVE_CONFIG_ID && ENCLAVE_CONFIG_ID !== '0x0',
     staleTime: 60_000,
   });
+
+  const { data: receipts } = useQuery({
+    queryKey: ['enclave-recent-fills', account?.address],
+    queryFn: () =>
+      getReceipts(suiClient, {
+        shellPackageId: SHELL_PACKAGE_ID,
+        owner: account!.address,
+      }),
+    enabled: !!account,
+    refetchInterval: 15_000,
+  });
+
+  const recentFills = receipts
+    ? [...receipts].sort((a, b) => b.objectId.localeCompare(a.objectId)).slice(0, 5)
+    : [];
 
   const { data: orderCount } = useQuery({
     queryKey: ['total-order-count', SHELL_PACKAGE_ID],
@@ -203,18 +234,50 @@ export default function EnclavesPage() {
             </div>
           </div>
 
-          {/* Security Events */}
+          {/* Recent Settlements */}
           <div className="glass-panel rounded border border-outline-variant p-4 flex-1 flex flex-col">
-            <h2 className="font-body-base text-on-surface font-medium border-b border-outline-variant pb-2 mb-4 flex justify-between">
-              Security Events
-              <span className="material-symbols-outlined text-on-surface-variant text-sm">filter_list</span>
+            <h2 className="font-body-base text-on-surface font-medium border-b border-outline-variant pb-2 mb-4 flex justify-between items-center">
+              Recent Settlements
+              <span className="material-symbols-outlined text-on-surface-variant text-sm">receipt_long</span>
             </h2>
-            <div className="flex-1 flex items-center justify-center text-on-surface-variant font-mono-sm text-mono-sm text-center px-4">
-              <div>
-                <span className="material-symbols-outlined text-[24px] opacity-20 block mb-2">event_note</span>
-                <span className="text-[11px]">Live event feed requires enclave log stream</span>
+            {!account ? (
+              <div className="flex-1 flex items-center justify-center text-on-surface-variant font-mono-sm text-mono-sm text-center px-4">
+                <div>
+                  <span className="material-symbols-outlined text-[24px] opacity-20 block mb-2">account_balance_wallet</span>
+                  <span className="text-[11px]">Connect wallet to view fills</span>
+                </div>
               </div>
-            </div>
+            ) : recentFills.length > 0 ? (
+              <div className="flex-1 flex flex-col gap-2 overflow-y-auto">
+                {recentFills.map((r) => (
+                  <a
+                    key={r.objectId}
+                    href={`https://suiscan.xyz/${NETWORK}/object/${r.objectId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 border border-outline-variant/30 rounded hover:border-secondary/50 transition-colors"
+                  >
+                    <div className="flex justify-between font-mono-data text-[11px]">
+                      <span className="text-primary">SETTLED</span>
+                      <span className="text-on-surface">
+                        {formatScaled(r.fields.filled_price, 6)} {QUOTE_SYMBOL}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-mono-sm text-[10px] text-on-surface-variant mt-1">
+                      <span>{formatScaled(r.fields.filled_size, 9)} SUI</span>
+                      <span>CP: {truncateAddr(r.fields.counterparty)}</span>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-on-surface-variant font-mono-sm text-mono-sm text-center px-4">
+                <div>
+                  <span className="material-symbols-outlined text-[24px] opacity-20 block mb-2">receipt_long</span>
+                  <span className="text-[11px]">No settlements yet</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

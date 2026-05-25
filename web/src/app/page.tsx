@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import LandingConnectButton from '@/components/wallet/LandingConnectButton';
 
 export default function LoginPage() {
@@ -80,20 +79,6 @@ export default function LoginPage() {
               {/* Primary Wallet Connect */}
               <LandingConnectButton />
               
-              <div className="relative py-4 flex items-center">
-                <div className="flex-grow border-t border-outline-variant"></div>
-                <span className="flex-shrink-0 mx-4 font-mono-sm text-mono-sm text-on-surface-variant">OR</span>
-                <div className="flex-grow border-t border-outline-variant"></div>
-              </div>
-              
-              {/* zkLogin / Web2 options */}
-              <div className="space-y-3">
-                <Link href="/terminal" className="w-full h-12 bg-transparent border border-[#2f3aa3] text-on-surface font-body-base text-body-base rounded hover:bg-secondary-container/20 transition-colors flex items-center justify-center gap-3 relative overflow-hidden group">
-                  <div className="absolute inset-y-0 left-0 w-1 bg-[#2f3aa3] group-hover:w-full transition-all duration-300 opacity-10"></div>
-                  <span className="material-symbols-outlined text-secondary">vpn_key</span>
-                  Institutional zkLogin
-                </Link>
-              </div>
             </div>
             
             {/* Terms */}
