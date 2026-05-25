@@ -43,18 +43,7 @@ export default function TopNavBar({ onMenuToggle }: { onMenuToggle?: () => void 
         </div>
       </div>
       <div className="flex items-center gap-2 md:gap-4">
-        <div className="hidden md:flex gap-2">
-          <button className="p-2 rounded-full text-on-surface-variant hover:text-primary transition-colors duration-200 cursor-pointer" title="Security">
-            <span className="material-symbols-outlined">security</span>
-          </button>
-          <button className="p-2 rounded-full text-on-surface-variant hover:text-primary transition-colors duration-200 cursor-pointer" title="Notifications">
-            <span className="material-symbols-outlined">notifications</span>
-          </button>
-        </div>
         <ConnectWalletButton />
-        <div className="w-7 h-7 md:w-8 md:h-8 rounded-full border border-outline-variant bg-surface-container flex items-center justify-center overflow-hidden cursor-pointer flex-shrink-0">
-          <span className="material-symbols-outlined text-[14px] md:text-sm text-on-surface">person</span>
-        </div>
       </div>
     </nav>
   );
