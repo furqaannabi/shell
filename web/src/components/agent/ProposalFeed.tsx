@@ -287,13 +287,14 @@ export default function ProposalFeed() {
       (a, b) => a.timestamp - b.timestamp,
     );
     for (const p of sorted) {
-      if (p.agreedSize === BigInt(0)) continue; // blob decode failed
       const key = proposalKey(p);
       // Settled? Match by counterparty only — the enclave's order
       // matcher re-prices/re-sizes via price-time priority over the
       // live order book, so filled_price/size frequently diverge from
       // the IOI proposal's agreed_price/size. Counterparty pair within
       // a short timing window is the unambiguous signal.
+      // Run this check even when blob decode failed (agreedSize=0) so
+      // expired-blob rows still flip to SETTLED when a receipt exists.
       const rIdx = remainingReceipts.findIndex(
         (r) =>
           r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase(),
@@ -306,6 +307,7 @@ export default function ProposalFeed() {
         remainingReceipts.splice(rIdx, 1);
         continue;
       }
+      if (p.agreedSize === BigInt(0)) continue; // blob decode failed — can't compute collateral
       // Accepted but not yet settled?
       const expectedType =
         p.side === 'buy' ? QUOTE_COIN_TYPE : BASE_COIN_TYPE;
