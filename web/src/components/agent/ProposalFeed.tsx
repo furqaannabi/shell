@@ -379,6 +379,7 @@ export default function ProposalFeed() {
           limitPrice: agreedPrice,
           expiryEpoch,
           maxSlippageBps: 50,
+          asset: baseCoin,
         },
       });
 

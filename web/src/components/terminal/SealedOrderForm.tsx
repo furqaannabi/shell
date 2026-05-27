@@ -71,6 +71,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
           limitPrice: priceBase,
           expiryEpoch,
           maxSlippageBps,
+          asset: pair.baseCoinType,
         },
       });
 
