@@ -17,6 +17,7 @@ import {
 import { getBlob } from '@/lib/walrus';
 import { MatchProposalBcs } from '@/lib/ioi';
 import { friendlyError } from '@/lib/errors';
+import { playDing } from '@/lib/sound';
 import {
   BASE_COIN_TYPE,
   QUOTE_COIN_TYPE,
@@ -338,22 +339,7 @@ export default function ProposalFeed() {
     const isFirstPass = seenDigests.current.size === 0;
     newOnes.forEach((p) => seenDigests.current.add(p.txDigest));
     if (isFirstPass || newOnes.length === 0) return;
-    try {
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.4);
-    } catch {
-      // AudioContext blocked (e.g. no user gesture yet) — silent fail.
-    }
+    playDing();
   }, [data]);
 
   async function handleAccept(

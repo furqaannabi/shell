@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { SHELL_PACKAGE_ID, QUOTE_SYMBOL, NETWORK } from '@/lib/sui';
 import { getReceipts } from '@/lib/shell-sdk';
+import { playBellChime } from '@/lib/sound';
 
 function truncateAddr(addr: string, chars = 4): string {
   if (addr.length <= chars * 2 + 2) return addr;
@@ -51,22 +52,7 @@ export default function SettlementReceipts() {
     const newIds = fresh.map((r) => r.objectId);
     setFlashIds(new Set(newIds));
     setTimeout(() => setFlashIds(new Set()), 1500);
-    try {
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(660, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(990, ctx.currentTime + 0.25);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.35);
-    } catch {
-      // AudioContext blocked (no user gesture yet) — silent fail.
-    }
+    playBellChime();
   }, [receipts]);
 
   return (
