@@ -193,8 +193,11 @@ struct DecryptedOrder {
     size: u64,
     limit_price: u64,
     expiry_epoch: u64,
-    /// Move type of collateral coin (e.g. "0x2::sui::SUI")
+    /// Move type of collateral coin (e.g. "0x2::sui::SUI" or USDC type)
     collateral_type: String,
+    /// Move type of base asset (e.g. "0x2::sui::SUI" or TBILL type).
+    /// Derived from plaintext; falls back to SUI for legacy orders.
+    asset: String,
 }
 
 pub type OrderBook = Arc<RwLock<HashMap<[u8; 32], DecryptedOrder>>>;
@@ -372,6 +375,7 @@ fn decode_side_channel_orders(input: &[OrderInput]) -> Result<Vec<DecryptedOrder
                 // type is recovered from the on-chain OrderCommitment<T> tag
                 // by the spike script itself, not by us.
                 collateral_type: "0x2::sui::SUI".to_string(),
+                asset: "0x2::sui::SUI".to_string(),
             })
         })
         .collect()
@@ -799,7 +803,9 @@ async fn decrypt_order(
         b
     })
     .unwrap_or(plaintext_bytes[0]);
-    // Simpler: decode the full struct at once
+    // Decode the full struct at once. The `asset` field is optional and
+    // appended after `max_slippage_bps` for backward compatibility —
+    // old orders that lack the field are treated as SUI base asset.
     #[derive(Deserialize)]
     struct PlaintextBcs {
         side: u8,
@@ -810,11 +816,30 @@ async fn decrypt_order(
         #[allow(dead_code)]
         max_slippage_bps: u32,
     }
+    #[derive(Deserialize)]
+    struct PlaintextBcsWithAsset {
+        side: u8,
+        size: u64,
+        limit_price: u64,
+        #[allow(dead_code)]
+        expiry_epoch: u64,
+        #[allow(dead_code)]
+        max_slippage_bps: u32,
+        asset: String,
+    }
     let _ = side_byte; // suppress unused warning from partial read attempt above
-    let p: PlaintextBcs = bcs::from_bytes(&plaintext_bytes)
-        .map_err(|e| EnclaveError::GenericError(format!("bcs decode: {e}")))?;
 
-    let side = match p.side {
+    // Try to decode with asset first; fall back to legacy layout.
+    let (side_byte_val, size, limit_price, asset) =
+        if let Ok(p) = bcs::from_bytes::<PlaintextBcsWithAsset>(&plaintext_bytes) {
+            (p.side, p.size, p.limit_price, p.asset)
+        } else {
+            let p: PlaintextBcs = bcs::from_bytes(&plaintext_bytes)
+                .map_err(|e| EnclaveError::GenericError(format!("bcs decode: {e}")))?;
+            (p.side, p.size, p.limit_price, "0x2::sui::SUI".to_string())
+        };
+
+    let side = match side_byte_val {
         0 => Side::Buy,
         1 => Side::Sell,
         other => return Err(EnclaveError::GenericError(format!("bad side byte: {other}"))),
@@ -826,10 +851,11 @@ async fn decrypt_order(
         order_id,
         trader,
         side,
-        size: p.size,
-        limit_price: p.limit_price,
+        size,
+        limit_price,
         expiry_epoch,
         collateral_type,
+        asset,
     })
 }
 
@@ -1447,51 +1473,60 @@ fn parse_hex32(s: &str) -> Result<[u8; 32], EnclaveError> {
 
 /// Price-time-priority matcher. Whole-fill only. Maker = lower input index.
 fn match_orders(orders: &[DecryptedOrder]) -> Vec<MatchPayload> {
-    let mut bids: Vec<(usize, &DecryptedOrder)> = orders
-        .iter()
-        .enumerate()
-        .filter(|(_, o)| matches!(o.side, Side::Buy))
-        .collect();
-    let mut asks: Vec<(usize, &DecryptedOrder)> = orders
-        .iter()
-        .enumerate()
-        .filter(|(_, o)| matches!(o.side, Side::Sell))
-        .collect();
-
-    bids.sort_by(|a, b| b.1.limit_price.cmp(&a.1.limit_price).then(a.0.cmp(&b.0)));
-    asks.sort_by(|a, b| a.1.limit_price.cmp(&b.1.limit_price).then(a.0.cmp(&b.0)));
+    // Group by asset so SUI and TBILL orders never cross.
+    let mut assets: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for o in orders {
+        assets.insert(&o.asset);
+    }
 
     let mut fills = Vec::new();
-    let (mut bi, mut ai) = (0usize, 0usize);
 
-    while bi < bids.len() && ai < asks.len() {
-        let (_, bid) = bids[bi];
-        let (_, ask) = asks[ai];
+    for asset in assets {
+        let mut bids: Vec<(usize, &DecryptedOrder)> = orders
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| matches!(o.side, Side::Buy) && o.asset == asset)
+            .collect();
+        let mut asks: Vec<(usize, &DecryptedOrder)> = orders
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| matches!(o.side, Side::Sell) && o.asset == asset)
+            .collect();
 
-        if bid.limit_price < ask.limit_price {
-            break;
+        bids.sort_by(|a, b| b.1.limit_price.cmp(&a.1.limit_price).then(a.0.cmp(&b.0)));
+        asks.sort_by(|a, b| a.1.limit_price.cmp(&b.1.limit_price).then(a.0.cmp(&b.0)));
+
+        let (mut bi, mut ai) = (0usize, 0usize);
+
+        while bi < bids.len() && ai < asks.len() {
+            let (_, bid) = bids[bi];
+            let (_, ask) = asks[ai];
+
+            if bid.limit_price < ask.limit_price {
+                break;
+            }
+            if bid.size != ask.size {
+                if bid.size > ask.size { ai += 1; } else { bi += 1; }
+                continue;
+            }
+
+            // settlement.move requires maker.collateral=base and
+            // taker.collateral=quote so type args line up with
+            // DeepBook's Pool<TBase, TQuote>. Always pin maker=sell side.
+            let (maker, taker) = (ask, bid);
+            fills.push(MatchPayload {
+                maker: maker.trader,
+                taker: taker.trader,
+                maker_order: maker.order_id,
+                taker_order: taker.order_id,
+                filled_size: bid.size,
+                filled_price: maker.limit_price,
+                deepbook_tx_digest: vec![],
+            });
+
+            bi += 1;
+            ai += 1;
         }
-        if bid.size != ask.size {
-            if bid.size > ask.size { ai += 1; } else { bi += 1; }
-            continue;
-        }
-
-        // settlement.move requires maker.collateral=base (SUI) and
-        // taker.collateral=quote (USDC) so the type args line up with
-        // DeepBook's Pool<TBase, TQuote>. Always pin maker=sell side.
-        let (maker, taker) = (ask, bid);
-        fills.push(MatchPayload {
-            maker: maker.trader,
-            taker: taker.trader,
-            maker_order: maker.order_id,
-            taker_order: taker.order_id,
-            filled_size: bid.size,
-            filled_price: maker.limit_price,
-            deepbook_tx_digest: vec![],
-        });
-
-        bi += 1;
-        ai += 1;
     }
 
     fills
@@ -2196,6 +2231,7 @@ mod test {
             limit_price: price,
             expiry_epoch: 9999,
             collateral_type: "0x2::sui::SUI".into(),
+            asset: "0x2::sui::SUI".into(),
         }
     }
 
