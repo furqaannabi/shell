@@ -415,8 +415,9 @@ export default function ProposalFeed() {
         const totalCoin = coins.data.reduce((s, c) => s + BigInt(c.balance), BigInt(0));
         if (totalCoin < collateralAmount) {
           const pair = TRADING_PAIRS.find((tp) => tp.quoteCoinType === collateralType || tp.baseCoinType === collateralType);
-          const decimals = pair?.quoteDecimals ?? pair?.baseDecimals ?? 6;
-          const sym = pair?.quoteSymbol ?? collateralType.split('::').pop() ?? collateralType;
+          const isBase = pair?.baseCoinType === collateralType;
+          const decimals = isBase ? (pair?.baseDecimals ?? 6) : (pair?.quoteDecimals ?? 6);
+          const sym = (isBase ? pair?.baseSymbol : pair?.quoteSymbol) ?? collateralType.split('::').pop() ?? collateralType;
           const fmt = (n: bigint) => (Number(n) / 10 ** decimals).toFixed(decimals);
           throw new Error(
             `Insufficient ${sym}: need ${fmt(collateralAmount)} ${sym}, wallet has ${fmt(totalCoin)} ${sym}.`,
