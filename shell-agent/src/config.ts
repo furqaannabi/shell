@@ -63,6 +63,9 @@ export const config = {
     process.env.DEEPBOOK_INDEXER_URL ??
     "https://deepbook-indexer.testnet.mystenlabs.com",
   deepbookPoolKey: process.env.DEEPBOOK_POOL_KEY ?? "SUI_DBUSDC",
+  // Base + quote coin types. Base defaults to SUI; set AGENT_BASE_COIN_TYPE for RWA pairs.
+  baseCoinType: process.env.AGENT_BASE_COIN_TYPE ?? "0x2::sui::SUI",
+  baseDecimals: parseInt(process.env.AGENT_BASE_DECIMALS ?? "9", 10),
   // Quote coin — Sui testnet USDC. Mirrors web/src/lib/sui.ts.
   quoteCoinType:
     process.env.QUOTE_COIN_TYPE ??

@@ -13,11 +13,12 @@ import { putBlob } from '@/lib/walrus';
 import { friendlyError } from '@/lib/errors';
 import {
   DEEPBOOK_INDEXER_URL,
-  DEEPBOOK_POOL_KEY,
-  QUOTE_SYMBOL,
   SHELL_PACKAGE_ID,
   SHELL_PACKAGE_ID_LATEST,
   getSealClient,
+  ACTIVE_PAIRS,
+  DEFAULT_PAIR,
+  type TradingPair,
 } from '@/lib/sui';
 
 interface MidPrice {
@@ -26,10 +27,13 @@ interface MidPrice {
   mid: number;
 }
 
-async function fetchMidPrice(): Promise<MidPrice | null> {
+async function fetchMidPrice(pair: TradingPair): Promise<MidPrice | null> {
+  if (pair.priceSource === 'fixed' && pair.fixedPrice != null) {
+    return { bid: pair.fixedPrice, ask: pair.fixedPrice, mid: pair.fixedPrice };
+  }
   try {
     const res = await fetch(
-      `${DEEPBOOK_INDEXER_URL}/orderbook/${DEEPBOOK_POOL_KEY}?level=2&depth=2`,
+      `${DEEPBOOK_INDEXER_URL}/orderbook/${pair.deepbookPoolKey}?level=2&depth=2`,
     );
     if (!res.ok) return null;
     const j = (await res.json()) as {
@@ -51,6 +55,7 @@ export default function IOIForm() {
   const queryClient = useQueryClient();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
 
+  const [pair, setPair] = useState<TradingPair>(DEFAULT_PAIR);
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [sizeLo, setSizeLo] = useState('');
   const [sizeHi, setSizeHi] = useState('');
@@ -59,17 +64,17 @@ export default function IOIForm() {
   const [ttlMin, setTtlMin] = useState('30');
 
   const { data: market } = useQuery({
-    queryKey: ['deepbook-mid', DEEPBOOK_POOL_KEY],
-    queryFn: fetchMidPrice,
+    queryKey: ['deepbook-mid', pair.baseCoinType],
+    queryFn: () => fetchMidPrice(pair),
     refetchInterval: 10_000,
     staleTime: 5_000,
   });
 
   async function applyMarketRange() {
     let m = market;
-    if (!m) m = await fetchMidPrice();
+    if (!m) m = await fetchMidPrice(pair);
     if (!m) {
-      setError('DeepBook market price unavailable');
+      setError('Reference price unavailable');
       return;
     }
     const lo = side === 'buy' ? m.mid * 0.99 : m.mid * 0.98;
@@ -95,10 +100,10 @@ export default function IOIForm() {
 
     try {
       // Parse inputs to base units.
-      // Size = base raw (SUI 9 decimals). Price = DeepBook-scaled quote_per_base
-      // (10^(9-base_dec+quote_dec) = 1e6 for SUI/DUSDC) — matches SealedOrderForm.
-      const sizeLoBase = BigInt(Math.round(parseFloat(sizeLo) * 1_000_000_000));
-      const sizeHiBase = BigInt(Math.round(parseFloat(sizeHi) * 1_000_000_000));
+      // Size = base raw (pair.baseDecimals). Price = 1e6-scaled quote_per_base.
+      const baseScale = 10 ** pair.baseDecimals;
+      const sizeLoBase = BigInt(Math.round(parseFloat(sizeLo) * baseScale));
+      const sizeHiBase = BigInt(Math.round(parseFloat(sizeHi) * baseScale));
       const priceLoBase = BigInt(Math.round(parseFloat(priceLo) * 1_000_000));
       const priceHiBase = BigInt(Math.round(parseFloat(priceHi) * 1_000_000));
       if (sizeLoBase > sizeHiBase || priceLoBase > priceHiBase) {
@@ -112,7 +117,7 @@ export default function IOIForm() {
       const seal = getSealClient(suiClient);
       const envelope = await encryptIoi(seal, SHELL_PACKAGE_ID, {
         side,
-        asset: '0x2::sui::SUI',
+        asset: pair.baseCoinType,
         sizeLo: sizeLoBase,
         sizeHi: sizeHiBase,
         priceLo: priceLoBase,
@@ -169,6 +174,26 @@ export default function IOIForm() {
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        {/* Pair selector — only shown when multiple active pairs */}
+        {ACTIVE_PAIRS.length > 1 && (
+          <div className="flex gap-1 p-1 bg-surface-container-high rounded border border-outline-variant">
+            {ACTIVE_PAIRS.map((p) => (
+              <button
+                key={p.baseCoinType}
+                type="button"
+                onClick={() => { setPair(p); setSizeLo(''); setSizeHi(''); setPriceLo(''); setPriceHi(''); }}
+                className={`flex-1 py-1 rounded font-mono-sm text-[10px] transition-colors cursor-pointer ${
+                  pair.baseCoinType === p.baseCoinType
+                    ? 'bg-primary/20 border border-primary text-primary'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                {p.label ?? `${p.baseSymbol}/${p.quoteSymbol}`}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -197,7 +222,7 @@ export default function IOIForm() {
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">
-              Size min (SUI)
+              Size min ({pair.baseSymbol})
             </span>
             <input
               className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data"
@@ -209,7 +234,7 @@ export default function IOIForm() {
           </label>
           <label className="block">
             <span className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">
-              Size max (SUI)
+              Size max ({pair.baseSymbol})
             </span>
             <input
               className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data"
@@ -225,33 +250,35 @@ export default function IOIForm() {
           <span>
             {market ? (
               <>
-                <span className="opacity-60">DeepBook ref</span>{' '}
+                <span className="opacity-60">{pair.priceSource === 'fixed' ? 'NAV' : 'DeepBook ref'}</span>{' '}
                 <span className="text-secondary">
-                  {market.mid.toFixed(3)} {QUOTE_SYMBOL}
+                  {market.mid.toFixed(3)} {pair.quoteSymbol}
                 </span>
-                <span className="opacity-60">
-                  {' '}
-                  (bid {market.bid.toFixed(3)} / ask {market.ask.toFixed(3)})
-                </span>
+                {pair.priceSource === 'deepbook' && (
+                  <span className="opacity-60">
+                    {' '}
+                    (bid {market.bid.toFixed(3)} / ask {market.ask.toFixed(3)})
+                  </span>
+                )}
               </>
             ) : (
-              <span className="opacity-60">DeepBook reference unavailable</span>
+              <span className="opacity-60">Reference price unavailable</span>
             )}
           </span>
           <button
             type="button"
             onClick={() => void applyMarketRange()}
             className="text-primary border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors cursor-pointer"
-            title="Fill price range around DeepBook mid. Shell settles directly between counterparties — this is a reference only, not a constraint."
+            title="Fill price range around reference price. Shell settles directly between counterparties — this is a reference only, not a constraint."
           >
-            Use DeepBook ref ±2%
+            Use ref price ±2%
           </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">
-              Price min ({QUOTE_SYMBOL})
+              Price min ({pair.quoteSymbol})
             </span>
             <input
               className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data"
@@ -267,7 +294,7 @@ export default function IOIForm() {
           </label>
           <label className="block">
             <span className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">
-              Price max ({QUOTE_SYMBOL})
+              Price max ({pair.quoteSymbol})
             </span>
             <input
               className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data"

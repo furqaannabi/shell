@@ -12,9 +12,7 @@ import {
 import { config } from "./config.js";
 import type { MatchProposal } from "./proposals.js";
 
-/** Quote coin type — Sui testnet USDC. Mirrors web/src/lib/sui.ts. */
-const QUOTE_COIN_TYPE =
-  "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC";
+const SUI_TYPE = "0x2::sui::SUI";
 
 /** Build + submit a Shell sealed order matching the agent's side of a
  *  match proposal. For now uses the proposal's `agreedPrice` as the
@@ -45,32 +43,30 @@ export async function submitOrderFromProposal(opts: {
     order: plaintext,
   });
 
-  // Collateral coin: buy → quote (USDC), sell → base (SUI).
+  // Collateral: buy → quote coin, sell → base coin.
   const isBuy = proposal.side === "buy";
-  const collateralType = isBuy ? QUOTE_COIN_TYPE : "0x2::sui::SUI";
-  const FLOAT_SCALING = 1_000_000_000n;
-  // size: base raw (1e9). price: 1e6 scale (matches IOIForm/SealedOrderForm).
-  // quote_raw = size * price / 1e9.
+  const collateralType = isBuy ? config.quoteCoinType : config.baseCoinType;
+  const floatScaling = BigInt(10 ** config.baseDecimals);
   const collateralAmount = isBuy
-    ? (proposal.agreedSize * proposal.agreedPrice) / FLOAT_SCALING
+    ? (proposal.agreedSize * proposal.agreedPrice) / floatScaling
     : proposal.agreedSize;
 
   const tx = new Transaction();
   let collateralArg;
-  if (isBuy) {
+  if (!isBuy && collateralType === SUI_TYPE) {
+    const [c] = tx.splitCoins(tx.gas, [tx.pure.u64(collateralAmount)]);
+    collateralArg = c!;
+  } else {
     const coins = await opts.suiClient.getCoins({
       owner: opts.keypair.toSuiAddress(),
       coinType: collateralType,
     });
     if (coins.data.length === 0) {
       const sym = collateralType.split("::").pop() ?? collateralType;
-      throw new Error(`no ${sym} coin in wallet to use as buy collateral`);
+      throw new Error(`no ${sym} coin in wallet to use as collateral`);
     }
     const primary = tx.object(coins.data[0]!.coinObjectId);
     const [c] = tx.splitCoins(primary, [tx.pure.u64(collateralAmount)]);
-    collateralArg = c!;
-  } else {
-    const [c] = tx.splitCoins(tx.gas, [tx.pure.u64(collateralAmount)]);
     collateralArg = c!;
   }
 

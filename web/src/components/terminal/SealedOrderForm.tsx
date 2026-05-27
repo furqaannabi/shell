@@ -6,8 +6,8 @@ import { Transaction } from '@mysten/sui/transactions';
 import { encryptOrder, submitOrderTx } from '@/lib/shell-sdk';
 import type { OrderSide } from '@/lib/shell-sdk';
 import {
-  SHELL_PACKAGE_ID, QUOTE_SYMBOL,
-  collateralTypeFor, getSealClient,
+  SHELL_PACKAGE_ID, collateralTypeFor, getSealClient,
+  ACTIVE_PAIRS, DEFAULT_PAIR, type TradingPair,
 } from '@/lib/sui';
 import { friendlyError } from '@/lib/errors';
 
@@ -31,6 +31,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
   const suiClient = useSuiClient();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
 
+  const [pair, setPair] = useState<TradingPair>(DEFAULT_PAIR);
   const [side, setSide] = useState<OrderSide>('buy');
   const [size, setSize] = useState('');
   const [limitPrice, setLimitPrice] = useState('');
@@ -39,13 +40,10 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Collateral the user will escrow:
-  //   sell → the SUI being sold (= size)
-  //   buy  → the DUSDC being paid (= size × limitPrice)
   const displayCollateral = (() => {
-    if (side === 'sell') return size ? `${size} SUI` : '? SUI';
-    if (!size || !limitPrice) return `? ${QUOTE_SYMBOL}`;
-    return `${(parseFloat(size) * parseFloat(limitPrice)).toFixed(2)} ${QUOTE_SYMBOL}`;
+    if (side === 'sell') return size ? `${size} ${pair.baseSymbol}` : `? ${pair.baseSymbol}`;
+    if (!size || !limitPrice) return `? ${pair.quoteSymbol}`;
+    return `${(parseFloat(size) * parseFloat(limitPrice)).toFixed(2)} ${pair.quoteSymbol}`;
   })();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -59,7 +57,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
       const { epoch } = await suiClient.getLatestSuiSystemState();
       const expiryEpoch = BigInt(epoch) + BigInt(expiry);
 
-      const sizeBase = BigInt(Math.round(parseFloat(size) * 1_000_000_000));
+      const sizeBase = BigInt(Math.round(parseFloat(size) * 10 ** pair.baseDecimals));
       const priceBase = BigInt(Math.round(parseFloat(limitPrice) * 1_000_000));
       const maxSlippageBps = Math.round(parseFloat(slippage) * 100);
 
@@ -80,11 +78,12 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
       localStorage.setItem(`shell_backup_${Date.now()}`, backupKeyHex);
 
       const tx = new Transaction();
-      const collateralType = collateralTypeFor(side);
+      const collateralType = collateralTypeFor(side, pair);
       const SUI_TYPE = '0x2::sui::SUI';
+      const floatScaling = BigInt(10 ** pair.baseDecimals);
       const collateralAmount = side === 'sell'
         ? sizeBase
-        : (sizeBase * priceBase) / BigInt(1_000_000_000);
+        : (sizeBase * priceBase) / floatScaling;
 
       let collateral;
       if (collateralType === SUI_TYPE) {
@@ -159,11 +158,31 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         )}
       </div>
       <form className="flex flex-col gap-4 flex-1" onSubmit={handleSubmit}>
+        {/* Pair selector — only shown when multiple active pairs */}
+        {ACTIVE_PAIRS.length > 1 && (
+          <div className="flex gap-1 p-1 bg-surface-container-high rounded border border-outline-variant">
+            {ACTIVE_PAIRS.map((p) => (
+              <button
+                key={p.baseCoinType}
+                type="button"
+                onClick={() => { setPair(p); setSize(''); setLimitPrice(''); }}
+                className={`flex-1 py-1 rounded font-mono-sm text-[10px] transition-colors cursor-pointer ${
+                  pair.baseCoinType === p.baseCoinType
+                    ? 'bg-primary/20 border border-primary text-primary'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                {p.label ?? `${p.baseSymbol}/${p.quoteSymbol}`}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Asset */}
         <div className="relative group">
           <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Asset</label>
           <div className="relative">
-            <input className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data pr-24" type="text" value={`SUI/${QUOTE_SYMBOL}`} readOnly />
+            <input className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data pr-24" type="text" value={`${pair.baseSymbol}/${pair.quoteSymbol}`} readOnly />
             <span className="absolute right-2 top-2 text-primary font-mono-sm text-[10px] pointer-events-none select-none">ENCRYPTED</span>
           </div>
         </div>
@@ -206,7 +225,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
               onChange={(e) => setSize(e.target.value)}
               inputMode="decimal"
             />
-            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">SUI</span>
+            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">{pair.baseSymbol}</span>
           </div>
         </div>
 
@@ -225,7 +244,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
               onChange={(e) => setLimitPrice(e.target.value)}
               inputMode="decimal"
             />
-            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">{QUOTE_SYMBOL}</span>
+            <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">{pair.quoteSymbol}</span>
           </div>
         </div>
 

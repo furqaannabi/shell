@@ -1,0 +1,6 @@
+[package]
+name = "rwa_mock"
+edition = "2024.beta"
+
+[addresses]
+rwa_mock = "0x0"

@@ -97,9 +97,11 @@ export const BASE_COIN_TYPE = '0x2::sui::SUI';
 
 /**
  * Move type of the collateral coin for a given order side.
- * Buy → post quote (USDC). Sell → post base (SUI).
+ * Buy → post quote (USDC). Sell → post base coin.
+ * Accepts optional pair — defaults to SUI/USDC.
  */
-export function collateralTypeFor(side: 'buy' | 'sell'): string {
+export function collateralTypeFor(side: 'buy' | 'sell', pair?: TradingPair): string {
+  if (pair) return side === 'buy' ? pair.quoteCoinType : pair.baseCoinType;
   return side === 'buy' ? QUOTE_COIN_TYPE : BASE_COIN_TYPE;
 }
 
@@ -107,6 +109,84 @@ export const DEFAULT_COLLATERAL_AMOUNT = BigInt(10_000_000); // 0.01 SUI / 10 US
 
 // Kept for backwards-compat with existing imports — defaults to sell-side.
 export const COLLATERAL_TYPE = BASE_COIN_TYPE;
+
+// ── Multi-pair trading config ────────────────────────────────────────
+
+export interface TradingPair {
+  enabled: boolean;
+  label?: string;
+  baseSymbol: string;
+  baseCoinType: string;
+  baseDecimals: number;
+  quoteSymbol: string;
+  quoteCoinType: string;
+  quoteDecimals: number;
+  deepbookPoolKey: string | null;
+  priceSource: 'deepbook' | 'fixed';
+  fixedPrice?: number;
+  /** Sui TransferPolicy object ID — set for policy-gated RWA tokens. */
+  transferPolicyId?: string;
+}
+
+// TBILL coin type is set after publishing rwa-mock package.
+// Set NEXT_PUBLIC_TBILL_COIN_TYPE in .env.local after `sui client publish rwa-mock/`.
+const TBILL_COIN_TYPE = process.env.NEXT_PUBLIC_TBILL_COIN_TYPE ?? '';
+
+export const TRADING_PAIRS: TradingPair[] = [
+  {
+    enabled: true,
+    baseSymbol: 'SUI', baseCoinType: BASE_COIN_TYPE, baseDecimals: 9,
+    quoteSymbol: QUOTE_SYMBOL, quoteCoinType: QUOTE_COIN_TYPE, quoteDecimals: 6,
+    deepbookPoolKey: DEEPBOOK_POOL_KEY, priceSource: 'deepbook',
+  },
+  {
+    // Testnet mock — disable on mainnet, replace with real RWA coin type.
+    enabled: !!TBILL_COIN_TYPE,
+    label: 'T-Bill (Mock)',
+    baseSymbol: 'TBILL', baseCoinType: TBILL_COIN_TYPE, baseDecimals: 6,
+    quoteSymbol: QUOTE_SYMBOL, quoteCoinType: QUOTE_COIN_TYPE, quoteDecimals: 6,
+    deepbookPoolKey: null, priceSource: 'fixed', fixedPrice: 1.00,
+  },
+  {
+    // Ondo USDY — flip enabled=true on Sui mainnet.
+    enabled: false,
+    label: 'USDY (Ondo Finance)',
+    baseSymbol: 'USDY',
+    baseCoinType: '0x0000000000000000000000000000000000000000000000000000000000000000::usdy::USDY',
+    baseDecimals: 6,
+    quoteSymbol: 'USDC',
+    quoteCoinType: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
+    quoteDecimals: 6,
+    deepbookPoolKey: null, priceSource: 'fixed', fixedPrice: 1.00,
+  },
+  {
+    // Franklin Templeton BENJI — flip enabled=true on Sui mainnet.
+    enabled: false,
+    label: 'BENJI (Franklin Templeton)',
+    baseSymbol: 'BENJI',
+    baseCoinType: '0x0000000000000000000000000000000000000000000000000000000000000001::benji::BENJI',
+    baseDecimals: 6,
+    quoteSymbol: 'USDC',
+    quoteCoinType: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
+    quoteDecimals: 6,
+    deepbookPoolKey: null, priceSource: 'fixed', fixedPrice: 1.00,
+  },
+  {
+    // BlackRock BUIDL — flip enabled=true on Sui mainnet.
+    enabled: false,
+    label: 'BUIDL (BlackRock)',
+    baseSymbol: 'BUIDL',
+    baseCoinType: '0x0000000000000000000000000000000000000000000000000000000000000002::buidl::BUIDL',
+    baseDecimals: 6,
+    quoteSymbol: 'USDC',
+    quoteCoinType: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
+    quoteDecimals: 6,
+    deepbookPoolKey: null, priceSource: 'fixed', fixedPrice: 1.00,
+  },
+];
+
+export const ACTIVE_PAIRS = TRADING_PAIRS.filter((p) => p.enabled);
+export const DEFAULT_PAIR = ACTIVE_PAIRS[0]!;
 
 // ── Seal client factory ─────────────────────────────────────────────
 let _sealClient: SealClient | null = null;
