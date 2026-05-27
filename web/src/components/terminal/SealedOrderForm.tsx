@@ -175,7 +175,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
                     : 'text-on-surface-variant hover:text-on-surface cursor-pointer'
               }`}
             >
-              {p.label ?? `${p.baseSymbol}/${p.quoteSymbol}`}
+              {p.baseSymbol}/{p.quoteSymbol}
             </button>
           ))}
         </div>
