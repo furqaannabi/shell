@@ -2,6 +2,7 @@ import type { ChatMessage, LlmClient, LlmDecision } from "./index.js";
 import { buildSystemPrompt, buildUserMessage } from "./prompt.js";
 import type { MatchProposal } from "../proposals.js";
 import type { ToolCtx, ToolRegistry } from "../tools/registry.js";
+import { logTool, logWarn } from "../log.js";
 
 const MAX_ROUNDS = 6;
 
@@ -48,9 +49,7 @@ export async function decideOnProposal(opts: {
       // Execute each tool and push its result.
       for (const tc of res.toolCalls) {
         const result = await tools.execute(tc.name, tc.arguments, ctx);
-        console.log(
-          `[tool] ${tc.name}(${shortJson(tc.arguments)}) → ${shortJson(result)}`,
-        );
+        logTool(tc.name, tc.arguments, result);
         messages.push({
           role: "tool",
           toolCallId: tc.id,
@@ -65,7 +64,7 @@ export async function decideOnProposal(opts: {
   }
 
   // Hit the round cap — force a final answer with one more call.
-  console.warn(`[loop] hit round cap (${MAX_ROUNDS}); forcing final decision`);
+  logWarn(`hit round cap (${MAX_ROUNDS}); forcing final decision`);
   const final = await llm.chat({
     system: system + "\n\nYou have used your tool-call budget. Respond NOW with the final JSON object only.",
     messages,
@@ -105,8 +104,3 @@ function parseDecision(text: string): LlmDecision {
   };
 }
 
-function shortJson(v: unknown): string {
-  const s = JSON.stringify(v);
-  if (!s) return "";
-  return s.length > 140 ? s.slice(0, 137) + "..." : s;
-}

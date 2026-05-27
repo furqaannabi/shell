@@ -21,6 +21,7 @@
     "@mysten/seal": "1.1.3",
     "@mysten/sui": "2.16.2",
     "@shell-finance/sdk": "file:../ts-sdk",
+    "chalk": "^5.6.2",
     "dotenv": "^16.4.0",
     "openai": "^4.77.0",
     "zod": "^3.25.76"

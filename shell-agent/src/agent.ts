@@ -7,6 +7,7 @@ import { appendEntry } from "./journal.js";
 import { postIoi } from "./ioi.js";
 import { makeLlmClient } from "./llm/index.js";
 import { decideOnProposal } from "./llm/loop.js";
+import { logEvent, logFail, logVerdict, logWarn } from "./log.js";
 import { submitOrderFromProposal } from "./orders.js";
 import { pollProposals } from "./proposals.js";
 import { ToolRegistry } from "./tools/registry.js";
@@ -28,8 +29,8 @@ const SEAL_TESTNET_KEY_SERVER = {
 export async function runAgent(): Promise<void> {
   const keypair = Ed25519Keypair.fromSecretKey(config.agentPrivateKey);
   const agentAddr = keypair.toSuiAddress();
-  console.log(`[agent] address ${agentAddr}`);
-  console.log(`[agent] policy: ${config.agentPolicy}`);
+  logEvent('INFO', `address ${agentAddr}`);
+  logEvent('INFO', `policy: ${config.agentPolicy}`);
 
   const suiClient = new SuiJsonRpcClient({
     url: config.suiRpcUrl,
@@ -50,13 +51,13 @@ export async function runAgent(): Promise<void> {
 
   process.once("SIGTERM", () => void closeMcpClients());
   process.once("SIGINT", () => void closeMcpClients());
-  console.log(
-    `[agent] tools registered: ${tools.list().map((t) => t.name).join(", ")}`,
-  );
+  logEvent('INFO', `tools: ${tools.list().map((t) => t.name).join(', ')}`);
 
   let cursor: { txDigest: string; eventSeq: string } | undefined;
   // blobId → expiryMs; pruned each tick so memory stays bounded.
   const seenProposals = new Map<string, number>();
+  // Blob IDs that returned 404 — expired on Walrus, skip forever.
+  const skipBlobIds = new Set<string>();
   // Track when the active IOI expires so we re-post before it lapses.
   let ioiExpiryMs = 0;
 
@@ -90,7 +91,7 @@ export async function runAgent(): Promise<void> {
             expiryEpoch,
           });
           ioiExpiryMs = Date.now() + ttlMs;
-          console.log(`[agent] IOI posted: blob=${blobId} tx=${digest} ttl=${config.ioiTtlMin}min`);
+          logEvent('IOI', `posted  blob=${blobId}  tx=${digest}  ttl=${config.ioiTtlMin}min`);
           await appendEntry({
             timestamp_ms: Date.now(),
             agent_id: agentAddr,
@@ -99,7 +100,7 @@ export async function runAgent(): Promise<void> {
             notes: `blob=${blobId} side=${config.ioiSide}`,
           });
         } catch (e) {
-          console.error(`[agent] IOI post failed: ${(e as Error).message}`);
+          logFail(`IOI post failed: ${(e as Error).message}`);
         }
       }
 
@@ -107,6 +108,7 @@ export async function runAgent(): Promise<void> {
         suiClient,
         agentAddr,
         cursor,
+        skipBlobIds,
       });
       if (nextCursor) cursor = nextCursor;
 
@@ -116,9 +118,7 @@ export async function runAgent(): Promise<void> {
 
         const priceUsdc = (Number(p.agreedPrice) / 1e6).toFixed(4);
         const sizeSui   = (Number(p.agreedSize)  / 1e9).toFixed(4);
-        console.log(
-          `[agent] new proposal: side=${p.side} price=${priceUsdc} USDC size=${sizeSui} SUI blob=${p.blobId.slice(0, 12)}…`,
-        );
+        logEvent('PROPOSAL', `side=${p.side}  price=${priceUsdc} USDC  size=${sizeSui} SUI  blob=${p.blobId.slice(0, 12)}…`);
         await appendEntry({
           timestamp_ms: Date.now(),
           agent_id: agentAddr,
@@ -141,9 +141,7 @@ export async function runAgent(): Promise<void> {
             ctx: toolCtx,
             policy: config.agentPolicy,
           });
-          console.log(
-            `[agent] decision: ${decision.decision} (policy_ok=${decision.policy_check}) — ${decision.reasoning}`,
-          );
+          logVerdict(decision.decision, decision.reasoning, decision.policy_check);
           await appendEntry({
             timestamp_ms: Date.now(),
             agent_id: agentAddr,
@@ -153,7 +151,7 @@ export async function runAgent(): Promise<void> {
 
           if (decision.decision !== "accept_match") continue;
           if (!decision.policy_check) {
-            console.log("[agent] policy_check=false → skipping auto-execute");
+            logWarn('policy_check=false → skipping auto-execute');
             continue;
           }
 
@@ -164,7 +162,7 @@ export async function runAgent(): Promise<void> {
             keypair,
             proposal: p,
           });
-          console.log(`[agent] order submitted: ${digest}`);
+          logEvent('ORDER', `submitted  tx=${digest}`);
           await appendEntry({
             timestamp_ms: Date.now(),
             agent_id: agentAddr,
@@ -172,11 +170,11 @@ export async function runAgent(): Promise<void> {
             action_digest: digest,
           });
         } catch (e) {
-          console.error(`[agent] proposal ${p.blobId.slice(0, 12)} error: ${(e as Error).message}`);
+          logFail(`proposal ${p.blobId.slice(0, 12)} error: ${(e as Error).message}`);
         }
       }
     } catch (e) {
-      console.error(`[agent] tick error: ${(e as Error).message}`);
+      logFail(`tick error: ${(e as Error).message}`);
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }

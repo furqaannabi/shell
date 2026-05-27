@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { postIoi } from "./ioi.js";
 import { makeLlmClient } from "./llm/index.js";
 import { decideOnProposal } from "./llm/loop.js";
+import { logEvent, logPass, logVerdict, logWarn, sep } from "./log.js";
 import { pollProposals, type MatchProposal } from "./proposals.js";
 import { submitOrderFromProposal } from "./orders.js";
 import { ToolRegistry, type ToolCtx } from "./tools/registry.js";
@@ -94,21 +95,15 @@ function makeSeal(sui: SuiJsonRpcClient) {
   });
 }
 
-function sep(label: string) {
-  console.log(`\n${"─".repeat(60)}`);
-  console.log(`  ${label}`);
-  console.log("─".repeat(60));
-}
-
 const passed: string[] = [];
 const warnings: string[] = [];
 
 function pass(msg: string) {
-  log(`✓ ${msg}`);
+  logPass(msg);
   passed.push(msg);
 }
 function warn(msg: string) {
-  log(`⚠ ${msg}`);
+  logWarn(msg);
   warnings.push(msg);
 }
 
@@ -217,9 +212,7 @@ export async function runDemo(): Promise<void> {
     ctx: buyerCtx,
     policy: DEMO_POLICY,
   });
-  log(`LLM decision : ${badPriceDecision.decision}`);
-  log(`LLM reasoning: ${badPriceDecision.reasoning}`);
-  log(`policy_check : ${badPriceDecision.policy_check}`);
+  logVerdict(badPriceDecision.decision, badPriceDecision.reasoning, badPriceDecision.policy_check);
   if (badPriceDecision.decision !== "accept_match") {
     pass("price policy enforcement: bad price proposal rejected");
   } else {
@@ -262,9 +255,7 @@ export async function runDemo(): Promise<void> {
       ctx: buyerCtx,
       policy: RISK_CAP_POLICY,
     });
-    log(`LLM decision : ${riskDecision.decision}`);
-    log(`LLM reasoning: ${riskDecision.reasoning}`);
-    log(`policy_check : ${riskDecision.policy_check}`);
+    logVerdict(riskDecision.decision, riskDecision.reasoning, riskDecision.policy_check);
     if (riskDecision.decision !== "accept_match") {
       pass(`risk cap enforcement: size=${breachSizeSui} SUI rejected (cap=${riskCap} SUI)`);
     } else {
@@ -351,8 +342,8 @@ export async function runDemo(): Promise<void> {
     }),
   ]);
 
-  log(`✓ buy  IOI posted: blob=${buyResult.blobId}  tx=${buyResult.digest}`);
-  log(`✓ sell IOI posted: blob=${sellResult.blobId}  tx=${sellResult.digest}`);
+  logEvent('IOI', `buy   blob=${buyResult.blobId}  tx=${buyResult.digest}`);
+  logEvent('IOI', `sell  blob=${sellResult.blobId}  tx=${sellResult.digest}`);
   pass("IOI posting: both sides Seal-encrypted + on-chain");
 
   // ─────────────────────────────────────────────────────
@@ -363,6 +354,7 @@ export async function runDemo(): Promise<void> {
 
   const buyerSeen = new Set<string>();
   const sellerSeen = new Set<string>();
+  const skipBlobs = new Set<string>();
   let buyerDone = false;
   let sellerDone = false;
   const deadline = Date.now() + TIMEOUT_MS;
@@ -392,26 +384,20 @@ export async function runDemo(): Promise<void> {
       const isDone = role === "buyer" ? buyerDone : sellerDone;
       if (isDone) continue;
 
-      const { proposals } = await pollProposals({ suiClient: sui, agentAddr: addr });
+      const { proposals } = await pollProposals({ suiClient: sui, agentAddr: addr, skipBlobIds: skipBlobs });
       for (const p of proposals) {
         if (seen.has(p.blobId)) continue;
         seen.add(p.blobId);
         console.log();
-        log(
-          `${role} got proposal: price=${(Number(p.agreedPrice) / 1e6).toFixed(4)} USDC ` +
-            `size=${(Number(p.agreedSize) / 1e9).toFixed(4)} SUI  blob=${p.blobId.slice(0, 12)}…`,
-        );
+        logEvent('PROPOSAL', `[${role}]  price=${(Number(p.agreedPrice) / 1e6).toFixed(4)} USDC  size=${(Number(p.agreedSize) / 1e9).toFixed(4)} SUI  blob=${p.blobId.slice(0, 12)}…`);
         const d = await decideOnProposal({ proposal: p, llm, tools, ctx, policy: DEMO_POLICY });
-        log(`${role} LLM decision : ${d.decision}`);
-        log(`${role} LLM reasoning: ${d.reasoning}`);
-        log(`${role} policy_check : ${d.policy_check}`);
+        logVerdict(d.decision, d.reasoning, d.policy_check);
         if (d.decision !== "accept_match" || !d.policy_check) {
-          log(`${role} LLM rejected — skipping`);
+          logWarn(`${role} rejected — skipping`);
           continue;
         }
-        log(`${role} submitting Shell order…`);
         const digest = await submitOrderFromProposal({ suiClient: sui, sealClient: seal, keypair: kp, proposal: p });
-        log(`${role} ✓ order submitted: ${digest}`);
+        logEvent('ORDER', `[${role}]  tx=${digest}`);
         if (role === "buyer") { buyerOrderDigest = digest; buyerDone = true; }
         else { sellerOrderDigest = digest; sellerDone = true; }
       }
@@ -537,10 +523,10 @@ export async function runDemo(): Promise<void> {
   sep("DEMO COMPLETE");
   // ─────────────────────────────────────────────────────
   console.log(`\n  ${passed.length} checks passed, ${warnings.length} warnings\n`);
-  for (const p of passed) console.log(`  ✓ ${p}`);
+  for (const p of passed) logPass(p);
   if (warnings.length > 0) {
     console.log();
-    for (const w of warnings) console.log(`  ⚠ ${w}`);
+    for (const w of warnings) logWarn(w);
   }
   console.log();
 }

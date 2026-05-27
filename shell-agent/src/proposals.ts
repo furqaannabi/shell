@@ -39,6 +39,8 @@ export async function pollProposals(opts: {
   suiClient: SuiJsonRpcClient;
   agentAddr: string;
   cursor?: { txDigest: string; eventSeq: string };
+  /** Blob IDs to skip. 404-expired blobs are added here so they're never retried. */
+  skipBlobIds?: Set<string>;
 }): Promise<{
   proposals: MatchProposal[];
   nextCursor: { txDigest: string; eventSeq: string } | null;
@@ -73,6 +75,8 @@ export async function pollProposals(opts: {
       continue;
     }
 
+    if (opts.skipBlobIds?.has(blobId)) continue;
+
     try {
       const bytes = await getBlob(blobId);
       const decoded = MatchProposalBcs.parse(bytes);
@@ -87,7 +91,11 @@ export async function pollProposals(opts: {
         blobId,
       });
     } catch (e) {
-      console.error(`[proposals] fetch/decode ${blobId}: ${(e as Error).message}`);
+      const msg = (e as Error).message;
+      if (opts.skipBlobIds && msg.includes('404')) {
+        opts.skipBlobIds.add(blobId);
+      }
+      console.error(`[proposals] fetch/decode ${blobId}: ${msg}`);
     }
   }
 

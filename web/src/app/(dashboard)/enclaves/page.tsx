@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
 import { ENCLAVE_ID, ENCLAVE_CONFIG_ID, ENCLAVE_URL, NETWORK, SHELL_PACKAGE_ID, QUOTE_SYMBOL } from '@/lib/sui';
@@ -30,6 +31,7 @@ function formatScaled(raw: string, decimals: number): string {
 export default function EnclavesPage() {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
+  const [copiedPcr, setCopiedPcr] = useState<string | null>(null);
 
   const { data: configObj, isLoading: configLoading } = useQuery({
     queryKey: ['enclave-config', ENCLAVE_CONFIG_ID],
@@ -88,6 +90,14 @@ export default function EnclavesPage() {
       })
     : null;
 
+  const integrityStatus = configLoading
+    ? 'CHECKING...'
+    : pcrRows?.every((r) => r.allZero)
+    ? 'PENDING DEPLOYMENT'
+    : pcrRows
+    ? 'ATTESTED SECURE'
+    : 'ON-CHAIN';
+
   return (
     <div className="max-w-container-max mx-auto space-y-margin w-full">
       {/* Enclave Header */}
@@ -119,15 +129,17 @@ export default function EnclavesPage() {
         </div>
         <div className="text-left md:text-right w-full md:w-auto mt-4 md:mt-0 pt-4 md:pt-0 border-t border-outline-variant md:border-none">
           <div className="text-xs text-on-surface-variant uppercase tracking-widest mb-1">PCR Integrity</div>
-          <div className="font-mono-data text-primary border border-primary px-3 py-1 rounded inline-block bg-primary/10 shadow-[0_0_8px_rgba(87,241,219,0.3)]">
-            {configLoading
-            ? 'CHECKING...'
-            : pcrRows?.every((r) => r.allZero)
-            ? 'PENDING DEPLOYMENT'
-            : pcrRows
-            ? 'ATTESTED SECURE'
-            : 'ON-CHAIN'}
+          <div className={`font-mono-data text-primary border border-primary px-3 py-1 rounded inline-block bg-primary/10 ${integrityStatus === 'ATTESTED SECURE' ? 'shadow-[0_0_20px_rgba(87,241,219,0.4)] animate-pulse' : 'shadow-[0_0_8px_rgba(87,241,219,0.3)]'}`}>
+            {integrityStatus}
           </div>
+          {integrityStatus === 'ATTESTED SECURE' && (
+            <div className="mt-2">
+              <a href={EXPLORER(ENCLAVE_CONFIG_ID)} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1 justify-end">
+                Verify on-chain
+                <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+              </a>
+            </div>
+          )}
         </div>
       </header>
 
@@ -167,8 +179,30 @@ export default function EnclavesPage() {
                   pcrRows.map(({ label, hex, allZero }, i) => (
                     <tr key={label} className="border-b border-[#1E293B] hover:bg-[#1A1D23] transition-colors last:border-0">
                       <td className="py-3 text-on-surface">{label}</td>
-                      <td className="py-3 text-on-surface-variant font-mono-sm text-[10px] truncate max-w-[200px]" title={hex ?? ''}>
-                        {allZero ? <span className="text-outline-variant italic">all-zeros (pending deployment)</span> : hex ? `${hex.slice(0, 16)}...${hex.slice(-8)}` : '—'}
+                      <td className="py-3 text-on-surface-variant font-mono-sm text-[10px]">
+                        {allZero
+                          ? <span className="text-outline-variant italic">all-zeros (pending deployment)</span>
+                          : hex
+                          ? (
+                            <div className="flex items-center gap-2">
+                              <span title={hex}>{hex.slice(0, 16)}…{hex.slice(-8)}</span>
+                              <button
+                                onClick={() => {
+                                  void navigator.clipboard.writeText(hex);
+                                  setCopiedPcr(label);
+                                  setTimeout(() => setCopiedPcr(null), 1500);
+                                }}
+                                className="shrink-0 text-outline-variant hover:text-primary transition-colors cursor-pointer"
+                                title="Copy full hash"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">
+                                  {copiedPcr === label ? 'check' : 'content_copy'}
+                                </span>
+                              </button>
+                            </div>
+                          )
+                          : '—'
+                        }
                       </td>
                       <td className="py-3 text-on-surface">
                         {['Enclave Image', 'Linux Kernel', 'Application'][i]}
@@ -207,6 +241,7 @@ export default function EnclavesPage() {
               </a>
             </div>
           </div>
+
         </div>
 
         {/* Side Panel */}
