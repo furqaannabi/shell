@@ -483,7 +483,7 @@ export default function ProposalFeed() {
           <thead>
             <tr className="text-on-surface-variant border-b border-outline-variant">
               <th className="pb-2 pr-3 font-normal">Side</th>
-              <th className="pb-2 pr-3 font-normal text-right">Size (SUI)</th>
+              <th className="pb-2 pr-3 font-normal text-right">Size</th>
               <th className="pb-2 pr-4 font-normal text-right">
                 Price ({QUOTE_SYMBOL})
               </th>
@@ -517,6 +517,10 @@ export default function ProposalFeed() {
                   </td>
                   <td className="py-3 pr-3 text-right text-on-surface font-mono-data">
                     {formatScaled(p.agreedSize, baseDecimalsFor((p as { asset?: string }).asset ?? BASE_COIN_TYPE))}
+                    {' '}
+                    <span className="text-on-surface-variant text-[10px]">
+                      {TRADING_PAIRS.find((tp) => tp.baseCoinType === ((p as { asset?: string }).asset ?? BASE_COIN_TYPE))?.baseSymbol ?? 'SUI'}
+                    </span>
                   </td>
                   <td className="py-3 pr-4 text-right text-on-surface font-mono-data">
                     {formatScaled(p.agreedPrice, PRICE_DECIMALS)}
