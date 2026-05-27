@@ -429,7 +429,7 @@ export default function ProposalFeed() {
         } catch {}
         return next;
       });
-      queryClient.invalidateQueries({ queryKey: ['active-commitments'] });
+      queryClient.invalidateQueries({ queryKey: ['alive-orders-with-collateral'] });
     } catch (err) {
       setError(friendlyError(err, 'Accept failed'));
     } finally {
