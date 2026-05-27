@@ -44,7 +44,7 @@ export default function ConnectWalletButton() {
           <span className="md:hidden">Connected</span>
         </button>
         {showMenu && (
-          <div className="absolute right-0 top-full mt-2 w-48 glass-panel rounded border border-outline-variant p-2 z-50">
+          <div className="absolute right-0 top-full mt-2 w-48 bg-[#0F1923] border border-outline-variant rounded p-2 z-50 shadow-lg">
             <div className="px-3 py-2 font-mono-sm text-[10px] text-on-surface-variant border-b border-outline-variant mb-1 truncate">
               {account.address}
             </div>
