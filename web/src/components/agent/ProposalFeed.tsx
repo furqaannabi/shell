@@ -294,17 +294,23 @@ export default function ProposalFeed() {
     );
     for (const p of sorted) {
       const key = proposalKey(p);
-      // Settled? Match by counterparty only — the enclave's order
-      // matcher re-prices/re-sizes via price-time priority over the
-      // live order book, so filled_price/size frequently diverge from
-      // the IOI proposal's agreed_price/size. Counterparty pair within
-      // a short timing window is the unambiguous signal.
-      // Run this check even when blob decode failed (agreedSize=0) so
-      // expired-blob rows still flip to SETTLED when a receipt exists.
-      const rIdx = remainingReceipts.findIndex(
-        (r) =>
-          r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase(),
-      );
+      // Settled? Prefer exact (counterparty + price + size) match so
+      // multiple trades between the same two wallets don't cross-claim
+      // each other's receipts. Fall back to counterparty-only when
+      // blob decode failed (agreedSize === 0).
+      const exactIdx = p.agreedSize > BigInt(0)
+        ? remainingReceipts.findIndex(
+            (r) =>
+              r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
+              BigInt(r.fields.filled_price) === p.agreedPrice &&
+              BigInt(r.fields.filled_size) === p.agreedSize,
+          )
+        : -1;
+      const rIdx = exactIdx >= 0
+        ? exactIdx
+        : remainingReceipts.findIndex(
+            (r) => r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase(),
+          );
       if (rIdx >= 0) {
         out[key] = {
           status: 'settled',
