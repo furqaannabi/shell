@@ -137,9 +137,12 @@ export default function ProposalFeed() {
         if (!o.data?.objectId || o.data?.content?.dataType !== 'moveObject') {
           continue;
         }
-        const fields = o.data.content.fields as { collateral?: string };
+        // collateral is Balance<T> on-chain → JSON: { value: "123" }
+        const fields = o.data.content.fields as { collateral?: { value?: string } };
+        const rawCollateral = fields.collateral?.value ?? '0';
+        console.debug('[aliveOrders] objectId', o.data.objectId, 'collateral raw:', fields.collateral, 'parsed:', rawCollateral);
         byId.set(o.data.objectId, {
-          collateral: BigInt(fields.collateral ?? '0'),
+          collateral: BigInt(rawCollateral),
           submitDigest: o.data.previousTransaction ?? '',
         });
       }
@@ -395,6 +398,32 @@ export default function ProposalFeed() {
       const collateralAmount =
         side === 'sell' ? agreedSize : (agreedSize * agreedPrice) / floatScaling;
 
+      // Pre-flight balance check — avoids silent on-chain failure.
+      const GAS_BUFFER = BigInt(200_000_000); // 0.2 SUI reserved for gas
+      if (collateralType === SUI_TYPE) {
+        const bal = await suiClient.getBalance({ owner: account.address, coinType: SUI_TYPE });
+        const available = BigInt(bal.totalBalance);
+        const needed = collateralAmount + GAS_BUFFER;
+        if (available < needed) {
+          const fmt = (n: bigint) => (Number(n) / 1e9).toFixed(3);
+          throw new Error(
+            `Insufficient SUI: need ${fmt(collateralAmount)} collateral + 0.2 gas = ${fmt(needed)} SUI, wallet has ${fmt(available)} SUI.`,
+          );
+        }
+      } else {
+        const coins = await suiClient.getCoins({ owner: account.address, coinType: collateralType });
+        const totalCoin = coins.data.reduce((s, c) => s + BigInt(c.balance), BigInt(0));
+        if (totalCoin < collateralAmount) {
+          const pair = TRADING_PAIRS.find((tp) => tp.quoteCoinType === collateralType || tp.baseCoinType === collateralType);
+          const decimals = pair?.quoteDecimals ?? pair?.baseDecimals ?? 6;
+          const sym = pair?.quoteSymbol ?? collateralType.split('::').pop() ?? collateralType;
+          const fmt = (n: bigint) => (Number(n) / 10 ** decimals).toFixed(decimals);
+          throw new Error(
+            `Insufficient ${sym}: need ${fmt(collateralAmount)} ${sym}, wallet has ${fmt(totalCoin)} ${sym}.`,
+          );
+        }
+      }
+
       let collateral;
       if (collateralType === SUI_TYPE) {
         [collateral] = tx.splitCoins(tx.gas, [tx.pure.u64(collateralAmount)]);
@@ -427,7 +456,13 @@ export default function ProposalFeed() {
       });
 
       const res = await signAndExecute({ transaction: tx });
-      await suiClient.waitForTransaction({ digest: res.digest });
+      const txResult = await suiClient.waitForTransaction({
+        digest: res.digest,
+        options: { showEffects: true },
+      });
+      if (txResult.effects?.status?.status !== 'success') {
+        throw new Error(`Transaction failed: ${txResult.effects?.status?.error ?? 'unknown error'}`);
+      }
       const key = `${account.address.toLowerCase()}:${blobId}`;
       setAccepted((m) => {
         const next = { ...m, [key]: res.digest };
