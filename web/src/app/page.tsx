@@ -112,7 +112,7 @@ export default function LandingPage() {
       <nav className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 h-20 transition-all duration-500 ${scrolled ? 'bg-[#0A0C10]/80 backdrop-blur-xl border-b border-outline-variant/30 shadow-[0_4px_30px_rgba(0,0,0,0.5)]' : 'bg-transparent'}`}>
         <div className="font-headline-md text-headline-md font-extrabold tracking-tighter text-primary">SHELL FINANCE</div>
         <div className="flex items-center gap-4">
-          {mounted && account ? (
+          {mounted && account && (
             <>
               <span className="font-mono-sm text-[12px] text-on-surface-variant hidden sm:inline px-3 py-1.5 rounded-full bg-surface-container-high/50 border border-outline-variant/50">
                 {account.address.slice(0, 6)}…{account.address.slice(-4)}
@@ -131,14 +131,6 @@ export default function LandingPage() {
                 Terminal
               </Link>
             </>
-          ) : (
-            <Link
-              href="/terminal"
-              className="h-10 px-5 border border-outline-variant/50 bg-surface-container/30 text-on-surface hover:border-primary/50 hover:text-primary hover:bg-primary/10 transition-all duration-300 font-mono-sm text-sm rounded-lg flex items-center gap-2 backdrop-blur-md group"
-            >
-              <span className="material-symbols-outlined text-[18px] group-hover:scale-110 transition-transform">terminal</span>
-              Launch Terminal
-            </Link>
           )}
         </div>
       </nav>
@@ -239,41 +231,33 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="relative z-10 px-6 md:px-12 py-32 max-w-3xl mx-auto text-center">
-        <div className="glass-panel rounded-3xl bg-surface-container-high/30 backdrop-blur-xl border border-outline-variant/40 p-12 flex flex-col items-center gap-8 relative overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
-          <div className="absolute -inset-24 bg-[radial-gradient(ellipse_at_center,rgba(45,212,191,0.1)_0%,transparent_70%)] pointer-events-none"></div>
-          
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_30px_rgba(45,212,191,0.15)] z-10">
-            <span className="material-symbols-outlined text-[32px]" style={{ fontVariationSettings: "'FILL' 1" }}>lock</span>
-          </div>
-          <div className="z-10">
-            <h2 className="font-headline-md text-3xl md:text-4xl font-bold text-on-surface mb-4 tracking-tight">Ready to trade privately?</h2>
-            <p className="font-body-base text-lg text-on-surface-variant max-w-md mx-auto">Connect your Sui wallet to open a sealed session.</p>
-          </div>
+      {/* CTA — only show when not connected */}
+      {(!mounted || !account) && (
+        <section className="relative z-10 px-6 md:px-12 py-32 max-w-3xl mx-auto text-center">
+          <div className="glass-panel rounded-3xl bg-surface-container-high/30 backdrop-blur-xl border border-outline-variant/40 p-12 flex flex-col items-center gap-8 relative overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
+            <div className="absolute -inset-24 bg-[radial-gradient(ellipse_at_center,rgba(45,212,191,0.1)_0%,transparent_70%)] pointer-events-none"></div>
 
-          <div className="w-full max-w-sm z-10">
-            {mounted && account ? (
-              <Link
-                href="/terminal"
-                className="w-full h-14 bg-primary text-on-primary font-body-base text-lg font-semibold rounded-xl hover:bg-primary-fixed hover:shadow-[0_0_25px_rgba(87,241,219,0.4)] transition-all duration-300 flex items-center justify-center gap-3"
-              >
-                <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>terminal</span>
-                Enter Terminal
-              </Link>
-            ) : (
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_30px_rgba(45,212,191,0.15)] z-10">
+              <span className="material-symbols-outlined text-[32px]" style={{ fontVariationSettings: "'FILL' 1" }}>lock</span>
+            </div>
+            <div className="z-10">
+              <h2 className="font-headline-md text-3xl md:text-4xl font-bold text-on-surface mb-4 tracking-tight">Ready to trade privately?</h2>
+              <p className="font-body-base text-lg text-on-surface-variant max-w-md mx-auto">Connect your Sui wallet to open a sealed session.</p>
+            </div>
+
+            <div className="w-full max-w-sm z-10">
               <div className="w-full [&>button]:!rounded-xl [&>button]:!text-lg [&>button]:!shadow-[0_0_20px_rgba(45,212,191,0.2)] [&>button]:!transition-all [&>button]:!duration-300 [&>button:hover]:!shadow-[0_0_30px_rgba(45,212,191,0.4)]">
                 <LandingConnectButton />
               </div>
-            )}
-          </div>
+            </div>
 
-          <p className="font-mono-sm text-xs text-outline-variant z-10 mt-2">
-            By authenticating, you verify clearance for Restricted Order Flow.
-          </p>
-        </div>
-      </section>
+            <p className="font-mono-sm text-xs text-outline-variant z-10 mt-2">
+              By authenticating, you verify clearance for Restricted Order Flow.
+            </p>
+          </div>
+        </section>
+      )}
 
       {/* Footer */}
       <footer className="relative z-10 border-t border-outline-variant/20 px-6 md:px-12 py-8 flex flex-col sm:flex-row items-center justify-between gap-6 font-mono-sm text-xs text-on-surface-variant/50 bg-[#0A0C10]/80 backdrop-blur-md">
