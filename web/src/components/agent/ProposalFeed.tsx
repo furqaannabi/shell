@@ -278,8 +278,9 @@ export default function ProposalFeed() {
     agreedPrice: bigint;
     agreedSize: bigint;
     counterparty: string;
+    asset?: string;
   }) =>
-    `${p.side}|${p.agreedPrice}|${p.agreedSize}|${p.counterparty}`;
+    `${p.side}|${p.agreedPrice}|${p.agreedSize}|${p.counterparty}|${(p as { asset?: string }).asset ?? BASE_COIN_TYPE}`;
   const chainAccepted = useMemo(() => {
     if (!data) return {} as Record<string, ChainState>;
     const out: Record<string, ChainState> = {};
@@ -299,23 +300,15 @@ export default function ProposalFeed() {
     );
     for (const p of sorted) {
       const key = proposalKey(p);
-      // Settled? Prefer exact (counterparty + price + size) match so
+      // Settled? Require exact (counterparty + price + size) match so
       // multiple trades between the same two wallets don't cross-claim
-      // each other's receipts. Fall back to counterparty-only when
-      // blob decode failed (agreedSize === 0).
-      const exactIdx = p.agreedSize > BigInt(0)
-        ? remainingReceipts.findIndex(
-            (r) =>
-              r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
-              BigInt(r.fields.filled_price) === p.agreedPrice &&
-              BigInt(r.fields.filled_size) === p.agreedSize,
-          )
-        : -1;
-      const rIdx = exactIdx >= 0
-        ? exactIdx
-        : remainingReceipts.findIndex(
-            (r) => r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase(),
-          );
+      // each other's receipts.
+      const rIdx = remainingReceipts.findIndex(
+        (r) =>
+          r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
+          BigInt(r.fields.filled_price) === p.agreedPrice &&
+          BigInt(r.fields.filled_size) === p.agreedSize,
+      );
       if (rIdx >= 0) {
         out[key] = {
           status: 'settled',
@@ -324,7 +317,6 @@ export default function ProposalFeed() {
         remainingReceipts.splice(rIdx, 1);
         continue;
       }
-      if (p.agreedSize === BigInt(0)) continue; // blob decode failed — can't compute collateral
       // Accepted but not yet settled?
       const baseCoin = (p as { asset?: string }).asset ?? BASE_COIN_TYPE;
       const floatScaling = BigInt(10 ** baseDecimalsFor(baseCoin));
