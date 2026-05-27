@@ -126,11 +126,15 @@ export interface TradingPair {
   fixedPrice?: number;
   /** Sui TransferPolicy object ID — set for policy-gated RWA tokens. */
   transferPolicyId?: string;
+  /** Human-readable reason this pair is disabled on the current network. */
+  disabledReason?: string;
 }
 
 // TBILL coin type is set after publishing rwa-mock package.
 // Set NEXT_PUBLIC_TBILL_COIN_TYPE in .env.local after `sui client publish rwa-mock/`.
 const TBILL_COIN_TYPE = process.env.NEXT_PUBLIC_TBILL_COIN_TYPE ?? '';
+
+const MAINNET_USDC = '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC';
 
 export const TRADING_PAIRS: TradingPair[] = [
   {
@@ -140,53 +144,48 @@ export const TRADING_PAIRS: TradingPair[] = [
     deepbookPoolKey: DEEPBOOK_POOL_KEY, priceSource: 'deepbook',
   },
   {
-    // Testnet mock — disable on mainnet, replace with real RWA coin type.
-    enabled: !!TBILL_COIN_TYPE,
+    // Testnet mock only — shown on mainnet as disabled.
+    enabled: NETWORK === 'testnet' && !!TBILL_COIN_TYPE,
     label: 'T-Bill (Mock)',
-    baseSymbol: 'TBILL', baseCoinType: TBILL_COIN_TYPE, baseDecimals: 6,
+    baseSymbol: 'TBILL', baseCoinType: TBILL_COIN_TYPE || 'pending', baseDecimals: 6,
     quoteSymbol: QUOTE_SYMBOL, quoteCoinType: QUOTE_COIN_TYPE, quoteDecimals: 6,
     deepbookPoolKey: null, priceSource: 'fixed', fixedPrice: 1.00,
+    disabledReason: NETWORK === 'mainnet' ? 'Testnet only' : (!TBILL_COIN_TYPE ? 'Set NEXT_PUBLIC_TBILL_COIN_TYPE' : undefined),
   },
   {
-    // Ondo USDY — flip enabled=true on Sui mainnet.
-    enabled: false,
-    label: 'USDY (Ondo Finance)',
+    enabled: NETWORK === 'mainnet',
+    label: 'USDY',
     baseSymbol: 'USDY',
     baseCoinType: '0x0000000000000000000000000000000000000000000000000000000000000000::usdy::USDY',
     baseDecimals: 6,
-    quoteSymbol: 'USDC',
-    quoteCoinType: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
-    quoteDecimals: 6,
+    quoteSymbol: 'USDC', quoteCoinType: MAINNET_USDC, quoteDecimals: 6,
     deepbookPoolKey: null, priceSource: 'fixed', fixedPrice: 1.00,
+    disabledReason: NETWORK !== 'mainnet' ? 'Mainnet only' : undefined,
   },
   {
-    // Franklin Templeton BENJI — flip enabled=true on Sui mainnet.
-    enabled: false,
-    label: 'BENJI (Franklin Templeton)',
+    enabled: NETWORK === 'mainnet',
+    label: 'BENJI',
     baseSymbol: 'BENJI',
     baseCoinType: '0x0000000000000000000000000000000000000000000000000000000000000001::benji::BENJI',
     baseDecimals: 6,
-    quoteSymbol: 'USDC',
-    quoteCoinType: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
-    quoteDecimals: 6,
+    quoteSymbol: 'USDC', quoteCoinType: MAINNET_USDC, quoteDecimals: 6,
     deepbookPoolKey: null, priceSource: 'fixed', fixedPrice: 1.00,
+    disabledReason: NETWORK !== 'mainnet' ? 'Mainnet only' : undefined,
   },
   {
-    // BlackRock BUIDL — flip enabled=true on Sui mainnet.
-    enabled: false,
-    label: 'BUIDL (BlackRock)',
+    enabled: NETWORK === 'mainnet',
+    label: 'BUIDL',
     baseSymbol: 'BUIDL',
     baseCoinType: '0x0000000000000000000000000000000000000000000000000000000000000002::buidl::BUIDL',
     baseDecimals: 6,
-    quoteSymbol: 'USDC',
-    quoteCoinType: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
-    quoteDecimals: 6,
+    quoteSymbol: 'USDC', quoteCoinType: MAINNET_USDC, quoteDecimals: 6,
     deepbookPoolKey: null, priceSource: 'fixed', fixedPrice: 1.00,
+    disabledReason: NETWORK !== 'mainnet' ? 'Mainnet only' : undefined,
   },
 ];
 
-export const ACTIVE_PAIRS = TRADING_PAIRS.filter((p) => p.enabled);
-export const DEFAULT_PAIR = ACTIVE_PAIRS[0]!;
+// All pairs shown in UI; only enabled ones are selectable.
+export const DEFAULT_PAIR = TRADING_PAIRS.find((p) => p.enabled) ?? TRADING_PAIRS[0]!;
 
 // ── Seal client factory ─────────────────────────────────────────────
 let _sealClient: SealClient | null = null;

@@ -7,7 +7,7 @@ import { encryptOrder, submitOrderTx } from '@/lib/shell-sdk';
 import type { OrderSide } from '@/lib/shell-sdk';
 import {
   SHELL_PACKAGE_ID, collateralTypeFor, getSealClient,
-  ACTIVE_PAIRS, DEFAULT_PAIR, type TradingPair,
+  TRADING_PAIRS, DEFAULT_PAIR, type TradingPair,
 } from '@/lib/sui';
 import { friendlyError } from '@/lib/errors';
 
@@ -158,25 +158,27 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         )}
       </div>
       <form className="flex flex-col gap-4 flex-1" onSubmit={handleSubmit}>
-        {/* Pair selector — only shown when multiple active pairs */}
-        {ACTIVE_PAIRS.length > 1 && (
-          <div className="flex gap-1 p-1 bg-surface-container-high rounded border border-outline-variant">
-            {ACTIVE_PAIRS.map((p) => (
-              <button
-                key={p.baseCoinType}
-                type="button"
-                onClick={() => { setPair(p); setSize(''); setLimitPrice(''); }}
-                className={`flex-1 py-1 rounded font-mono-sm text-[10px] transition-colors cursor-pointer ${
-                  pair.baseCoinType === p.baseCoinType
-                    ? 'bg-primary/20 border border-primary text-primary'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                }`}
-              >
-                {p.label ?? `${p.baseSymbol}/${p.quoteSymbol}`}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Pair selector — all pairs shown; disabled ones greyed out */}
+        <div className="flex gap-1 p-1 bg-surface-container-high rounded border border-outline-variant">
+          {TRADING_PAIRS.map((p) => (
+            <button
+              key={p.baseCoinType}
+              type="button"
+              disabled={!p.enabled}
+              title={p.disabledReason}
+              onClick={() => { if (p.enabled) { setPair(p); setSize(''); setLimitPrice(''); } }}
+              className={`flex-1 py-1 rounded font-mono-sm text-[10px] transition-colors ${
+                !p.enabled
+                  ? 'opacity-30 cursor-not-allowed text-on-surface-variant'
+                  : pair.baseCoinType === p.baseCoinType
+                    ? 'bg-primary/20 border border-primary text-primary cursor-pointer'
+                    : 'text-on-surface-variant hover:text-on-surface cursor-pointer'
+              }`}
+            >
+              {p.label ?? `${p.baseSymbol}/${p.quoteSymbol}`}
+            </button>
+          ))}
+        </div>
 
         {/* Asset */}
         <div className="relative group">
