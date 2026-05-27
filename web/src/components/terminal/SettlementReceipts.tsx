@@ -2,7 +2,7 @@
 
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SHELL_PACKAGE_ID, QUOTE_SYMBOL, NETWORK } from '@/lib/sui';
 import { getReceipts } from '@/lib/shell-sdk';
 
@@ -40,6 +40,7 @@ export default function SettlementReceipts() {
   });
 
   // Chime when a new settlement receipt lands.
+  const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
   const seenIds = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!receipts) return;
@@ -47,6 +48,9 @@ export default function SettlementReceipts() {
     const isFirstPass = seenIds.current.size === 0;
     fresh.forEach((r) => seenIds.current.add(r.objectId));
     if (isFirstPass || fresh.length === 0) return;
+    const newIds = fresh.map((r) => r.objectId);
+    setFlashIds(new Set(newIds));
+    setTimeout(() => setFlashIds(new Set()), 1500);
     try {
       const ctx = new AudioContext();
       const osc = ctx.createOscillator();
@@ -85,7 +89,11 @@ export default function SettlementReceipts() {
               href={`https://suiscan.xyz/${NETWORK}/object/${receipt.objectId}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 border border-[#1E293B] rounded bg-surface-container-lowest flex flex-col gap-1 hover:border-secondary/50 transition-colors cursor-pointer"
+              className={`p-2 border rounded bg-surface-container-lowest flex flex-col gap-1 hover:border-secondary/50 transition-colors cursor-pointer ${
+                flashIds.has(receipt.objectId)
+                  ? 'border-emerald-400 bg-emerald-500/10 shadow-[0_0_12px_rgba(52,211,153,0.4)]'
+                  : 'border-[#1E293B]'
+              }`}
             >
               <div className="flex justify-between font-mono-data text-[12px]">
                 <span className="text-primary">FILLED</span>

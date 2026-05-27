@@ -23,7 +23,7 @@ export default function AgentPage() {
           <div className="text-xs text-on-surface-variant uppercase tracking-widest mb-1">
             Status
           </div>
-          <div className="font-mono-data text-primary border border-primary px-3 py-1 rounded inline-block bg-primary/10 shadow-[0_0_8px_rgba(87,241,219,0.3)]">
+          <div className="font-mono-data text-primary border border-primary px-3 py-1 rounded inline-block bg-primary/10 shadow-[0_0_8px_rgba(87,241,219,0.3)] animate-pulse">
             ENCLAVE MATCHER LIVE
           </div>
         </div>

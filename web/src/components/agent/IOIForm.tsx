@@ -72,15 +72,12 @@ export default function IOIForm() {
       setError('DeepBook market price unavailable');
       return;
     }
-    // Skew range to the user's side so the IOI clearly says "I'm a buyer
-    // up to mid+2%" or "I'm a seller down to mid-2%". Both ranges still
-    // cover the mid → opposite IOIs cross and settle at mid.
-    const lo =
-      side === 'buy' ? m.mid * 0.99 : m.mid * 0.98;
-    const hi =
-      side === 'buy' ? m.mid * 1.02 : m.mid * 1.01;
+    const lo = side === 'buy' ? m.mid * 0.99 : m.mid * 0.98;
+    const hi = side === 'buy' ? m.mid * 1.02 : m.mid * 1.01;
     setPriceLo(lo.toFixed(3));
     setPriceHi(hi.toFixed(3));
+    if (!sizeLo) setSizeLo('1');
+    if (!sizeHi) setSizeHi('10');
   }
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -307,7 +304,10 @@ export default function IOIForm() {
         </button>
 
         {status && !submitting && (
-          <div className="font-mono-sm text-mono-sm text-primary">{status}</div>
+          <div className="flex items-center gap-2 p-2 bg-emerald-500/10 border border-emerald-500/40 rounded font-mono-sm text-mono-sm text-emerald-300">
+            <span className="material-symbols-outlined text-[14px]">check_circle</span>
+            {status}
+          </div>
         )}
         {error && (
           <div className="font-mono-sm text-mono-sm text-error">{error}</div>

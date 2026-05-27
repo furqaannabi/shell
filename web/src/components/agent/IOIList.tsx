@@ -133,7 +133,12 @@ export default function IOIList() {
         <table className="w-full text-left font-mono-sm text-mono-sm">
           <thead>
             <tr className="text-on-surface-variant border-b border-outline-variant">
-              <th className="pb-2 font-normal">Walrus Blob</th>
+              <th className="pb-2 font-normal">
+                <span className="flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[12px]">lock</span>
+                  IOI (encrypted)
+                </span>
+              </th>
               <th className="pb-2 font-normal">Expiry Epoch</th>
               <th className="pb-2 font-normal">Posted</th>
               <th className="pb-2 font-normal text-right">Tx</th>
@@ -146,15 +151,18 @@ export default function IOIList() {
                 className="border-b border-[#1E293B] last:border-0 hover:bg-[#1A1D23] transition-colors"
               >
                 <td className="py-3">
-                  <a
-                    href={`${WALRUS_AGGREGATOR}/v1/blobs/${ioi.blob}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-secondary hover:text-primary transition-colors"
-                    title={ioi.blob}
-                  >
-                    {shortBlob(ioi.blob)}
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`${WALRUS_AGGREGATOR}/v1/blobs/${ioi.blob}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-secondary hover:text-primary transition-colors"
+                      title={ioi.blob}
+                    >
+                      {shortBlob(ioi.blob)}
+                    </a>
+                    <span className="text-[9px] border border-outline-variant text-on-surface-variant px-1 rounded opacity-60">ENCRYPTED</span>
+                  </div>
                 </td>
                 <td className="py-3 text-on-surface">{ioi.expiry.toString()}</td>
                 <td className="py-3 text-on-surface-variant">

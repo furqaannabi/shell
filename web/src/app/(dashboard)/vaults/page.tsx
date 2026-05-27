@@ -46,11 +46,24 @@ export default function PortfolioPage() {
 
   const { data: orders } = useQuery({
     queryKey: ['active-orders-portfolio', account?.address],
-    queryFn: () =>
-      getActiveOrders(suiClient, {
+    queryFn: async (): Promise<Array<{ orderId: string; collateralType: string; expiryEpoch: number; submittedAtMs: number; collateralValue: bigint }>> => {
+      const list = await getActiveOrders(suiClient, {
         shellPackageId: SHELL_PACKAGE_ID,
         trader: account!.address,
-      }),
+      });
+      if (list.length === 0) return [];
+      const enriched = await suiClient.multiGetObjects({
+        ids: list.map((o) => o.orderId),
+        options: { showContent: true },
+      });
+      return list.map((o) => {
+        const obj = enriched.find((x) => x.data?.objectId === o.orderId);
+        const fields = obj?.data?.content?.dataType === 'moveObject'
+          ? (obj.data.content.fields as { collateral?: string })
+          : {};
+        return { ...o, collateralValue: BigInt(fields.collateral ?? '0') };
+      });
+    },
     enabled: !!account,
     refetchInterval: 10_000,
   });
@@ -124,9 +137,12 @@ export default function PortfolioPage() {
                     </td>
                     <td className="py-4 px-6 text-right text-on-surface-variant">
                       {orders
-                        ? orders.filter((o) => o.collateralType === BASE_COIN_TYPE).length > 0
-                          ? `${orders.filter((o) => o.collateralType === BASE_COIN_TYPE).length} order(s)`
-                          : '—'
+                        ? (() => {
+                            const locked = orders
+                              .filter((o) => o.collateralType === BASE_COIN_TYPE)
+                              .reduce((sum, o) => sum + (o.collateralValue ?? BigInt(0)), BigInt(0));
+                            return locked > BigInt(0) ? formatScaled(locked.toString(), 9) + ' SUI' : '—';
+                          })()
                         : '—'}
                     </td>
                   </tr>
@@ -147,9 +163,12 @@ export default function PortfolioPage() {
                     </td>
                     <td className="py-4 px-6 text-right text-on-surface-variant">
                       {orders
-                        ? orders.filter((o) => o.collateralType === QUOTE_COIN_TYPE).length > 0
-                          ? `${orders.filter((o) => o.collateralType === QUOTE_COIN_TYPE).length} order(s)`
-                          : '—'
+                        ? (() => {
+                            const locked = orders
+                              .filter((o) => o.collateralType === QUOTE_COIN_TYPE)
+                              .reduce((sum, o) => sum + (o.collateralValue ?? BigInt(0)), BigInt(0));
+                            return locked > BigInt(0) ? formatScaled(locked.toString(), 6) + ` ${QUOTE_SYMBOL}` : '—';
+                          })()
                         : '—'}
                     </td>
                   </tr>
