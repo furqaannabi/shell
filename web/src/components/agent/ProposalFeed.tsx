@@ -22,6 +22,7 @@ import {
   BASE_COIN_TYPE,
   QUOTE_COIN_TYPE,
   QUOTE_SYMBOL,
+  TRADING_PAIRS,
   collateralTypeFor,
   getSealClient,
   NETWORK,
@@ -29,13 +30,17 @@ import {
   SHELL_PACKAGE_ID_IOI_TYPES,
 } from '@/lib/sui';
 
+/** Return baseDecimals for a given base coin type, falling back to 9 (SUI). */
+function baseDecimalsFor(coinType: string): number {
+  return TRADING_PAIRS.find((p) => p.baseCoinType === coinType)?.baseDecimals ?? 9;
+}
+
 const WALRUS_AGGREGATOR =
   process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR ??
   'https://aggregator.walrus-testnet.walrus.space';
 
 const EXPLORER = (id: string) => `https://suiscan.xyz/${NETWORK}/tx/${id}`;
 const SUI_TYPE = '0x2::sui::SUI';
-const FLOAT_SCALING = BigInt(1_000_000_000);
 
 function shortAddr(a: string): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -66,7 +71,6 @@ function formatScaled(raw: bigint, decimals: number): string {
     .replace(/0+$/, '')}`;
 }
 
-const BASE_DECIMALS = 9; // SUI
 // Quote price uses a 1e6 scale (matches IOIForm / SealedOrderForm /
 // enclave). Independent of the quote coin's actual decimals.
 const PRICE_DECIMALS = 6;
@@ -223,9 +227,10 @@ export default function ProposalFeed() {
               ...p,
               agreedPrice: BigInt(parsed.agreed_price),
               agreedSize: BigInt(parsed.agreed_size),
+              asset: parsed.asset as string,
             };
           } catch {
-            return { ...p, agreedPrice: BigInt(0), agreedSize: BigInt(0) };
+            return { ...p, agreedPrice: BigInt(0), agreedSize: BigInt(0), asset: BASE_COIN_TYPE };
           }
         }),
       );
@@ -310,12 +315,13 @@ export default function ProposalFeed() {
       }
       if (p.agreedSize === BigInt(0)) continue; // blob decode failed — can't compute collateral
       // Accepted but not yet settled?
-      const expectedType =
-        p.side === 'buy' ? QUOTE_COIN_TYPE : BASE_COIN_TYPE;
+      const baseCoin = (p as { asset?: string }).asset ?? BASE_COIN_TYPE;
+      const floatScaling = BigInt(10 ** baseDecimalsFor(baseCoin));
+      const expectedType = p.side === 'buy' ? QUOTE_COIN_TYPE : baseCoin;
       const expectedValue =
         p.side === 'sell'
           ? p.agreedSize
-          : (p.agreedSize * p.agreedPrice) / FLOAT_SCALING;
+          : (p.agreedSize * p.agreedPrice) / floatScaling;
       const oIdx = remainingOrders.findIndex(
         (o) =>
           o.collateralType === expectedType &&
@@ -355,6 +361,8 @@ export default function ProposalFeed() {
       const proposal = MatchProposalBcs.parse(bytes);
       const agreedPrice = BigInt(proposal.agreed_price);
       const agreedSize = BigInt(proposal.agreed_size);
+      const baseCoin = (proposal.asset as string) || BASE_COIN_TYPE;
+      const floatScaling = BigInt(10 ** baseDecimalsFor(baseCoin));
 
       // 2. Build sealed Shell order with proposal terms.
       const seal = getSealClient(suiClient);
@@ -376,10 +384,9 @@ export default function ProposalFeed() {
 
       // 3. Build PTB with collateral.
       const tx = new Transaction();
-      const collateralType = collateralTypeFor(side);
-      // Size in base raw (1e9), price in DeepBook scale (1e6) → quote raw = size * price / 1e9.
+      const collateralType = side === 'buy' ? QUOTE_COIN_TYPE : baseCoin;
       const collateralAmount =
-        side === 'sell' ? agreedSize : (agreedSize * agreedPrice) / FLOAT_SCALING;
+        side === 'sell' ? agreedSize : (agreedSize * agreedPrice) / floatScaling;
 
       let collateral;
       if (collateralType === SUI_TYPE) {
@@ -497,7 +504,7 @@ export default function ProposalFeed() {
                     </span>
                   </td>
                   <td className="py-3 pr-3 text-right text-on-surface font-mono-data">
-                    {formatScaled(p.agreedSize, BASE_DECIMALS)}
+                    {formatScaled(p.agreedSize, baseDecimalsFor((p as { asset?: string }).asset ?? BASE_COIN_TYPE))}
                   </td>
                   <td className="py-3 pr-4 text-right text-on-surface font-mono-data">
                     {formatScaled(p.agreedPrice, PRICE_DECIMALS)}
