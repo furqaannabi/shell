@@ -375,6 +375,7 @@ fn decode_side_channel_orders(input: &[OrderInput]) -> Result<Vec<DecryptedOrder
                 // type is recovered from the on-chain OrderCommitment<T> tag
                 // by the spike script itself, not by us.
                 collateral_type: "0x2::sui::SUI".to_string(),
+                asset: "0x2::sui::SUI".to_string(),
             })
         })
         .collect()
@@ -2230,6 +2231,7 @@ mod test {
             limit_price: price,
             expiry_epoch: 9999,
             collateral_type: "0x2::sui::SUI".into(),
+            asset: "0x2::sui::SUI".into(),
         }
     }
 
