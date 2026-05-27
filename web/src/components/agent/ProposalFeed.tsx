@@ -349,13 +349,16 @@ export default function ProposalFeed() {
     return out;
   }, [data, aliveOrders, userReceipts]);
 
-  // Play a chime when new proposals arrive.
+  // Play a chime when new decodable proposals arrive.
   useEffect(() => {
     if (!data) return;
-    const newOnes = data.filter((p) => !seenDigests.current.has(p.txDigest));
     const isFirstPass = seenDigests.current.size === 0;
-    newOnes.forEach((p) => seenDigests.current.add(p.txDigest));
-    if (isFirstPass || newOnes.length === 0) return;
+    const newUnseen = data.filter((p) => !seenDigests.current.has(p.txDigest));
+    // Track ALL digests (including failed blobs) so isFirstPass stays correct.
+    data.forEach((p) => seenDigests.current.add(p.txDigest));
+    // Only ding when the new proposal actually decoded (blob available).
+    const newDecoded = newUnseen.filter((p) => p.agreedSize > BigInt(0));
+    if (isFirstPass || newDecoded.length === 0) return;
     playDing();
   }, [data]);
 
