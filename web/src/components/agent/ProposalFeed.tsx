@@ -245,10 +245,14 @@ export default function ProposalFeed() {
   // pair remains in its in-memory book, so a single trade can spawn many
   // identical-content proposals with different blob_ids. Keep the newest
   // of each group so the UI shows one actionable row per real match.
+  // Proposals whose Walrus blob expired (agreedSize=0) are excluded — they
+  // can't be decoded, can't be accepted, and would steal receipt matches
+  // from real proposals with the same counterparty.
   const displayData = useMemo(() => {
     if (!data) return undefined;
     const byKey = new Map<string, (typeof data)[number]>();
     for (const p of data) {
+      if (p.agreedSize === BigInt(0)) continue; // blob expired — skip
       const key = `${p.side}|${p.agreedPrice}|${p.agreedSize}|${p.counterparty}`;
       const existing = byKey.get(key);
       if (!existing || p.timestamp > existing.timestamp) byKey.set(key, p);
@@ -285,6 +289,7 @@ export default function ProposalFeed() {
     // receipt / order, then sort asc for stable claim order.
     const byKey = new Map<string, (typeof data)[number]>();
     for (const p of data) {
+      if (p.agreedSize === BigInt(0)) continue; // blob expired — can't match
       const k = proposalKey(p);
       const existing = byKey.get(k);
       if (!existing || p.timestamp < existing.timestamp) byKey.set(k, p);
