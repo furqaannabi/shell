@@ -10,7 +10,7 @@ export default function SideNavBar({ isOpen, onClose }: { isOpen?: boolean, onCl
     { href: '/terminal', icon: 'analytics', label: 'Execution' },
     { href: '/operator', icon: 'admin_panel_settings', label: 'Operator', mobileOnly: true },
     { href: '/analytics', icon: 'insights', label: 'Analytics', mobileOnly: true },
-    { href: '/agent', icon: 'handshake', label: 'IOI Desk' },
+    { href: '/desk', icon: 'handshake', label: 'IOI Desk' },
     { href: '/enclaves', icon: 'dns', label: 'Enclaves' },
     { href: '/vaults', icon: 'account_balance_wallet', label: 'Portfolio' },
   ];
