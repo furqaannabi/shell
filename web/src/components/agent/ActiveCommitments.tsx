@@ -143,7 +143,7 @@ export default function ActiveCommitments({ embedded }: { embedded?: boolean } =
         </div>
       ) : data && data.length > 0 ? (
         <table className="w-full text-left font-mono-sm text-mono-sm">
-          <thead>
+          <thead className="sticky top-0 bg-[#0D1117] z-10">
             <tr className="text-on-surface-variant border-b border-outline-variant">
               <th className="pb-2 pr-3 font-normal">Order</th>
               <th className="pb-2 pr-3 font-normal text-right">Collateral</th>

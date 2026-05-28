@@ -273,6 +273,9 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
   // Expired blobs (agreedSize = 0) are excluded.
   const displayData = useMemo(() => {
     if (!data) return undefined;
+    console.log('[ProposalFeed] displayData: raw proposals:', data.length,
+      data.map(p => ({ blob: p.blob.slice(0,8), agreedSize: p.agreedSize.toString(), matchId: (p as {matchId?:bigint}).matchId?.toString() }))
+    );
     const byKey = new Map<string, (typeof data)[number]>();
     for (const p of data) {
       if (p.agreedSize === BigInt(0)) continue;
@@ -349,30 +352,30 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     const sorted = Array.from(byKey.values()).sort(
       (a, b) => a.timestamp - b.timestamp,
     );
+    console.log('[ProposalFeed] chainAccepted: sorted proposals:', sorted.length,
+      'receipts:', remainingReceipts.length,
+      'acceptedKeys:', [...acceptedProposalKeys],
+    );
     for (const p of sorted) {
       const key = proposalKey(p);
-      // Settled? Requires user accepted this key. claimedReceiptIds prevents
-      // re-claiming a receipt that already belongs to a prior SETTLED row.
-      // Note: we intentionally skip the confirmedAcceptedKeys gate here —
-      // fast settlement (enclave settles before the 10s aliveOrders poll
-      // fires) means the ACCEPTED state is never observed, so requiring it
-      // causes SUBMITTED to stick permanently.
+      if (!acceptedProposalKeys.has(key)) {
+        console.log('[ProposalFeed] key NOT in acceptedProposalKeys:', key, '| stored:', [...acceptedProposalKeys]);
+      }
       if (acceptedProposalKeys.has(key)) {
-        console.debug('[chainAccepted] checking receipts for key', key,
-          'receipts:', remainingReceipts.map(r => ({
+        console.log('[ProposalFeed] checking receipts for key', key,
+          '| receipts:', remainingReceipts.map(r => ({
             id: r.objectId,
-            counterparty: r.fields.counterparty,
+            cp: r.fields.counterparty,
             price: r.fields.filled_price,
             size: r.fields.filled_size,
             claimed: claimedReceiptIds.has(r.objectId),
           })),
-          'want counterparty:', p.counterparty,
-          'want price:', p.agreedPrice.toString(),
-          'want size:', p.agreedSize.toString(),
+          '| want cp:', p.counterparty,
+          '| want price:', p.agreedPrice.toString(),
+          '| want size:', p.agreedSize.toString(),
         );
         const rIdx = remainingReceipts.findIndex(
           (r) =>
-            !claimedReceiptIds.has(r.objectId) &&
             r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
             BigInt(r.fields.filled_price) === p.agreedPrice &&
             BigInt(r.fields.filled_size) === p.agreedSize,
@@ -630,7 +633,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
         </div>
       ) : displayData && displayData.length > 0 ? (
         <table className="w-full text-left font-mono-sm text-mono-sm">
-          <thead>
+          <thead className="sticky top-0 bg-[#0D1117] z-10">
             <tr className="text-on-surface-variant border-b border-outline-variant">
               <th className="pb-2 pr-3 font-normal">Side</th>
               <th className="pb-2 pr-3 font-normal text-right">Size</th>
