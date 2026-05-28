@@ -44,7 +44,9 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
   const displayCollateral = (() => {
     if (side === 'sell') return size ? `${size} ${pair.baseSymbol}` : `? ${pair.baseSymbol}`;
     if (!size || !limitPrice) return `? ${pair.quoteSymbol}`;
-    return `${(parseFloat(size) * parseFloat(limitPrice)).toFixed(2)} ${pair.quoteSymbol}`;
+    const tv = parseFloat(size) * parseFloat(limitPrice);
+    const fee = tv * 0.001; // 0.1%
+    return `${(tv + fee).toFixed(2)} ${pair.quoteSymbol} (incl. fee)`;
   })();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -80,10 +82,13 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
       const tx = new Transaction();
       const collateralType = collateralTypeFor(side, pair);
       const SUI_TYPE = '0x2::sui::SUI';
+      const PROTOCOL_FEE_BPS = BigInt(10);
       const floatScaling = BigInt(10 ** pair.baseDecimals);
+      const tradeValue = (sizeBase * priceBase) / floatScaling;
+      const feeEach = (tradeValue * PROTOCOL_FEE_BPS) / BigInt(10000);
       const collateralAmount = side === 'sell'
         ? sizeBase
-        : (sizeBase * priceBase) / floatScaling;
+        : tradeValue + feeEach;
 
       let collateral;
       if (collateralType === SUI_TYPE) {
