@@ -419,10 +419,12 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
       const baseCoin = (p as { asset?: string }).asset ?? BASE_COIN_TYPE;
       const floatScaling = BigInt(10 ** baseDecimalsFor(baseCoin));
       const expectedType = p.side === 'buy' ? QUOTE_COIN_TYPE : baseCoin;
+      const tradeValueExpected = (p.agreedSize * p.agreedPrice) / floatScaling;
+      const feeExpected = (tradeValueExpected * BigInt(10)) / BigInt(10000);
       const expectedValue =
         p.side === 'sell'
           ? p.agreedSize
-          : (p.agreedSize * p.agreedPrice) / floatScaling;
+          : tradeValueExpected + feeExpected;
       const oIdx = remainingOrders.findIndex(
         (o) =>
           o.collateralType === expectedType &&
@@ -554,8 +556,10 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
       // 3. Build PTB with collateral.
       const tx = new Transaction();
       const collateralType = side === 'buy' ? QUOTE_COIN_TYPE : baseCoin;
+      const tradeValue = (agreedSize * agreedPrice) / floatScaling;
+      const feeEach = (tradeValue * BigInt(10)) / BigInt(10000);
       const collateralAmount =
-        side === 'sell' ? agreedSize : (agreedSize * agreedPrice) / floatScaling;
+        side === 'sell' ? agreedSize : tradeValue + feeEach;
 
       // Pre-flight balance check — avoids silent on-chain failure.
       const GAS_BUFFER = BigInt(200_000_000); // 0.2 SUI reserved for gas
