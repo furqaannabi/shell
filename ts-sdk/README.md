@@ -61,28 +61,33 @@ const seal = new SealClient({
   verifyKeyServers: false,
 });
 
+const { epoch } = await sui.getLatestSuiSystemState();
+const expiryEpoch = BigInt(epoch) + 5n;   // valid for ~5 epochs
+
 const enc = await encryptOrder({
   sealClient: seal,
   shellPackageId: "0x…",       // your Shell deployment
   threshold: 1,
   order: {
     side: "buy",
-    size: 1_000n,
-    limitPrice: 12_500n,
-    expiryEpoch: 1234n,
-    maxSlippageBps: 50,
+    size: 1_000_000_000n,       // 1 SUI (9 decimals)
+    limitPrice: 2_000_000n,     // 2.00 USDC (6 decimals, quote-per-base)
+    expiryEpoch,
+    maxSlippageBps: 50,         // 0.5% slippage tolerance
   },
 });
 
+// For a buy order, collateral = size × limitPrice / 1e9 ≈ 2 USDC.
+// Here we use SUI as collateral for illustration; swap collateralType for USDC orders.
 const tx = new Transaction();
-const [collateral] = tx.splitCoins(tx.gas, [tx.pure.u64(10_000_000n)]);
+const [collateral] = tx.splitCoins(tx.gas, [tx.pure.u64(2_000_000_000n)]); // 2 SUI
 submitOrderTx({
   shellPackageId: "0x…",
   collateralType: "0x2::sui::SUI",
   collateral,
   sealedEnvelope: enc.sealedEnvelope,
   commitHash: enc.commitHash,
-  expiryEpoch: 1234n,
+  expiryEpoch,
   tx,
 });
 // sign + execute tx with whichever signer
@@ -105,7 +110,9 @@ const tx = settleMatchTx({
   maker, taker, makerOrderId, takerOrderId,
   makerCollateralType: tMaker,
   takerCollateralType: tTaker,
-  filledSize, filledPrice, settlementTxDigest, signature,
+  filledSize, filledPrice,
+  deepbookTxDigest,   // 32-byte Uint8Array from the enclave's MatchPayload
+  signature,          // 64-byte ed25519 signature over IntentMessage<MatchPayload>
 });
 ```
 
@@ -115,7 +122,7 @@ The SDK is deployment-agnostic. Pass your own `shellPackageId`, `enclaveId`, and
 
 ## Frontend integration
 
-See [`docs/frontend-integration.md`](https://github.com/furqaannabi/shell/blob/main/ts-sdk/docs/frontend-integration.md) in the repo for a full dapp-kit walkthrough, including the `@mysten/sui` 2.x naming notes that bite if you copy-paste from older guides.
+Full dapp-kit walkthrough and API reference at [shell.finance/docs](https://shell.finance/docs) (also accessible at `/docs` in the deployed app). Covers client setup, SealClient construction, the `@mysten/sui` 2.x import rename, and all SDK functions with live examples.
 
 ## Stability
 

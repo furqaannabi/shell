@@ -112,10 +112,10 @@ Full IOI parameters (optional — these are the defaults):
 
 ```bash
 AGENT_IOI_SIDE=buy
-AGENT_IOI_SIZE_LO=100000000     # 0.1 SUI  (1e9-scaled)
-AGENT_IOI_SIZE_HI=200000000     # 0.2 SUI
-AGENT_IOI_PRICE_LO=900000       # 0.90 USDC (1e6-scaled)
-AGENT_IOI_PRICE_HI=1100000      # 1.10 USDC
+AGENT_IOI_SIZE_LO=1000000000    # 1 SUI    (1e9-scaled)
+AGENT_IOI_SIZE_HI=10000000000   # 10 SUI
+AGENT_IOI_PRICE_LO=1800000      # 1.80 USDC (1e6-scaled)
+AGENT_IOI_PRICE_HI=2200000      # 2.20 USDC
 AGENT_IOI_TTL_MIN=60
 ```
 
@@ -174,11 +174,11 @@ Scripted five-step demo:
 ```bash
 node dist/index.js post-ioi \
   --side buy \
-  --size-lo 100000000 \
-  --size-hi 200000000 \
-  --price-lo 900000 \
-  --price-hi 1100000 \
-  --ttl-ms 3600000
+  --size-lo 1000000000 \
+  --size-hi 10000000000 \
+  --price-lo 1800000 \
+  --price-hi 2200000 \
+  --ttl-ms 1800000
 ```
 
 Posts a single IOI and exits. Useful for testing or seeding a position.
@@ -393,7 +393,7 @@ Slush does not expose private keys. Use a dedicated agent wallet created with th
 
 | Error | Cause | Fix |
 |---|---|---|
-| `missing env var: AGENT_PRIVATE_KEY` | `.env` not filled | Set `AGENT_PRIVATE_KEY=suiprivkey1...` |
+| `AGENT_PRIVATE_KEY is required` | `.env` not filled | Set `AGENT_PRIVATE_KEY=suiprivkey1...` |
 | `no LLM API key` | Neither `LLM_API_KEY` nor `OPENAI_API_KEY` set | Add the appropriate key |
 | `unknown LLM_PROVIDER=X` | Typo in provider name | Valid values: `openai`, `anthropic`, `google`, `openai-compatible` |
 | `record_ioi failed: function not found` | Move package not upgraded | Teammate runs `sui client upgrade` |

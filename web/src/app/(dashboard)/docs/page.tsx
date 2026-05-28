@@ -617,7 +617,7 @@ function SdkTab() {
     },
     {
       name: 'submitOrderTx(opts)',
-      desc: 'Adds the submit_order PTB move call to an existing Transaction. Mutates tx in-place — call after your collateral split.',
+      desc: 'Appends the submit_order PTB move call to a Transaction and returns it. Pass an existing tx to compose with other calls; omit to get a fresh one. Call after your collateral split.',
       params: [
         { name: 'shellPackageId', type: 'string', desc: '' },
         { name: 'collateralType', type: 'string', desc: 'Move coin type of collateral' },
@@ -629,8 +629,8 @@ function SdkTab() {
       ],
       sig: `submitOrderTx({
   shellPackageId, collateralType, collateral,
-  sealedEnvelope, commitHash, expiryEpoch, tx
-}) => void`,
+  sealedEnvelope, commitHash, expiryEpoch, tx?
+}) => Transaction`,
     },
     {
       name: 'cancelOrderTx(opts)',
@@ -646,7 +646,7 @@ function SdkTab() {
     },
     {
       name: 'getActiveOrders(suiClient, opts)',
-      desc: "Fetches live OrderCommitment objects for a trader. Polls on-chain dynamic fields owned by the trader's address.",
+      desc: "Fetches live OrderCommitment objects for a trader. Queries OrderSubmitted events (paginates all pages), then prunes orders that no longer exist on-chain (settled, cancelled, or expired-and-deleted). Returns only orders with collateral still locked.",
       params: [
         { name: 'suiClient', type: 'SuiClient', desc: '' },
         { name: 'opts.shellPackageId', type: 'string', desc: '' },
@@ -675,18 +675,33 @@ function SdkTab() {
     },
     {
       name: 'settleMatchTx(opts)',
-      desc: 'Builds the settlement PTB: consumes the hot-potato MatchInstruction and executes the DeepBook trade atomically in the same PTB.',
+      desc: 'Builds the settlement PTB used by the enclave/orchestrator. Calls attestation::verify (producing a MatchInstruction hot-potato), then settlement::settle consumes it atomically with both OrderCommitments. The two makerCollateralType / takerCollateralType type args must match each order\'s actual T — use getOrderCollateralType.',
       params: [
         { name: 'shellPackageId', type: 'string', desc: '' },
-        { name: 'matchInstructionId', type: 'string', desc: 'ObjectId of MatchInstruction' },
-        { name: 'deepbookPoolId', type: 'string', desc: 'DeepBook pool object' },
-        { name: 'baseCoinType', type: 'string', desc: 'Move coin type' },
-        { name: 'quoteCoinType', type: 'string', desc: 'Move coin type' },
+        { name: 'enclaveId', type: 'string', desc: 'Shared Enclave<SHELL> object id' },
+        { name: 'timestampMs', type: 'bigint', desc: 'Enclave timestamp from MatchPayload' },
+        { name: 'maker', type: 'string', desc: 'Maker agent Sui address' },
+        { name: 'taker', type: 'string', desc: 'Taker agent Sui address' },
+        { name: 'makerOrderId', type: 'string', desc: 'OrderCommitment object id (maker)' },
+        { name: 'takerOrderId', type: 'string', desc: 'OrderCommitment object id (taker)' },
+        { name: 'makerCollateralType', type: 'string', desc: 'Move coin type T of maker order' },
+        { name: 'takerCollateralType', type: 'string', desc: 'Move coin type T of taker order' },
+        { name: 'filledSize', type: 'bigint', desc: 'Agreed fill size in base units' },
+        { name: 'filledPrice', type: 'bigint', desc: 'Agreed price ×1_000_000' },
+        { name: 'deepbookTxDigest', type: 'Uint8Array', desc: '32-byte DeepBook tx digest from enclave' },
+        { name: 'signature', type: 'Uint8Array', desc: '64-byte ed25519 signature over IntentMessage<MatchPayload>' },
         { name: 'tx', type: 'Transaction', desc: 'Optional — creates new if omitted', optional: true },
       ],
-      sig: `settleMatchTx({ shellPackageId, matchInstructionId, deepbookPoolId,
-               baseCoinType, quoteCoinType, tx? })
-  => Transaction`,
+      sig: `settleMatchTx({
+  shellPackageId, enclaveId, timestampMs,
+  maker, taker,
+  makerOrderId, takerOrderId,
+  makerCollateralType, takerCollateralType,
+  filledSize, filledPrice,
+  deepbookTxDigest,  // Uint8Array 32 bytes
+  signature,         // Uint8Array 64 bytes (ed25519)
+  tx?,
+}) => Transaction`,
     },
   ];
 
@@ -723,40 +738,58 @@ function SdkTab() {
       ))}
 
       <SectionHeader>End-to-end example</SectionHeader>
-      <CodeBlock lang="ts">{`import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
+      <Note>@mysten/sui 2.16+ renamed the RPC client. Import SuiJsonRpcClient from @mysten/sui/jsonRpc — not SuiClient from @mysten/sui/client.</Note>
+      <CodeBlock lang="ts">{`// ── Node.js / script path ─────────────────────────────────────────
+import { SuiJsonRpcClient } from '@mysten/sui/jsonRpc';
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
 import { SealClient } from '@mysten/seal';
 import { encryptOrder, submitOrderTx } from '@shell-finance/sdk';
 
-const suiClient = new SuiClient({ url: getFullnodeUrl('testnet') });
-const sealClient = new SealClient({ suiClient, serverObjectIds: [ENCLAVE_ID] });
+// 1. Clients
+const suiClient = new SuiJsonRpcClient({
+  url: 'https://fullnode.testnet.sui.io',
+  network: 'testnet',
+});
+const sealClient = new SealClient({
+  suiClient: suiClient as never,  // SealClient accepts SuiJsonRpcClient
+  serverConfigs: [{
+    objectId:     '0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98',
+    aggregatorUrl: 'https://seal-aggregator-testnet.mystenlabs.com',
+    weight: 1,
+  }],
+  verifyKeyServers: false,
+});
 
-// 1. Get current epoch
+const keypair = Ed25519Keypair.fromSecretKey(process.env.PRIVATE_KEY!);
+
+// 2. Current epoch → order expiry
 const { epoch } = await suiClient.getLatestSuiSystemState();
 const expiryEpoch = BigInt(epoch) + 5n;
 
-// 2. Encrypt the order (calls Seal key server)
+// 3. Encrypt the order (calls Seal key server)
+//    Sell order: collateral = SUI (base coin) → can split from gas
 const enc = await encryptOrder({
   sealClient,
-  shellPackageId: SHELL_PACKAGE_ID,
+  shellPackageId: '0x23d1e8…',  // SHELL_PACKAGE_ID
   threshold: 1,
   order: {
-    side: 'buy',
-    size: 1_000_000_000n,   // 1 SUI
-    limitPrice: 2_000_000n, // 2.00 USDC (×1e6)
+    side: 'sell',
+    size: 1_000_000_000n,    // 1 SUI (9 decimals)
+    limitPrice: 2_000_000n,  // 2.00 USDC/SUI (6 decimals)
     expiryEpoch,
     maxSlippageBps: 50,
     asset: '0x2::sui::SUI',
   },
 });
 
-// 3. Build PTB
+// 4. Build PTB — sell collateral is SUI, split from gas object
 const tx = new Transaction();
-const [collateral] = tx.splitCoins(tx.gas, [tx.pure.u64(2_000_000n)]);
+const [collateral] = tx.splitCoins(tx.gas, [tx.pure.u64(1_000_000_000n)]);
 
 submitOrderTx({
-  shellPackageId: SHELL_PACKAGE_ID,
-  collateralType: USDC_COIN_TYPE,
+  shellPackageId: '0x23d1e8…',
+  collateralType: '0x2::sui::SUI',
   collateral,
   sealedEnvelope: enc.sealedEnvelope,
   commitHash:     enc.commitHash,
@@ -764,17 +797,26 @@ submitOrderTx({
   tx,
 });
 
-// 4. Sign and submit
-const result = await wallet.signAndExecuteTransaction({ transaction: tx });
-console.log('Order submitted:', result.digest);`}</CodeBlock>
+// 5. Sign and execute
+const result = await suiClient.signAndExecuteTransaction({
+  signer: keypair,
+  transaction: tx,
+  options: { showEffects: true },
+});
+console.log('Order committed:', result.digest);
+// Persist enc.backupKey — only way to decrypt your order without the enclave`}</CodeBlock>
 
       <SectionHeader>TypeScript types</SectionHeader>
       <CodeBlock lang="ts">{`import type {
-  ActiveOrder,
-  Receipt,
-  OrderSide,
-  EncryptOrderOpts,
-  EncryptedOrder,
+  ActiveOrder,            // return type of getActiveOrders
+  SettlementReceiptFields,// fields on each receipt from getReceipts
+  OrderSide,              // "buy" | "sell"
+  EncryptOrderOptions,    // options bag for encryptOrder
+  EncryptedOrder,         // return type of encryptOrder
+  OrderPlaintext,         // order input shape
+  SubmitOrderTxOptions,
+  CancelOrderTxOptions,
+  SettleMatchOptions,
 } from '@shell-finance/sdk';`}</CodeBlock>
     </div>
   );
