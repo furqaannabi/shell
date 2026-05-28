@@ -84,12 +84,25 @@ public fun settle_v2<TBase, TQuote>(
     let trade_value = (((filled_size as u128) * (filled_price as u128)) / FLOAT_SCALING) as u64;
     let fee_each = (((trade_value as u128) * (pool::protocol_fee_bps(pool) as u128)) / (BPS_DENOM as u128)) as u64;
 
-    let mut fee_balance = balance::split(&mut taker_quote_balance, fee_each);
-    let seller_fee = balance::split(&mut taker_quote_balance, fee_each);
+    // Buyer's fee (from pre-deposited extra)
+    let buyer_fee = balance::split(&mut taker_quote_balance, fee_each);
+    // Seller's proceeds (exact trade_value); remainder refunded to buyer below
+    let mut seller_proceeds = balance::split(&mut taker_quote_balance, trade_value);
+    // Seller's fee deducted from their proceeds
+    let seller_fee = balance::split(&mut seller_proceeds, fee_each);
+
+    let mut fee_balance = buyer_fee;
     balance::join(&mut fee_balance, seller_fee);
     transfer::public_transfer(coin::from_balance(fee_balance, ctx), pool::treasury(pool));
 
-    transfer::public_transfer(coin::from_balance(taker_quote_balance, ctx), maker);
+    // Refund any excess quote to buyer (price improvement when fill < limit price)
+    if (balance::value(&taker_quote_balance) > 0) {
+        transfer::public_transfer(coin::from_balance(taker_quote_balance, ctx), taker);
+    } else {
+        balance::destroy_zero(taker_quote_balance);
+    };
+
+    transfer::public_transfer(coin::from_balance(seller_proceeds, ctx), maker);
     transfer::public_transfer(coin::from_balance(maker_base_balance, ctx), taker);
 
     let maker_receipt = pool::new_receipt(

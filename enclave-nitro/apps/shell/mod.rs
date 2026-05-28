@@ -52,7 +52,7 @@ use tokio::time::sleep;
 const SHELL_PACKAGE_ID: &str =
     "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e";
 const SHELL_PACKAGE_ID_LATEST: &str =
-    "0xa9d846a04c33cc758e5a77a0734293fed1c50b59b66d4c0a57f9a8b7056a212c";
+    "0x8956709ebf41e954fad31411be56f94a6f8ccd10f126d214295ec49c14b507fe";
 const SHELL_POOL_ID: &str =
     "0x33682a9652567989b094989fcabe9eda53fbde32c4a3e0204657a06510bab22b";
 const ENCLAVE_CONFIG_ID: &str =

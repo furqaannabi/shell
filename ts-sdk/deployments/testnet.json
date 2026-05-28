@@ -1,7 +1,7 @@
 {
   "network": "testnet",
   "packageId": "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e",
-  "latestPackageId": "0xa9d846a04c33cc758e5a77a0734293fed1c50b59b66d4c0a57f9a8b7056a212c",
+  "latestPackageId": "0x8956709ebf41e954fad31411be56f94a6f8ccd10f126d214295ec49c14b507fe",
   "enclavePackageId": "0x8ecf22e78c90c3e32833d76d82415d7e4227ea370bec4efdad4c4830cbda9e49",
   "poolId": "0x33682a9652567989b094989fcabe9eda53fbde32c4a3e0204657a06510bab22b",
   "enclaveConfigId": "0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504",
