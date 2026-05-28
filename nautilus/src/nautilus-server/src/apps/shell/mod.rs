@@ -1757,6 +1757,14 @@ async fn ioi_poll_once(
         };
         let _ = expiry_epoch; // expiry_epoch is on-chain hint; expiry_ms is plaintext
 
+        // Skip IOIs whose plaintext expiry has already passed. This
+        // prevents re-matching stale IOIs after an enclave restart.
+        let now_ms = now_ms_or_zero();
+        if p.expiry_ms > 0 && p.expiry_ms <= now_ms {
+            eprintln!("[shell-ioi] skip expired ioi {blob_id} (expiry_ms={} now={now_ms})", p.expiry_ms);
+            continue;
+        }
+
         // ── Insert into IOI book ────────────────────────────────────
         {
             let mut book = state.shell.ioi_book.write().await;

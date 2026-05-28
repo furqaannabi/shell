@@ -253,9 +253,10 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
               agreedSize: BigInt(parsed.agreed_size),
               asset: parsed.asset as string,
               matchId: BigInt(parsed.match_id),
+              expiryMs: BigInt(parsed.expiry_ms),
             };
           } catch {
-            return { ...p, agreedPrice: BigInt(0), agreedSize: BigInt(0), asset: BASE_COIN_TYPE, matchId: BigInt(0) };
+            return { ...p, agreedPrice: BigInt(0), agreedSize: BigInt(0), asset: BASE_COIN_TYPE, matchId: BigInt(0), expiryMs: BigInt(0) };
           }
         }),
       );
@@ -273,8 +274,12 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
   const displayData = useMemo(() => {
     if (!data) return undefined;
     const byKey = new Map<string, (typeof data)[number]>();
+    const nowMs = BigInt(Date.now());
     for (const p of data) {
       if (p.agreedSize === BigInt(0)) continue;
+      // Hide proposals whose enclave-set expiry window has passed.
+      const pExpiry = (p as { expiryMs?: bigint }).expiryMs;
+      if (pExpiry && pExpiry > BigInt(0) && pExpiry < nowMs) continue;
       const key =
         (p as { matchId?: bigint }).matchId && (p as { matchId?: bigint }).matchId! > BigInt(0)
           ? `mid:${(p as { matchId?: bigint }).matchId!.toString()}`
