@@ -19,9 +19,7 @@ function timeAgo(ms: number): string {
   return `${Math.floor(s / 31_536_000)}y ago`;
 }
 
-const WALRUS_AGGREGATOR =
-  process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR ??
-  'https://aggregator.walrus-testnet.walrus.space';
+const WALRUS_EXPLORER = 'https://walruscan.com/testnet/blob';
 
 const EXPLORER = (id: string) => `https://suiscan.xyz/${NETWORK}/tx/${id}`;
 
@@ -136,7 +134,7 @@ export default function IOIList({ embedded }: { embedded?: boolean } = {}) {
                 <td className="py-3">
                   <div className="flex items-center gap-2">
                     <a
-                      href={`${WALRUS_AGGREGATOR}/v1/blobs/${ioi.blob}`}
+                      href={`${WALRUS_EXPLORER}/${ioi.blob}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-secondary hover:text-primary transition-colors"

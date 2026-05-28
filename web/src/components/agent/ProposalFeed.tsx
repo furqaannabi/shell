@@ -35,9 +35,7 @@ function baseDecimalsFor(coinType: string): number {
   return TRADING_PAIRS.find((p) => p.baseCoinType === coinType)?.baseDecimals ?? 9;
 }
 
-const WALRUS_AGGREGATOR =
-  process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR ??
-  'https://aggregator.walrus-testnet.walrus.space';
+const WALRUS_EXPLORER = 'https://walruscan.com/testnet/blob';
 
 const EXPLORER = (id: string) => `https://suiscan.xyz/${NETWORK}/tx/${id}`;
 const SUI_TYPE = '0x2::sui::SUI';
@@ -730,7 +728,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
                   </td>
                   <td className="py-3 pr-3">
                     <a
-                      href={`${WALRUS_AGGREGATOR}/v1/blobs/${p.blob}`}
+                      href={`${WALRUS_EXPLORER}/${p.blob}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-secondary hover:text-primary transition-colors"
