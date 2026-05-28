@@ -358,6 +358,18 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
       // fires) means the ACCEPTED state is never observed, so requiring it
       // causes SUBMITTED to stick permanently.
       if (acceptedProposalKeys.has(key)) {
+        console.debug('[chainAccepted] checking receipts for key', key,
+          'receipts:', remainingReceipts.map(r => ({
+            id: r.objectId,
+            counterparty: r.fields.counterparty,
+            price: r.fields.filled_price,
+            size: r.fields.filled_size,
+            claimed: claimedReceiptIds.has(r.objectId),
+          })),
+          'want counterparty:', p.counterparty,
+          'want price:', p.agreedPrice.toString(),
+          'want size:', p.agreedSize.toString(),
+        );
         const rIdx = remainingReceipts.findIndex(
           (r) =>
             !claimedReceiptIds.has(r.objectId) &&
