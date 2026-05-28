@@ -15,7 +15,7 @@ import {
   getReceipts,
 } from '@/lib/shell-sdk';
 import { getBlob } from '@/lib/walrus';
-import { MatchProposalBcs } from '@/lib/ioi';
+import { parseMatchProposal } from '@/lib/ioi';
 import { friendlyError } from '@/lib/errors';
 import { playDing } from '@/lib/sound';
 import {
@@ -99,7 +99,7 @@ export default function ProposalFeed() {
 
   const [accepting, setAccepting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const ACCEPTED_KEY = 'shell_accepted_proposals_v2'; // keyed by `${addr}:${blobId}`
+  const ACCEPTED_KEY = 'shell_accepted_proposals_v2'; // keyed by `${addr}:${blobId}` OR `${addr}:key:${proposalKey}`
   const [accepted, setAccepted] = useState<Record<string, string>>(() => {
     if (typeof window === 'undefined') return {};
     try {
@@ -109,6 +109,23 @@ export default function ProposalFeed() {
     }
   });
   const seenDigests = useRef<Set<string>>(new Set());
+  const CONFIRMED_KEY = 'shell_confirmed_accepted_v1';
+  const CLAIMED_RECEIPTS_KEY = 'shell_claimed_receipts_v1';
+
+  // Proposal keys whose ACCEPTED state was ever observed (persisted across
+  // refreshes). Required before receipt matching is allowed.
+  const [confirmedAcceptedKeys, setConfirmedAcceptedKeys] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem(CONFIRMED_KEY) ?? '[]')); } catch { return new Set(); }
+  });
+
+  // Receipt objectIds already claimed by a prior SETTLED display. Prevents
+  // a new proposal with the same (price, size, counterparty) from claiming
+  // a receipt that belongs to an older trade.
+  const [claimedReceiptIds, setClaimedReceiptIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem(CLAIMED_RECEIPTS_KEY) ?? '[]')); } catch { return new Set(); }
+  });
 
   // User's own alive OrderCommitments + collateral values + originating tx digest.
   // We match a proposal to one of these by (collateralType, collateralValue) below.
@@ -225,15 +242,16 @@ export default function ProposalFeed() {
         mine.map(async (p) => {
           try {
             const bytes = await getBlob(p.blob);
-            const parsed = MatchProposalBcs.parse(bytes);
+            const parsed = parseMatchProposal(bytes);
             return {
               ...p,
               agreedPrice: BigInt(parsed.agreed_price),
               agreedSize: BigInt(parsed.agreed_size),
               asset: parsed.asset as string,
+              matchId: BigInt(parsed.match_id),
             };
           } catch {
-            return { ...p, agreedPrice: BigInt(0), agreedSize: BigInt(0), asset: BASE_COIN_TYPE };
+            return { ...p, agreedPrice: BigInt(0), agreedSize: BigInt(0), asset: BASE_COIN_TYPE, matchId: BigInt(0) };
           }
         }),
       );
@@ -243,20 +261,20 @@ export default function ProposalFeed() {
     staleTime: 30_000,
   });
 
-  // Dedupe by (side, agreedPrice, agreedSize, counterparty). The enclave
-  // re-emits a fresh MatchProposed every matcher tick while the same IOI
-  // pair remains in its in-memory book, so a single trade can spawn many
-  // identical-content proposals with different blob_ids. Keep the newest
-  // of each group so the UI shows one actionable row per real match.
-  // Proposals whose Walrus blob expired (agreedSize=0) are excluded — they
-  // can't be decoded, can't be accepted, and would steal receipt matches
-  // from real proposals with the same counterparty.
+  // Dedupe proposals. New enclave (with match_id) uses the match_id as the
+  // key so each distinct match attempt gets its own row, even when terms are
+  // identical. Old enclave blobs (match_id = 0) fall back to content-based
+  // dedup `side|price|size|counterparty` — keeps newest of each group.
+  // Expired blobs (agreedSize = 0) are excluded.
   const displayData = useMemo(() => {
     if (!data) return undefined;
     const byKey = new Map<string, (typeof data)[number]>();
     for (const p of data) {
-      if (p.agreedSize === BigInt(0)) continue; // blob expired — skip
-      const key = `${p.side}|${p.agreedPrice}|${p.agreedSize}|${p.counterparty}`;
+      if (p.agreedSize === BigInt(0)) continue;
+      const key =
+        (p as { matchId?: bigint }).matchId && (p as { matchId?: bigint }).matchId! > BigInt(0)
+          ? `mid:${(p as { matchId?: bigint }).matchId!.toString()}`
+          : `${p.side}|${p.agreedPrice}|${p.agreedSize}|${p.counterparty}`;
       const existing = byKey.get(key);
       if (!existing || p.timestamp > existing.timestamp) byKey.set(key, p);
     }
@@ -284,6 +302,31 @@ export default function ProposalFeed() {
     asset?: string;
   }) =>
     `${p.side}|${p.agreedPrice}|${p.agreedSize}|${p.counterparty}|${(p as { asset?: string }).asset ?? BASE_COIN_TYPE}`;
+
+  // Set of proposalKeys this wallet actually accepted (persisted in localStorage
+  // under `addr:key:proposalKey`). Also back-compat: derive keys from old
+  // blob-format entries (`addr:blobId`) by cross-referencing with current data.
+  const acceptedProposalKeys = useMemo(() => {
+    if (!account) return new Set<string>();
+    const addr = account.address.toLowerCase();
+    const prefix = `${addr}:key:`;
+    const keys = new Set<string>(
+      Object.keys(accepted)
+        .filter((k) => k.startsWith(prefix))
+        .map((k) => k.slice(prefix.length)),
+    );
+    // Old-format entries: `addr:blobId` (no `key:` prefix). Cross-reference
+    // with decoded proposals to recover the proposalKey.
+    if (data) {
+      for (const p of data) {
+        if (p.agreedSize > BigInt(0) && accepted[`${addr}:${p.blob}`]) {
+          keys.add(proposalKey(p));
+        }
+      }
+    }
+    return keys;
+  }, [accepted, account, data]);
+
   const chainAccepted = useMemo(() => {
     if (!data) return {} as Record<string, ChainState>;
     const out: Record<string, ChainState> = {};
@@ -303,22 +346,27 @@ export default function ProposalFeed() {
     );
     for (const p of sorted) {
       const key = proposalKey(p);
-      // Settled? Require exact (counterparty + price + size) match so
-      // multiple trades between the same two wallets don't cross-claim
-      // each other's receipts.
-      const rIdx = remainingReceipts.findIndex(
-        (r) =>
-          r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
-          BigInt(r.fields.filled_price) === p.agreedPrice &&
-          BigInt(r.fields.filled_size) === p.agreedSize,
-      );
-      if (rIdx >= 0) {
-        out[key] = {
-          status: 'settled',
-          receiptId: remainingReceipts[rIdx].objectId,
-        };
-        remainingReceipts.splice(rIdx, 1);
-        continue;
+      // Settled? Only attempt receipt matching if:
+      //   1. This wallet accepted a proposal for this key (localStorage key: entry), AND
+      //   2. We observed ACCEPTED state in this session (OrderCommitment was live).
+      // Without (2), a just-accepted proposal would claim old receipts before
+      // the OrderCommitment is even indexed.
+      if (acceptedProposalKeys.has(key) && confirmedAcceptedKeys.has(key)) {
+        const rIdx = remainingReceipts.findIndex(
+          (r) =>
+            !claimedReceiptIds.has(r.objectId) &&
+            r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
+            BigInt(r.fields.filled_price) === p.agreedPrice &&
+            BigInt(r.fields.filled_size) === p.agreedSize,
+        );
+        if (rIdx >= 0) {
+          out[key] = {
+            status: 'settled',
+            receiptId: remainingReceipts[rIdx].objectId,
+          };
+          remainingReceipts.splice(rIdx, 1);
+          continue;
+        }
       }
       // Accepted but not yet settled?
       const baseCoin = (p as { asset?: string }).asset ?? BASE_COIN_TYPE;
@@ -342,7 +390,55 @@ export default function ProposalFeed() {
       }
     }
     return out;
-  }, [data, aliveOrders, userReceipts]);
+  }, [data, aliveOrders, userReceipts, acceptedProposalKeys, confirmedAcceptedKeys, claimedReceiptIds]);
+
+  // When chainAccepted finds a live OrderCommitment → persist the key.
+  // When chainAccepted shows SETTLED → persist the receipt objectId so it
+  // can't be re-claimed by a new proposal with the same (price, size, counterparty).
+  useEffect(() => {
+    const newAccepted = Object.entries(chainAccepted)
+      .filter(([, s]) => s.status === 'accepted')
+      .map(([k]) => k)
+      .filter((k) => !confirmedAcceptedKeys.has(k));
+    const newClaimed = Object.values(chainAccepted)
+      .filter((s): s is { status: 'settled'; receiptId: string } => s.status === 'settled')
+      .map((s) => s.receiptId)
+      .filter((id) => !claimedReceiptIds.has(id));
+    if (newAccepted.length > 0) {
+      setConfirmedAcceptedKeys((prev) => {
+        const next = new Set([...prev, ...newAccepted]);
+        try { localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...next])); } catch {}
+        return next;
+      });
+    }
+    if (newClaimed.length > 0) {
+      setClaimedReceiptIds((prev) => {
+        const next = new Set([...prev, ...newClaimed]);
+        try { localStorage.setItem(CLAIMED_RECEIPTS_KEY, JSON.stringify([...next])); } catch {}
+        return next;
+      });
+    }
+  }, [chainAccepted]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Back-compat bootstrap: auto-populate confirmedAcceptedKeys for old
+  // blob-format accepted entries. Old trades never went through the
+  // key: tracking path so confirmedAcceptedKeys was never set for them,
+  // blocking receipt matching. Safe to bypass the "observed ACCEPTED" gate
+  // here because these are historical trades whose OrderCommitment is gone.
+  useEffect(() => {
+    if (!data || !account) return;
+    const addr = account.address.toLowerCase();
+    const toConfirm = data
+      .filter((p) => p.agreedSize > BigInt(0) && accepted[`${addr}:${p.blob}`])
+      .map((p) => proposalKey(p));
+    if (toConfirm.length === 0) return;
+    setConfirmedAcceptedKeys((prev) => {
+      const next = new Set([...prev, ...toConfirm]);
+      if (next.size === prev.size) return prev;
+      try { localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, [data, accepted, account]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Play a chime when new decodable proposals arrive.
   useEffect(() => {
@@ -360,6 +456,7 @@ export default function ProposalFeed() {
   async function handleAccept(
     blobId: string,
     side: 'buy' | 'sell',
+    counterparty: string,
   ): Promise<void> {
     if (!account) return;
     setError(null);
@@ -367,7 +464,7 @@ export default function ProposalFeed() {
     try {
       // 1. Fetch proposal blob from Walrus + BCS-decode.
       const bytes = await getBlob(blobId);
-      const proposal = MatchProposalBcs.parse(bytes);
+      const proposal = parseMatchProposal(bytes);
       const agreedPrice = BigInt(proposal.agreed_price);
       const agreedSize = BigInt(proposal.agreed_size);
       const baseCoin = (proposal.asset as string) || BASE_COIN_TYPE;
@@ -464,9 +561,12 @@ export default function ProposalFeed() {
       if (txResult.effects?.status?.status !== 'success') {
         throw new Error(`Transaction failed: ${txResult.effects?.status?.error ?? 'unknown error'}`);
       }
-      const key = `${account.address.toLowerCase()}:${blobId}`;
+      const addr = account.address.toLowerCase();
+      const key = `${addr}:${blobId}`;
+      const pKey = proposalKey({ side, agreedPrice, agreedSize, counterparty, asset: baseCoin });
+      const keyKey = `${addr}:key:${pKey}`;
       setAccepted((m) => {
-        const next = { ...m, [key]: res.digest };
+        const next = { ...m, [key]: res.digest, [keyKey]: res.digest };
         try {
           localStorage.setItem(ACCEPTED_KEY, JSON.stringify(next));
         } catch {}
@@ -606,7 +706,7 @@ export default function ProposalFeed() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleAccept(p.blob, p.side)}
+                        onClick={() => handleAccept(p.blob, p.side, p.counterparty)}
                         disabled={isAccepting}
                         className="bg-primary/10 border border-primary text-primary px-3 py-1 rounded text-[10px] hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       >

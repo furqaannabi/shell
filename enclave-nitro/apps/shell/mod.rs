@@ -22,7 +22,7 @@ use fastcrypto::ed25519::Ed25519KeyPair;
 use fastcrypto::encoding::{Base64, Encoding, Hex};
 use fastcrypto::hash::{HashFunction, Sha256};
 use fastcrypto::traits::{KeyPair, Signer, ToFromBytes};
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 use seal_sdk::types::{ElGamalPublicKey, ElgamalVerificationKey, FetchKeyRequest, FetchKeyResponse};
 use seal_sdk::{
     decrypt_seal_responses, genkey, seal_decrypt_object, signed_message, signed_request,
@@ -245,6 +245,9 @@ struct MatchProposalPlaintext {
     agreed_price: u64,
     agreed_size: u64,
     expiry_ms: u64,
+    /// Unique random ID per match attempt. Lets the UI show separate rows
+    /// when the enclave re-proposes the same (price, size, counterparty).
+    match_id: u64,
 }
 
 // ── Extended AppState fields ────────────────────────────────────────
@@ -1837,6 +1840,7 @@ async fn try_match_and_propose(
         }
 
         let proposal_expiry = now_ms + PROPOSAL_EXPIRY_MS;
+        let match_id: u64 = thread_rng().gen();
         let buy_proposal = MatchProposalPlaintext {
             buy_agent: buy.agent_id,
             sell_agent: sell.agent_id,
@@ -1844,6 +1848,7 @@ async fn try_match_and_propose(
             agreed_price,
             agreed_size,
             expiry_ms: proposal_expiry,
+            match_id,
         };
         let sell_proposal = buy_proposal.clone();
 

@@ -200,6 +200,7 @@ export async function runDemo(): Promise<void> {
     agreedPrice: 3_500_000n,  // 3.50 USDC — above max 1.10
     agreedSize: SIZE_LO,
     expiryMs: BigInt(Date.now()) + 60_000n,
+    matchId: BigInt(0),
     side: "buy",
     blobId: "demo-synthetic-bad-price",
   };
@@ -244,6 +245,7 @@ export async function runDemo(): Promise<void> {
       agreedPrice: 1_000_000n, // 1.00 USDC — valid price
       agreedSize: breachSizeRaw,
       expiryMs: BigInt(Date.now()) + 60_000n,
+      matchId: BigInt(0),
       side: "buy",
       blobId: "demo-synthetic-risk-cap-breach",
     };

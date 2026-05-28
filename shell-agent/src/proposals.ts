@@ -4,8 +4,19 @@ import type { SuiEvent, SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
 import { config } from "./config.js";
 import { getBlob } from "./walrus.js";
 
-/** BCS schema locked to the enclave's `MatchProposalPlaintext`. */
+// v2 schema: includes match_id
 const MatchProposalBcs = bcs.struct("MatchProposal", {
+  buy_agent: bcs.bytes(32),
+  sell_agent: bcs.bytes(32),
+  asset: bcs.string(),
+  agreed_price: bcs.u64(),
+  agreed_size: bcs.u64(),
+  expiry_ms: bcs.u64(),
+  match_id: bcs.u64(),
+});
+
+// v1 schema: legacy blobs without match_id
+const MatchProposalBcsV1 = bcs.struct("MatchProposalV1", {
   buy_agent: bcs.bytes(32),
   sell_agent: bcs.bytes(32),
   asset: bcs.string(),
@@ -14,6 +25,16 @@ const MatchProposalBcs = bcs.struct("MatchProposal", {
   expiry_ms: bcs.u64(),
 });
 
+function parseProposalBytes(bytes: Uint8Array): { buy_agent: Uint8Array; sell_agent: Uint8Array; asset: string; agreed_price: bigint; agreed_size: bigint; expiry_ms: bigint; match_id: bigint } {
+  try {
+    const p = MatchProposalBcs.parse(bytes);
+    return { ...p, agreed_price: BigInt(p.agreed_price), agreed_size: BigInt(p.agreed_size), expiry_ms: BigInt(p.expiry_ms), match_id: BigInt(p.match_id) };
+  } catch {
+    const p = MatchProposalBcsV1.parse(bytes);
+    return { ...p, agreed_price: BigInt(p.agreed_price), agreed_size: BigInt(p.agreed_size), expiry_ms: BigInt(p.expiry_ms), match_id: BigInt(0) };
+  }
+}
+
 export interface MatchProposal {
   buyAgent: string;
   sellAgent: string;
@@ -21,6 +42,7 @@ export interface MatchProposal {
   agreedPrice: bigint;
   agreedSize: bigint;
   expiryMs: bigint;
+  matchId: bigint;
   /** Which side is *this* agent on this proposal. */
   side: "buy" | "sell";
   /** Walrus blob_id the proposal was fetched from (for journal links). */
@@ -79,14 +101,15 @@ export async function pollProposals(opts: {
 
     try {
       const bytes = await getBlob(blobId);
-      const decoded = MatchProposalBcs.parse(bytes);
+      const decoded = parseProposalBytes(bytes);
       proposals.push({
         buyAgent: bytesToAddress(decoded.buy_agent),
         sellAgent: bytesToAddress(decoded.sell_agent),
         asset: decoded.asset,
-        agreedPrice: BigInt(decoded.agreed_price),
-        agreedSize: BigInt(decoded.agreed_size),
-        expiryMs: BigInt(decoded.expiry_ms),
+        agreedPrice: decoded.agreed_price,
+        agreedSize: decoded.agreed_size,
+        expiryMs: decoded.expiry_ms,
+        matchId: decoded.match_id,
         side,
         blobId,
       });

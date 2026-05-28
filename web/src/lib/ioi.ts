@@ -26,6 +26,7 @@ export interface IoiPlaintext {
   expiryMs: bigint;
 }
 
+// v2: includes match_id (enclave ≥ this commit)
 export const MatchProposalBcs = bcs.struct('MatchProposal', {
   buy_agent: bcs.bytes(32),
   sell_agent: bcs.bytes(32),
@@ -33,7 +34,54 @@ export const MatchProposalBcs = bcs.struct('MatchProposal', {
   agreed_price: bcs.u64(),
   agreed_size: bcs.u64(),
   expiry_ms: bcs.u64(),
+  match_id: bcs.u64(),
 });
+
+// v1: legacy blobs produced before match_id was added
+const MatchProposalBcsV1 = bcs.struct('MatchProposalV1', {
+  buy_agent: bcs.bytes(32),
+  sell_agent: bcs.bytes(32),
+  asset: bcs.string(),
+  agreed_price: bcs.u64(),
+  agreed_size: bcs.u64(),
+  expiry_ms: bcs.u64(),
+});
+
+/** Parse a Walrus blob, trying v2 schema first then falling back to v1.
+ *  Legacy blobs (no match_id) get match_id = 0. */
+export function parseMatchProposal(bytes: Uint8Array): {
+  buy_agent: Uint8Array;
+  sell_agent: Uint8Array;
+  asset: string;
+  agreed_price: bigint;
+  agreed_size: bigint;
+  expiry_ms: bigint;
+  match_id: bigint;
+} {
+  try {
+    const p = MatchProposalBcs.parse(bytes);
+    return {
+      buy_agent: p.buy_agent,
+      sell_agent: p.sell_agent,
+      asset: p.asset,
+      agreed_price: BigInt(p.agreed_price),
+      agreed_size: BigInt(p.agreed_size),
+      expiry_ms: BigInt(p.expiry_ms),
+      match_id: BigInt(p.match_id),
+    };
+  } catch {
+    const p = MatchProposalBcsV1.parse(bytes);
+    return {
+      buy_agent: p.buy_agent,
+      sell_agent: p.sell_agent,
+      asset: p.asset,
+      agreed_price: BigInt(p.agreed_price),
+      agreed_size: BigInt(p.agreed_size),
+      expiry_ms: BigInt(p.expiry_ms),
+      match_id: BigInt(0),
+    };
+  }
+}
 
 export function encodeIoi(p: IoiPlaintext): Uint8Array {
   return IoiPlaintextBcs.serialize({
