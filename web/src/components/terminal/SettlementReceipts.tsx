@@ -43,8 +43,14 @@ export default function SettlementReceipts() {
   // Chime when a new settlement receipt lands.
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
   const seenIds = useRef<Set<string>>(new Set());
+  const seenForAccount = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!receipts) return;
+    // Reset when wallet changes so existing receipts of the new wallet don't chime.
+    if (seenForAccount.current !== account?.address) {
+      seenIds.current = new Set();
+      seenForAccount.current = account?.address;
+    }
     const fresh = receipts.filter((r) => !seenIds.current.has(r.objectId));
     const isFirstPass = seenIds.current.size === 0;
     fresh.forEach((r) => seenIds.current.add(r.objectId));
@@ -53,7 +59,7 @@ export default function SettlementReceipts() {
     setFlashIds(new Set(newIds));
     setTimeout(() => setFlashIds(new Set()), 1500);
     playBellChime();
-  }, [receipts]);
+  }, [receipts, account?.address]);
 
   return (
     <div className="glass-panel rounded-lg p-4 flex flex-col flex-1 overflow-hidden">

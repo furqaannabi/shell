@@ -174,26 +174,23 @@ export default function IOIForm() {
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-        {/* Pair selector — all pairs shown; disabled ones greyed out */}
-        <div className="flex gap-1 p-1 bg-surface-container-high rounded border border-outline-variant">
-          {TRADING_PAIRS.map((p) => (
-            <button
-              key={p.baseCoinType}
-              type="button"
-              disabled={!p.enabled}
-              title={p.disabledReason}
-              onClick={() => { if (p.enabled) { setPair(p); setSizeLo(''); setSizeHi(''); setPriceLo(''); setPriceHi(''); } }}
-              className={`flex-1 py-1 rounded font-mono-sm text-[10px] transition-colors ${
-                !p.enabled
-                  ? 'opacity-30 cursor-not-allowed text-on-surface-variant'
-                  : pair.baseCoinType === p.baseCoinType
-                    ? 'bg-primary/20 border border-primary text-primary cursor-pointer'
-                    : 'text-on-surface-variant hover:text-on-surface cursor-pointer'
-              }`}
-            >
-              {p.baseSymbol}/{p.quoteSymbol}
-            </button>
-          ))}
+        {/* Pair selector */}
+        <div>
+          <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Pair</label>
+          <select
+            className="w-full rounded p-2 bg-surface-container-high border border-outline-variant text-on-surface font-mono-sm text-mono-sm focus:outline-none focus:border-primary cursor-pointer"
+            value={pair.baseCoinType}
+            onChange={(e) => {
+              const p = TRADING_PAIRS.find((t) => t.baseCoinType === e.target.value && t.enabled);
+              if (p) { setPair(p); setSizeLo(''); setSizeHi(''); setPriceLo(''); setPriceHi(''); }
+            }}
+          >
+            {TRADING_PAIRS.map((p) => (
+              <option key={p.baseCoinType} value={p.baseCoinType} disabled={!p.enabled}>
+                {p.baseSymbol}/{p.quoteSymbol}{p.label ? ` — ${p.label}` : ''}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="grid grid-cols-2 gap-2">

@@ -113,6 +113,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     }
   });
   const seenDigests = useRef<Set<string>>(new Set());
+  const seenDigestsForAccount = useRef<string | undefined>(undefined);
   const DECODED_CACHE_KEY = 'shell_decoded_proposals_v1';
   type DecodedEntry = { agreedPrice: string; agreedSize: string; asset: string; matchId: string; expiryMs: string };
   // Persist last-good decoded fields per blob so 404s don't kill proposals
@@ -491,6 +492,11 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
   // Play a chime when new decodable proposals arrive.
   useEffect(() => {
     if (!data) return;
+    // Reset when wallet changes so old wallet's proposals don't ding on reconnect.
+    if (seenDigestsForAccount.current !== account?.address) {
+      seenDigests.current = new Set();
+      seenDigestsForAccount.current = account?.address;
+    }
     const isFirstPass = seenDigests.current.size === 0;
     const newUnseen = data.filter((p) => !seenDigests.current.has(p.txDigest));
     // Track ALL digests (including failed blobs) so isFirstPass stays correct.
@@ -499,7 +505,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     const newDecoded = newUnseen.filter((p) => p.agreedSize > BigInt(0));
     if (isFirstPass || newDecoded.length === 0) return;
     playDing();
-  }, [data]);
+  }, [data, account?.address]);
 
   async function handleAccept(
     blobId: string,
