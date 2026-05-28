@@ -22,6 +22,13 @@ function formatU64(raw: string, decimals: number): string {
   return `${whole}.${frac.toString().padStart(decimals, '0').replace(/0+$/, '')}`;
 }
 
+/** Compute protocol fee (0.1%) from filled_size × filled_price, in quote units. */
+function computeFee(filledSize: string, filledPrice: string): string {
+  const tradeValue = (BigInt(filledSize) * BigInt(filledPrice)) / BigInt(1_000_000_000);
+  const fee = (tradeValue * BigInt(10)) / BigInt(10_000);
+  return formatU64(fee.toString(), 6);
+}
+
 export default function SettlementReceipts() {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
@@ -95,6 +102,9 @@ export default function SettlementReceipts() {
               </div>
               <div className="flex justify-between font-mono-sm text-[10px] text-on-surface-variant">
                 <span>Size: {formatU64(receipt.fields.filled_size, 9)} SUI</span>
+                <span>Fee: {computeFee(receipt.fields.filled_size, receipt.fields.filled_price)} {QUOTE_SYMBOL}</span>
+              </div>
+              <div className="flex justify-between font-mono-sm text-[10px] text-on-surface-variant">
                 <span>CP: {truncateAddr(receipt.fields.counterparty)}</span>
               </div>
               <div className="font-mono-sm text-[9px] text-secondary truncate">

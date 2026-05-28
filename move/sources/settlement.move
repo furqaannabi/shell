@@ -1,7 +1,8 @@
 module shell::settlement;
 
 use shell::attestation::{Self, MatchInstruction};
-use shell::pool::{Self, OrderCommitment};
+use shell::pool::{Self, OrderCommitment, Pool};
+use sui::balance;
 use sui::coin::{Self, Coin};
 use sui::clock::Clock;
 use deepbook::pool::{Self as deepbook_pool, Pool as DeepBookPool};
@@ -35,18 +36,27 @@ public fun settle<TBase, TQuote>(
     abort EDeprecated
 }
 
-/// Settle a matched pair as a direct two-party collateral swap.
-///
-/// The enclave-signed `MatchInstruction` (a hot-potato) guarantees the
-/// fill came out of the off-chain matcher; this function consumes the
-/// two `OrderCommitment`s and crosses the legs — maker (sell, base) →
-/// taker, taker (buy, quote) → maker — then mints a `SettlementReceipt`
-/// for each party. Atomic settle-or-revert because the hot-potato must
-/// be consumed in the same PTB.
+/// DEPRECATED — retained for upgrade compatibility. Use `settle_v2`.
 public fun settle_direct<TBase, TQuote>(
+    _instruction: MatchInstruction,
+    _maker_order: OrderCommitment<TBase>,
+    _taker_order: OrderCommitment<TQuote>,
+    _ctx: &mut TxContext,
+) {
+    abort EDeprecated
+}
+
+/// Settle a matched pair with protocol fee collection.
+///
+/// Buyer pre-deposits `trade_value + fee_each` quote coin. At settlement,
+/// `fee_each` is taken from buyer's deposit and another `fee_each` from
+/// the remaining trade_value (seller's proceeds); both go to `pool.treasury`.
+/// Seller nets `trade_value - fee_each`. Buyer gets the full base amount.
+public fun settle_v2<TBase, TQuote>(
     instruction: MatchInstruction,
     maker_order: OrderCommitment<TBase>,
     taker_order: OrderCommitment<TQuote>,
+    pool: &Pool,
     ctx: &mut TxContext,
 ) {
     let maker_order_id = object::id(&maker_order);
@@ -67,33 +77,28 @@ public fun settle_direct<TBase, TQuote>(
     assert!(taker_order_id == instr_taker_id, EOrderMismatch);
 
     let (maker_trader, _, maker_base_balance) = pool::consume(maker_order);
-    let (taker_trader, _, taker_quote_balance) = pool::consume(taker_order);
+    let (taker_trader, _, mut taker_quote_balance) = pool::consume(taker_order);
     assert!(maker_trader == maker, ETraderMismatch);
     assert!(taker_trader == taker, ETraderMismatch);
 
-    let maker_base = coin::from_balance(maker_base_balance, ctx);
-    let taker_quote = coin::from_balance(taker_quote_balance, ctx);
+    let trade_value = (((filled_size as u128) * (filled_price as u128)) / FLOAT_SCALING) as u64;
+    let fee_each = (((trade_value as u128) * (pool::protocol_fee_bps(pool) as u128)) / (BPS_DENOM as u128)) as u64;
 
-    transfer::public_transfer(taker_quote, maker);
-    transfer::public_transfer(maker_base, taker);
+    let mut fee_balance = balance::split(&mut taker_quote_balance, fee_each);
+    let seller_fee = balance::split(&mut taker_quote_balance, fee_each);
+    balance::join(&mut fee_balance, seller_fee);
+    transfer::public_transfer(coin::from_balance(fee_balance, ctx), pool::treasury(pool));
+
+    transfer::public_transfer(coin::from_balance(taker_quote_balance, ctx), maker);
+    transfer::public_transfer(coin::from_balance(maker_base_balance, ctx), taker);
 
     let maker_receipt = pool::new_receipt(
-        maker,
-        taker,
-        filled_size,
-        filled_price,
-        deepbook_tx_digest,
-        enclave_signature,
-        ctx,
+        maker, taker, filled_size, filled_price,
+        deepbook_tx_digest, enclave_signature, ctx,
     );
     let taker_receipt = pool::new_receipt(
-        taker,
-        maker,
-        filled_size,
-        filled_price,
-        deepbook_tx_digest,
-        enclave_signature,
-        ctx,
+        taker, maker, filled_size, filled_price,
+        deepbook_tx_digest, enclave_signature, ctx,
     );
     transfer::public_transfer(maker_receipt, maker);
     transfer::public_transfer(taker_receipt, taker);

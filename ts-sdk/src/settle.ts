@@ -22,6 +22,8 @@ export async function getOrderCollateralType(
 
 export interface SettleMatchOptions {
   shellPackageId: string;
+  /** Shared `Pool` object id (from deployments.poolId). Required by `settle_v2`. */
+  poolId: string;
   /** Shared `Enclave<SHELL>` object id (from deployments.enclaveId). */
   enclaveId: string;
   /** Enclave's timestamp_ms from the signed envelope. */
@@ -45,9 +47,11 @@ export interface SettleMatchOptions {
 }
 
 /// Builds the settlement PTB: `shell::attestation::verify` produces the
-/// `MatchInstruction` hot-potato, which `shell::settlement::settle` consumes
+/// `MatchInstruction` hot-potato, which `shell::settlement::settle_v2` consumes
 /// atomically with both OrderCommitments. The two type arguments must
 /// match each order's actual `T` parameter — use `getOrderCollateralType`.
+/// `settle_v2` collects a protocol fee (pool.protocol_fee_bps) from both
+/// buyer and seller, sending it to pool.treasury.
 export function settleMatchTx(opts: SettleMatchOptions): Transaction {
   if (opts.signature.length !== 64) {
     throw new Error(`settleMatchTx: signature must be 64 bytes (ed25519), got ${opts.signature.length}`);
@@ -74,12 +78,13 @@ export function settleMatchTx(opts: SettleMatchOptions): Transaction {
   });
 
   tx.moveCall({
-    target: `${opts.shellPackageId}::settlement::settle`,
+    target: `${opts.shellPackageId}::settlement::settle_v2`,
     typeArguments: [opts.makerCollateralType, opts.takerCollateralType],
     arguments: [
       instruction as TransactionObjectArgument,
       tx.object(with0x(opts.makerOrderId)) as TransactionObjectArgument,
       tx.object(with0x(opts.takerOrderId)) as TransactionObjectArgument,
+      tx.object(with0x(opts.poolId)) as TransactionObjectArgument,
     ],
   });
 

@@ -70,12 +70,18 @@ const getMyRecentFills: Tool = {
       shellPackageId: config.shellPackageId,
       owner: ctx.address,
     });
-    return receipts.slice(0, limit).map((r) => ({
-      object_id: r.objectId,
-      counterparty: r.fields.counterparty,
-      filled_size: r.fields.filled_size,
-      filled_price: r.fields.filled_price,
-    }));
+    return receipts.slice(0, limit).map((r) => {
+      const tradeValue =
+        (BigInt(r.fields.filled_size) * BigInt(r.fields.filled_price)) / 1_000_000_000n;
+      const fee_paid = ((tradeValue * 10n) / 10_000n).toString();
+      return {
+        object_id: r.objectId,
+        counterparty: r.fields.counterparty,
+        filled_size: r.fields.filled_size,
+        filled_price: r.fields.filled_price,
+        fee_paid,
+      };
+    });
   },
 };
 

@@ -172,6 +172,7 @@ export default function AnalyticsPage() {
                   <tr>
                     <th className="font-mono-sm text-[10px] text-on-surface-variant py-2 px-6 font-normal">PRICE ({QUOTE_SYMBOL})</th>
                     <th className="font-mono-sm text-[10px] text-on-surface-variant py-2 px-6 font-normal">SIZE (SUI)</th>
+                    <th className="font-mono-sm text-[10px] text-on-surface-variant py-2 px-6 font-normal">FEE ({QUOTE_SYMBOL})</th>
                     <th className="font-mono-sm text-[10px] text-on-surface-variant py-2 px-6 font-normal">COUNTERPARTY</th>
                     <th className="font-mono-sm text-[10px] text-on-surface-variant py-2 px-6 font-normal text-right">RECEIPT</th>
                   </tr>
@@ -184,6 +185,11 @@ export default function AnalyticsPage() {
                       </td>
                       <td className="py-2 px-6 font-mono-data text-[11px]">
                         {formatScaled(r.fields.filled_size, 9)}
+                      </td>
+                      <td className="py-2 px-6 font-mono-data text-[11px] text-outline-variant">
+                        {formatScaled((
+                          (BigInt(r.fields.filled_size) * BigInt(r.fields.filled_price)) / BigInt(1_000_000_000) * BigInt(10) / BigInt(10_000)
+                        ).toString(), 6)}
                       </td>
                       <td className="py-2 px-6 font-mono-data text-[11px] text-on-surface-variant">
                         {truncateAddr(r.fields.counterparty)}

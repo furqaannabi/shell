@@ -52,7 +52,9 @@ use tokio::time::sleep;
 const SHELL_PACKAGE_ID: &str =
     "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e";
 const SHELL_PACKAGE_ID_LATEST: &str =
-    "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e";
+    "0xf1ef7012f2f31c0eb47dc475ae8b6ba8861fb931447b1824db8757796c53c5c8";
+const SHELL_POOL_ID: &str =
+    "0x33682a9652567989b094989fcabe9eda53fbde32c4a3e0204657a06510bab22b";
 const ENCLAVE_CONFIG_ID: &str =
     "0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504";
 /// Default `Enclave<SHELL>` shared object id. Overridable at boot via
@@ -1054,14 +1056,15 @@ async fn submit_settlement(
         .map_err(|e| EnclaveError::GenericError(format!("sender addr: {e}")))?;
 
     // 3. Look up the initial_shared_version for every shared input.
-    // settle_direct doesn't touch DeepBook — no pool/DEEP inputs needed.
     let enclave_isv = fetch_initial_shared_version(http, ENCLAVE_ID.as_str()).await?;
+    let pool_isv = fetch_initial_shared_version(http, SHELL_POOL_ID).await?;
     let maker_isv = fetch_initial_shared_version(http, &maker_order_hex).await?;
     let taker_isv = fetch_initial_shared_version(http, &taker_order_hex).await?;
 
     // 5. Build the ProgrammableTransaction.
     let ptb = build_settle_ptb(
         enclave_isv,
+        pool_isv,
         maker_isv,
         taker_isv,
         timestamp_ms,
@@ -1149,6 +1152,7 @@ fn pure_bcs<T: ?Sized + serde::Serialize>(
 #[allow(clippy::too_many_arguments)]
 fn build_settle_ptb(
     enclave_isv: u64,
+    pool_isv: u64,
     maker_isv: u64,
     taker_isv: u64,
     timestamp_ms: u64,
@@ -1159,14 +1163,12 @@ fn build_settle_ptb(
     maker_order_hex: &str,
     taker_order_hex: &str,
 ) -> Result<ProgrammableTransaction, EnclaveError> {
-    // settle's bytecode (and its deepbook linkage) only exists at the
-    // latest published-at — calling via original-id executes v1 code,
-    // which links to an old deepbook rev no longer in
-    // pool.allowed_versions (EPackageVersionDisabled at runtime).
     let pkg = Address::from_str(SHELL_PACKAGE_ID_LATEST)
         .map_err(|e| EnclaveError::GenericError(format!("pkg id: {e}")))?;
     let enclave_obj = Address::from_str(ENCLAVE_ID.as_str())
         .map_err(|e| EnclaveError::GenericError(format!("enclave id: {e}")))?;
+    let pool_obj = Address::from_str(SHELL_POOL_ID)
+        .map_err(|e| EnclaveError::GenericError(format!("pool id: {e}")))?;
     let maker_obj = Address::from_str(maker_order_hex)
         .map_err(|e| EnclaveError::GenericError(format!("maker obj id: {e}")))?;
     let taker_obj = Address::from_str(taker_order_hex)
@@ -1174,7 +1176,7 @@ fn build_settle_ptb(
     let maker_addr = Address::new(payload.maker);
     let taker_addr = Address::new(payload.taker);
 
-    // Argument indices below MUST stay in sync with the MoveCalls.
+    // Argument indices MUST stay in sync with the MoveCalls.
     //  0  Enclave<SHELL>            (shared, imm)  → verify
     //  1  timestamp_ms              (pure u64)     → verify
     //  2  maker                     (pure addr)    → verify
@@ -1185,8 +1187,9 @@ fn build_settle_ptb(
     //  7  filled_price              (pure u64)     → verify
     //  8  deepbook_tx_digest        (pure vec<u8>) → verify
     //  9  signature                 (pure vec<u8>) → verify
-    // 10  maker_order               (shared mut)   → settle_direct
-    // 11  taker_order               (shared mut)   → settle_direct
+    // 10  maker_order               (shared mut)   → settle_v2
+    // 11  taker_order               (shared mut)   → settle_v2
+    // 12  Pool                      (shared, imm)  → settle_v2
     let inputs = vec![
         Input::Shared {
             object_id: enclave_obj,
@@ -1212,6 +1215,11 @@ fn build_settle_ptb(
             initial_shared_version: taker_isv,
             mutable: true,
         },
+        Input::Shared {
+            object_id: pool_obj,
+            initial_shared_version: pool_isv,
+            mutable: false,
+        },
     ];
 
     let verify_call = MoveCall {
@@ -1227,7 +1235,7 @@ fn build_settle_ptb(
         package: pkg,
         module: Identifier::new("settlement")
             .map_err(|e| EnclaveError::GenericError(format!("module: {e}")))?,
-        function: Identifier::new("settle_direct")
+        function: Identifier::new("settle_v2")
             .map_err(|e| EnclaveError::GenericError(format!("function: {e}")))?,
         type_arguments: vec![
             TypeTag::from_str(base_type)
@@ -1239,6 +1247,7 @@ fn build_settle_ptb(
             Argument::Result(0),  // MatchInstruction
             Argument::Input(10),  // maker_order
             Argument::Input(11),  // taker_order
+            Argument::Input(12),  // Pool (fee config + treasury)
         ],
     };
 

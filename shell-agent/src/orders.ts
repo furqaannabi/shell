@@ -13,6 +13,8 @@ import { config } from "./config.js";
 import type { MatchProposal } from "./proposals.js";
 
 const SUI_TYPE = "0x2::sui::SUI";
+// Must match Pool.protocol_fee_bps on-chain. Buyer pre-deposits tradeValue + fee.
+const PROTOCOL_FEE_BPS = 10n;
 
 /** Build + submit a Shell sealed order matching the agent's side of a
  *  match proposal. For now uses the proposal's `agreedPrice` as the
@@ -50,9 +52,10 @@ export async function submitOrderFromProposal(opts: {
   // even when AGENT_BASE_DECIMALS is overridden for a different pair.
   const baseDecimals = proposal.asset === SUI_TYPE ? 9 : config.baseDecimals;
   const floatScaling = BigInt(10 ** baseDecimals);
-  const collateralAmount = isBuy
-    ? (proposal.agreedSize * proposal.agreedPrice) / floatScaling
-    : proposal.agreedSize;
+  const tradeValue = (proposal.agreedSize * proposal.agreedPrice) / floatScaling;
+  const feeEach = (tradeValue * PROTOCOL_FEE_BPS) / 10000n;
+  // Buy: deposit trade_value + fee_each so settle_v2 can split buyer's fee.
+  const collateralAmount = isBuy ? tradeValue + feeEach : proposal.agreedSize;
 
   const tx = new Transaction();
   let collateralArg;

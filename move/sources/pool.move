@@ -142,3 +142,6 @@ public(package) fun new_receipt(
     }
 }
 
+public fun protocol_fee_bps(pool: &Pool): u64 { pool.protocol_fee_bps }
+public fun treasury(pool: &Pool): address { pool.treasury }
+
