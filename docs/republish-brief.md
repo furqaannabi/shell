@@ -7,6 +7,14 @@
 > [`2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig)).
 > The matcher's commit_hash binding follow-up (see §"Known follow-up")
 > is **not** fixed by this republish — it stays open.
+>
+> **Note (later edits):** the `EnclaveConfig` PCR set + `Enclave<SHELL>`
+> registration have rotated since the republish — both `update_pcrs` and
+> a fresh `register_enclave` are run after every EIF rebuild. The
+> `packageId` / `poolId` / `EnclaveConfigId` / `Cap<SHELL>` /
+> `UpgradeCap` IDs in the table below are still authoritative; for the
+> *current* `Enclave<SHELL>` id + PCR set, see the README's "On-chain
+> testnet artifacts" table or `ts-sdk/deployments/testnet.json`.
 
 ## Why we republished
 
@@ -46,8 +54,8 @@ commitments are no longer addressable from the new code path.
 | `EnclaveConfig<SHELL>` (shared) | `0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504` |
 | `Cap<SHELL>` (owned by deployer) | `0x0c71e66d311f26a6dfa7ebbfb0dfc924439f503a5e7ac70280f92544c11770ef` |
 | `UpgradeCap` | `0x85f63ef069759e511e9d82281071978e71d9b0e2a15930bcf86dae02c02ced55` |
-| `Enclave<SHELL>` (current, shared) | `0x92101a18928039d3da63ea9e8c1fa300bdce3edb473c69ce686d2a413bd1848a` |
-| PCR0 / PCR1 (matches deployed EIF) | `0xd7849795f42536b18b704a623625415863093a6583ddda8d8569eb641c7c763322d2d29bc30a84d5ecbe172dd9a3a88c` |
+| `Enclave<SHELL>` (at republish moment) | `0x92101a18928039d3da63ea9e8c1fa300bdce3edb473c69ce686d2a413bd1848a` ([rotated since](../README.md#on-chain-testnet-artifacts)) |
+| PCR0 / PCR1 (at republish moment) | `0xd7849795f42536b18b704a623625415863093a6583ddda8d8569eb641c7c763322d2d29bc30a84d5ecbe172dd9a3a88c` ([rotated since](../README.md#on-chain-testnet-artifacts)) |
 | PCR2 (AWS-Nitro standard) | `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a` |
 | Enclave Sui address (eph_kp-derived) | `0xeda60f47715ea94dae92a58467894f3882d18d8690a348df6e03b4e3cfef1114` |
 | Enclave Ed25519 pubkey (persistent seed) | `0x6fea82e844451e5c029253ebb91428a08df4868c098a44ebc8289bb0ee114613` |

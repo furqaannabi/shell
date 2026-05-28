@@ -53,7 +53,7 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 | Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; `ioi` module; `settle_direct<TBase, TQuote>`; 9/9 tests | [`move/`](move/)                                                 |
 | Move     | Fresh-published 2026-05-24 to testnet at `0x23d1e8b5…` (clean-slate reset — see [`docs/republish-brief.md`](docs/republish-brief.md)) | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
 | Enclave  | Autonomous order-poller + IOI-matcher under a panic-catching supervisor; bootstrap-seeds proposed_pairs from chain on cold start so restarts don't re-emit duplicates | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) |
-| Nitro    | **Prod-mode** `Enclave<SHELL>` `0x92101a18…`, real PCR0/1 `0xd7849795…`, persistent eph_kp via host seed | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
+| Nitro    | **Prod-mode** `Enclave<SHELL>` `0x83fb0fd0…`, real PCR0/1 `0x99495a3a…`, persistent eph_kp via host seed | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
 | Demo     | E2E retest 2026-05-24 ~3 min total: IOI → match → accept → settle_direct → SettlementReceipts ([`2b96TNRe…`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig)) | [`docs/republish-brief.md`](docs/republish-brief.md) §"E2E re-test" |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | <https://shell-finance.vercel.app/> ([source](web/))             |
@@ -295,14 +295,14 @@ context in [`docs/republish-brief.md`](docs/republish-brief.md)):
 | `EnclaveConfig<SHELL>` (shared) | `0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504` |
 | `Cap<SHELL>` (deployer) | `0x0c71e66d311f26a6dfa7ebbfb0dfc924439f503a5e7ac70280f92544c11770ef` |
 | `UpgradeCap` | `0x85f63ef069759e511e9d82281071978e71d9b0e2a15930bcf86dae02c02ced55` |
-| `Enclave<SHELL>` (current prod-mode) | `0x92101a18928039d3da63ea9e8c1fa300bdce3edb473c69ce686d2a413bd1848a` |
-| PCR0 / PCR1 on `EnclaveConfig` | `0xd7849795f42536b18b704a623625415863093a6583ddda8d8569eb641c7c763322d2d29bc30a84d5ecbe172dd9a3a88c` |
+| `Enclave<SHELL>` (current prod-mode) | `0x83fb0fd0aea65cd72b024b9564d9cd5b3c480f73eeb8201f7a6ecbdcad6352e6` |
+| PCR0 / PCR1 on `EnclaveConfig` | `0x99495a3afaa4e5da2e8b47160f785bb24848d9149019f1a54cbe7eeb314eed1396da439563a16e3a2d503050b55461ce` |
 | PCR2 | `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a` |
 | Enclave Sui address (eph_kp-derived) | `0xeda60f47715ea94dae92a58467894f3882d18d8690a348df6e03b4e3cfef1114` |
 | Enclave Ed25519 pubkey (seed-derived, persistent) | `0x6fea82e844451e5c029253ebb91428a08df4868c098a44ebc8289bb0ee114613` |
 | First green E2E on new package: IOI → match → accept → `settle_direct` | [`2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig) |
 
-**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0xd7849795…` match the published EIF measurement. The on-chain `EnclaveConfig` is kept in sync with each EIF rebuild via `enclave::update_pcrs` + `register_enclave`. The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the `SHELL_ENCLAVE_ID` env var (pushed through the secrets VSOCK at boot) lets the binary follow a re-registration without rebuilding the EIF.
+**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0x99495a3a…` match the published EIF measurement (matcher v3 — adds `match_id` to `MatchProposalPlaintext` so proposal blobs don't content-dedupe on Walrus when the same pair re-matches; multi-pair `asset` field on `DecryptedOrder` so SUI and TBILL never cross-match). The on-chain `EnclaveConfig` is kept in sync with each EIF rebuild via `enclave::update_pcrs` + `register_enclave`. The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the `SHELL_ENCLAVE_ID` env var (pushed through the secrets VSOCK at boot) lets the binary follow a re-registration without rebuilding the EIF.
 
 Previous (now-orphaned) IDs from the pre-republish chain are preserved in
 [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) under
