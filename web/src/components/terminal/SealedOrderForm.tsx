@@ -46,7 +46,9 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
     if (!size || !limitPrice) return `? ${pair.quoteSymbol}`;
     const tv = parseFloat(size) * parseFloat(limitPrice);
     const fee = tv * 0.001; // 0.1%
-    return `${(tv + fee).toFixed(2)} ${pair.quoteSymbol} (incl. fee)`;
+    const total = tv + fee;
+    const decimals = total < 10 ? 4 : 2;
+    return `${total.toFixed(decimals)} ${pair.quoteSymbol} (incl. fee)`;
   })();
 
   async function handleSubmit(e: React.FormEvent) {
