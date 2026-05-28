@@ -5,10 +5,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getActiveOrders, getReceipts } from '@/lib/shell-sdk';
 import {
   SHELL_PACKAGE_ID,
-  QUOTE_COIN_TYPE,
-  BASE_COIN_TYPE,
   NETWORK,
   QUOTE_SYMBOL,
+  TRADING_PAIRS,
 } from '@/lib/sui';
 
 function formatScaled(raw: string, decimals: number): string {
@@ -29,16 +28,31 @@ export default function PortfolioPage() {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
 
+  // Unique coin types across all pairs (base + quote, deduped)
+  const knownCoins = (() => {
+    const seen = new Set<string>();
+    const out: { coinType: string; symbol: string; decimals: number; label: string }[] = [];
+    for (const p of TRADING_PAIRS) {
+      if (!seen.has(p.baseCoinType)) {
+        seen.add(p.baseCoinType);
+        out.push({ coinType: p.baseCoinType, symbol: p.baseSymbol, decimals: p.baseDecimals, label: p.label ?? p.baseSymbol });
+      }
+      if (!seen.has(p.quoteCoinType)) {
+        seen.add(p.quoteCoinType);
+        out.push({ coinType: p.quoteCoinType, symbol: p.quoteSymbol, decimals: p.quoteDecimals, label: p.quoteSymbol });
+      }
+    }
+    return out;
+  })();
+
   const { data: balances, isLoading: balLoading } = useQuery({
     queryKey: ['wallet-balances', account?.address],
     queryFn: async () => {
       const all = await suiClient.getAllBalances({ owner: account!.address });
-      const sui = all.find((b) => b.coinType === BASE_COIN_TYPE);
-      const usdc = all.find((b) => b.coinType === QUOTE_COIN_TYPE);
-      return {
-        sui: sui?.totalBalance ?? '0',
-        usdc: usdc?.totalBalance ?? '0',
-      };
+      return knownCoins.map((c) => ({
+        ...c,
+        total: all.find((b) => b.coinType === c.coinType)?.totalBalance ?? '0',
+      }));
     },
     enabled: !!account,
     refetchInterval: 10_000,
@@ -121,57 +135,32 @@ export default function PortfolioPage() {
                   </tr>
                 </thead>
                 <tbody className="font-mono-data text-mono-data">
-                  {/* SUI row */}
-                  <tr className="border-b border-outline-variant/30 hover:bg-surface-container-high/30 transition-colors">
-                    <td className="py-4 px-6 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[#3872E0]/20 flex items-center justify-center text-[#3872E0] border border-[#3872E0]/50">
-                        <span className="material-symbols-outlined text-[16px]">water_drop</span>
-                      </div>
-                      <div>
-                        <div className="font-medium text-surface-tint">SUI</div>
-                        <div className="font-mono-sm text-mono-sm text-on-surface-variant">Sui Network</div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      {balances ? formatScaled(balances.sui, 9) : '—'}
-                    </td>
-                    <td className="py-4 px-6 text-right text-on-surface-variant">
-                      {orders
-                        ? (() => {
-                            const locked = orders
-                              .filter((o) => o.collateralType === BASE_COIN_TYPE)
-                              .reduce((sum, o) => sum + (o.collateralValue ?? BigInt(0)), BigInt(0));
-                            return locked > BigInt(0) ? formatScaled(locked.toString(), 9) + ' SUI' : '—';
-                          })()
-                        : '—'}
-                    </td>
-                  </tr>
-
-                  {/* USDC row */}
-                  <tr className="border-b border-outline-variant/30 hover:bg-surface-container-high/30 transition-colors">
-                    <td className="py-4 px-6 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[#2775CA]/20 flex items-center justify-center text-[#2775CA] border border-[#2775CA]/50">
-                        <span className="material-symbols-outlined text-[16px]">currency_exchange</span>
-                      </div>
-                      <div>
-                        <div className="font-medium text-surface-tint">{QUOTE_SYMBOL}</div>
-                        <div className="font-mono-sm text-mono-sm text-on-surface-variant">USD Coin</div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      {balances ? formatScaled(balances.usdc, 6) : '—'}
-                    </td>
-                    <td className="py-4 px-6 text-right text-on-surface-variant">
-                      {orders
-                        ? (() => {
-                            const locked = orders
-                              .filter((o) => o.collateralType === QUOTE_COIN_TYPE)
-                              .reduce((sum, o) => sum + (o.collateralValue ?? BigInt(0)), BigInt(0));
-                            return locked > BigInt(0) ? formatScaled(locked.toString(), 6) + ` ${QUOTE_SYMBOL}` : '—';
-                          })()
-                        : '—'}
-                    </td>
-                  </tr>
+                  {(balances ?? knownCoins.map(c => ({ ...c, total: '0' }))).map((row) => {
+                    const locked = orders
+                      ? orders
+                          .filter((o) => o.collateralType === row.coinType)
+                          .reduce((sum, o) => sum + (o.collateralValue ?? BigInt(0)), BigInt(0))
+                      : BigInt(0);
+                    return (
+                      <tr key={row.coinType} className="border-b border-outline-variant/30 hover:bg-surface-container-high/30 transition-colors">
+                        <td className="py-4 px-6 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/30">
+                            <span className="material-symbols-outlined text-[16px]">token</span>
+                          </div>
+                          <div>
+                            <div className="font-medium text-surface-tint">{row.symbol}</div>
+                            <div className="font-mono-sm text-mono-sm text-on-surface-variant">{row.label}</div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-right">
+                          {formatScaled(row.total, row.decimals)}
+                        </td>
+                        <td className="py-4 px-6 text-right text-on-surface-variant">
+                          {locked > BigInt(0) ? `${formatScaled(locked.toString(), row.decimals)} ${row.symbol}` : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -241,7 +230,7 @@ export default function PortfolioPage() {
                     </span>
                   </div>
                   <div className="flex justify-between font-mono-sm text-[10px] text-on-surface-variant mt-1">
-                    <span>{formatScaled(r.fields.filled_size, 9)} SUI</span>
+                    <span>{formatScaled(r.fields.filled_size, 9)} <span className="opacity-60">base</span></span>
                     <span>CP: {truncateAddr(r.fields.counterparty)}</span>
                   </div>
                 </a>

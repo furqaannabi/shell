@@ -10,7 +10,7 @@ type Tab = 'proposals' | 'iois' | 'orders';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'proposals', label: 'Match Proposals', icon: 'sync_alt' },
-  { id: 'iois', label: 'Active IOIs', icon: 'lock' },
+  { id: 'iois', label: 'IOIs', icon: 'lock' },
   { id: 'orders', label: 'Open Orders', icon: 'pending_actions' },
 ];
 

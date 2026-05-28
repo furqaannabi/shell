@@ -101,10 +101,10 @@ export default function IOIList({ embedded }: { embedded?: boolean } = {}) {
     <div className={embedded ? 'p-0' : 'glass-panel rounded border border-outline-variant p-4'}>
       <div className="flex justify-between items-center mb-4 border-b border-outline-variant pb-2">
         <h2 className="font-body-base text-on-surface font-medium">
-          Active IOIs
+          IOI Feed
         </h2>
         <span className="font-mono-sm text-mono-sm text-on-surface-variant">
-          {activeIois.length} active
+          {activeIois.length} live
         </span>
       </div>
 
