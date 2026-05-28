@@ -47,7 +47,7 @@ function coinMetaFor(coinType: string): { symbol: string; decimals: number } {
   return { symbol: sym, decimals: 6 };
 }
 
-export default function ActiveCommitments() {
+export default function ActiveCommitments({ embedded }: { embedded?: boolean } = {}) {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
   const queryClient = useQueryClient();
@@ -123,7 +123,7 @@ export default function ActiveCommitments() {
   if (!isLoading && (!data || data.length === 0) && !error) return null;
 
   return (
-    <div className="glass-panel rounded border border-outline-variant p-4">
+    <div className={embedded ? 'p-0' : 'glass-panel rounded border border-outline-variant p-4'}>
       <div className="flex justify-between items-center mb-4 border-b border-outline-variant pb-2">
         <h2 className="font-body-base text-on-surface font-medium">
           Active Commitments

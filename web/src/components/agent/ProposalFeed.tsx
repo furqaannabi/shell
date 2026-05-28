@@ -91,7 +91,7 @@ function decodeBlobId(v: unknown): string {
   return '?';
 }
 
-export default function ProposalFeed() {
+export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) {
   const account = useCurrentAccount();
   const suiClient = useSuiClient();
   const queryClient = useQueryClient();
@@ -582,7 +582,7 @@ export default function ProposalFeed() {
 
   if (!account) {
     return (
-      <div className="glass-panel rounded border border-outline-variant p-4">
+      <div className={embedded ? 'p-0' : 'glass-panel rounded border border-outline-variant p-4'}>
         <div className="text-on-surface-variant font-mono-sm text-mono-sm py-8 text-center">
           Connect wallet to see match proposals.
         </div>
@@ -591,7 +591,7 @@ export default function ProposalFeed() {
   }
 
   return (
-    <div className="glass-panel rounded border border-outline-variant p-4">
+    <div className={embedded ? 'p-0' : 'glass-panel rounded border border-outline-variant p-4'}>
       <div className="flex justify-between items-center mb-4 border-b border-outline-variant pb-2">
         <h2 className="font-body-base text-on-surface font-medium">
           Match Proposals
