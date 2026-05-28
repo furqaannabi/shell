@@ -154,10 +154,12 @@ export async function runDemo(): Promise<void> {
   const buyerUsdc = await buyerSui
     .getBalance({ owner: buyerAddr, coinType: QUOTE_COIN_TYPE })
     .catch(() => ({ totalBalance: "0" }));
-  const neededUsdc = (SIZE_HI * PRICE_HI) / FLOAT;
+  const tradeValue = (SIZE_HI * PRICE_HI) / FLOAT;
+  const feeEach = (tradeValue * 10n) / 10000n;
+  const neededUsdc = tradeValue + feeEach;
   if (BigInt(buyerUsdc.totalBalance) < neededUsdc) {
     log(
-      `ABORT: buyer needs ≥ ${(Number(neededUsdc) / 1e6).toFixed(4)} USDC; ` +
+      `ABORT: buyer needs ≥ ${(Number(neededUsdc) / 1e6).toFixed(4)} USDC (incl. 0.1% fee); ` +
         `has ${(Number(buyerUsdc.totalBalance) / 1e6).toFixed(4)}. ` +
         `Send USDC to ${buyerAddr}.`,
     );

@@ -41,8 +41,9 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 1. **Connect wallet** — dapp-kit, Sui Wallet / Suiet / etc.
 2. **Place a sealed order** — pick side / size / limit / expiry / slippage. The SDK Seal-IBE-encrypts the BCS plaintext under a random per-order id, builds a PTB calling `shell::pool::submit_order`, the wallet signs. On-chain: a shared `OrderCommitment` lands with the sealed envelope as opaque bytes.
 3. **See it in active orders** — the row shows a commit-hash fingerprint, `SEALED` status. Cancel works after expiry.
-4. **Match (invisible)** — the Nautilus enclave decrypts plaintexts in-TEE, runs price-time matching, signs an `IntentMessage<MatchPayload>` envelope. A settlement PTB lands: `shell::attestation::verify` produces a `MatchInstruction` hot-potato, `shell::settlement::settle_direct` consumes it atomically with both orders, crosses collateral directly between maker and taker.
-5. **See the receipt** — a `SettlementReceipt` per side appears under the trader's address, and the wallet shows the swapped coin balance. The trader's original limit price + slippage are never revealed on-chain.
+4. **Match (invisible)** — the Nautilus enclave decrypts plaintexts in-TEE, runs price-time matching, signs an `IntentMessage<MatchPayloadV2>` envelope (includes `base_decimals` for correct per-pair scaling). A settlement PTB lands: `shell::attestation::verify_v2` produces a `MatchInstructionV2` hot-potato, `shell::settlement::settle_v3` consumes it atomically with both orders, crosses collateral directly between maker and taker.
+5. **Fee split** — `settle_v3` deducts a 0.1% protocol fee from both sides (0.1% of trade value each, paid in quote coin). Fee flows to the on-chain treasury address in `Pool`. Buyer pre-deposits `trade_value + fee`; any price-improvement surplus is refunded to the buyer.
+6. **See the receipt** — a `SettlementReceipt` per side appears under the trader's address, and the wallet shows the swapped coin balance. The trader's original limit price + slippage are never revealed on-chain.
 
 ## Status
 
@@ -50,10 +51,11 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 
 | Layer    | What works                                                                              | Where                                                            |
 | -------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; `ioi` module; `settle_direct<TBase, TQuote>`; 9/9 tests | [`move/`](move/)                                                 |
-| Move     | Fresh-published 2026-05-24 to testnet at `0x23d1e8b5…` (clean-slate reset — see [`docs/republish-brief.md`](docs/republish-brief.md)) | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
-| Enclave  | Autonomous order-poller + IOI-matcher under a panic-catching supervisor; bootstrap-seeds proposed_pairs from chain on cold start so restarts don't re-emit duplicates | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) |
-| Nitro    | **Prod-mode** `Enclave<SHELL>` `0x83fb0fd0…`, real PCR0/1 `0x99495a3a…`, persistent eph_kp via host seed | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
+| Move     | Pool + OrderCommitment + Receipt; hot-potato MatchInstruction; seal_approve; `ioi` module; `settle_v3<TBase,TQuote>` with 0.1% protocol fee + price-improvement refund + per-pair `base_decimals` scaling; `verify_v2` / `MatchInstructionV2` / `MatchPayloadV2`; 9/9 tests | [`move/`](move/)                                                 |
+| Move     | Latest upgrade at `0xd2972abf…` (adds fee, RWA scaling, `settle_v3`) | [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) |
+| Enclave  | Autonomous order-poller + IOI-matcher; calls `verify_v2` + `settle_v3`; derives `base_decimals` per asset (9 for SUI, 6 for other); bootstrap-seeds book from chain on cold start | [`enclave-nitro/apps/shell/mod.rs`](enclave-nitro/apps/shell/mod.rs) |
+| Nitro    | **Prod-mode** `Enclave<SHELL>` `0xd002490d…`, PCR0/1 `0xf9f2d0e4…`, persistent eph_kp via host seed | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
+| RWA      | Multi-pair: SUI/USDC + TBILL/USDC (mock 6-decimal token). Pair selector in web UI + agent. `fixedPrice` source for non-DeepBook pairs. Mainnet slots for USDY (Ondo) and BUIDL (BlackRock) pre-configured (disabled). | [`web/src/lib/sui.ts`](web/src/lib/sui.ts)                      |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
 | Demo     | E2E retest 2026-05-24 ~3 min total: IOI → match → accept → settle_direct → SettlementReceipts ([`2b96TNRe…`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig)) | [`docs/republish-brief.md`](docs/republish-brief.md) §"E2E re-test" |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | <https://shell-finance.vercel.app/> ([source](web/))             |
@@ -279,7 +281,7 @@ See [`ts-sdk/docs/frontend-integration.md`](ts-sdk/docs/frontend-integration.md)
 3. Enclave's poller (running inside Nitro) sees the `OrderSubmitted` event, fetches the ciphertext, requests Seal key shares — `shell::shell::seal_approve` dry-runs on the key server and only passes if the requester address matches the on-chain registered enclave pubkey.
 4. Enclave decrypts inside the TEE, BCS-checks the on-chain `commit_hash`, runs price-time matching against its in-memory book.
 5. Enclave builds a `Transaction` chaining `shell::attestation::verify` → `shell::settlement::settle<TMaker, TTaker>`, signs it with `sui-crypto::SuiSigner` (IntentMessage + blake2b + Ed25519), BCS-serializes, and submits via `sui_executeTransactionBlock`.
-6. Move side: `verify` re-derives the BCS bytes and checks the enclave signature, produces a `MatchInstruction` hot-potato; `settle_direct` consumes it atomically with both `OrderCommitment`s, crosses collateral directly between maker and taker, and mints a `SettlementReceipt` per trader.
+6. Move side: `verify_v2` re-derives the BCS bytes and checks the enclave signature, produces a `MatchInstructionV2` hot-potato; `settle_v3` consumes it atomically with both `OrderCommitment`s, deducts a 0.1% protocol fee from each side, crosses collateral directly between maker and taker, and mints a `SettlementReceipt` per trader.
 
 Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough in [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md).
 
@@ -290,19 +292,19 @@ context in [`docs/republish-brief.md`](docs/republish-brief.md)):
 
 | Object | ID |
 | --- | --- |
-| Shell package (== original-id == latest published-at on fresh publish) | `0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e` |
+| Shell package (original-id) | `0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e` |
+| Shell package (latest — `settle_v3` + fee + RWA) | `0xd2972abf8df0378463f3b5acf000a2af5de6af05acd893adba37952d2ecc805a` |
 | `Pool` (shared) | `0x33682a9652567989b094989fcabe9eda53fbde32c4a3e0204657a06510bab22b` |
 | `EnclaveConfig<SHELL>` (shared) | `0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504` |
 | `Cap<SHELL>` (deployer) | `0x0c71e66d311f26a6dfa7ebbfb0dfc924439f503a5e7ac70280f92544c11770ef` |
 | `UpgradeCap` | `0x85f63ef069759e511e9d82281071978e71d9b0e2a15930bcf86dae02c02ced55` |
-| `Enclave<SHELL>` (current prod-mode) | `0x83fb0fd0aea65cd72b024b9564d9cd5b3c480f73eeb8201f7a6ecbdcad6352e6` |
-| PCR0 / PCR1 on `EnclaveConfig` | `0x99495a3afaa4e5da2e8b47160f785bb24848d9149019f1a54cbe7eeb314eed1396da439563a16e3a2d503050b55461ce` |
+| `Enclave<SHELL>` (current prod-mode) | `0xd002490d7e22d122e4b35f31bef0899d763afe628d1bf8f481b4d4099b6631a6` |
+| PCR0 / PCR1 on `EnclaveConfig` | `0xf9f2d0e4e22e95fa7d47a322368c7404570fccf96668665127cf45090f3e0146770ad546d8551937ec029b73b4cab421` |
 | PCR2 | `0x21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a` |
-| Enclave Sui address (eph_kp-derived) | `0xeda60f47715ea94dae92a58467894f3882d18d8690a348df6e03b4e3cfef1114` |
 | Enclave Ed25519 pubkey (seed-derived, persistent) | `0x6fea82e844451e5c029253ebb91428a08df4868c098a44ebc8289bb0ee114613` |
 | First green E2E on new package: IOI → match → accept → `settle_direct` | [`2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig) |
 
-**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0x99495a3a…` match the published EIF measurement (matcher v3 — adds `match_id` to `MatchProposalPlaintext` so proposal blobs don't content-dedupe on Walrus when the same pair re-matches; multi-pair `asset` field on `DecryptedOrder` so SUI and TBILL never cross-match). The on-chain `EnclaveConfig` is kept in sync with each EIF rebuild via `enclave::update_pcrs` + `register_enclave`. The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; the `SHELL_ENCLAVE_ID` env var (pushed through the secrets VSOCK at boot) lets the binary follow a re-registration without rebuilding the EIF.
+**Live enclave runs prod-mode.** AWS-signed attestation; PCR0/1 = `0xf9f2d0e4…` match the published EIF measurement. This build calls `verify_v2` + `settle_v3`, threads `base_decimals` through `MatchPayloadV2` (9 for SUI, 6 for TBILL and other non-SUI assets), and includes `match_id` in `MatchProposalPlaintext` so proposal blobs don't content-dedupe on Walrus. The on-chain `EnclaveConfig` is kept in sync with each EIF rebuild via `enclave::update_pcrs`. The `Enclave<SHELL>.pk` binding survives reboots via the host-managed `ENCLAVE_KEY_SEED`; `SHELL_ENCLAVE_ID` (pushed through VSOCK at boot) lets the binary follow a re-registration without rebuilding the EIF.
 
 Previous (now-orphaned) IDs from the pre-republish chain are preserved in
 [`ts-sdk/deployments/testnet.json`](ts-sdk/deployments/testnet.json) under
