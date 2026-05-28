@@ -100,9 +100,10 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
     .map((o) => {
       const baseDecimals = TRADING_PAIRS.find(p => p.baseCoinType === o.baseCoinType)?.baseDecimals ?? 9;
       const sizeRaw = BigInt(Math.round(parseFloat(o.size || '0') * 10 ** baseDecimals));
+      const priceRaw = BigInt(Math.round(parseFloat(o.limitPrice || '0') * 1_000_000));
       const receipt = receipts?.find(r =>
         BigInt(r.fields.filled_size) === sizeRaw &&
-        Number(r.objectId) > 0  // valid objectId
+        BigInt(r.fields.filled_price) === priceRaw
       ) ?? receipts?.find(r => BigInt(r.fields.filled_size) === sizeRaw);
       const expired = currentEpoch !== undefined && (o as { expiryEpoch?: number }).expiryEpoch !== undefined
         ? (o as unknown as { expiryEpoch: number }).expiryEpoch <= currentEpoch
