@@ -10,3 +10,5 @@ enclave-seed.hex
 
 # Claude Code harness scheduled-task lock — local-only.
 .claude/scheduled_tasks.lock
+
+shell-dev.pem

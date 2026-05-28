@@ -274,12 +274,8 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
   const displayData = useMemo(() => {
     if (!data) return undefined;
     const byKey = new Map<string, (typeof data)[number]>();
-    const nowMs = BigInt(Date.now());
     for (const p of data) {
       if (p.agreedSize === BigInt(0)) continue;
-      // Hide proposals whose enclave-set expiry window has passed.
-      const pExpiry = (p as { expiryMs?: bigint }).expiryMs;
-      if (pExpiry && pExpiry > BigInt(0) && pExpiry < nowMs) continue;
       const key =
         (p as { matchId?: bigint }).matchId && (p as { matchId?: bigint }).matchId! > BigInt(0)
           ? `mid:${(p as { matchId?: bigint }).matchId!.toString()}`
@@ -355,12 +351,13 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     );
     for (const p of sorted) {
       const key = proposalKey(p);
-      // Settled? Only attempt receipt matching if:
-      //   1. This wallet accepted a proposal for this key (localStorage key: entry), AND
-      //   2. We observed ACCEPTED state in this session (OrderCommitment was live).
-      // Without (2), a just-accepted proposal would claim old receipts before
-      // the OrderCommitment is even indexed.
-      if (acceptedProposalKeys.has(key) && confirmedAcceptedKeys.has(key)) {
+      // Settled? Requires user accepted this key. claimedReceiptIds prevents
+      // re-claiming a receipt that already belongs to a prior SETTLED row.
+      // Note: we intentionally skip the confirmedAcceptedKeys gate here —
+      // fast settlement (enclave settles before the 10s aliveOrders poll
+      // fires) means the ACCEPTED state is never observed, so requiring it
+      // causes SUBMITTED to stick permanently.
+      if (acceptedProposalKeys.has(key)) {
         const rIdx = remainingReceipts.findIndex(
           (r) =>
             !claimedReceiptIds.has(r.objectId) &&
@@ -399,7 +396,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
       }
     }
     return out;
-  }, [data, aliveOrders, userReceipts, acceptedProposalKeys, confirmedAcceptedKeys, claimedReceiptIds]);
+  }, [data, aliveOrders, userReceipts, acceptedProposalKeys, claimedReceiptIds]);
 
   // When chainAccepted finds a live OrderCommitment → persist the key.
   // When chainAccepted shows SETTLED → persist the receipt objectId so it
@@ -582,6 +579,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
         return next;
       });
       queryClient.invalidateQueries({ queryKey: ['alive-orders-with-collateral'] });
+      queryClient.invalidateQueries({ queryKey: ['user-receipts-feed'] });
     } catch (err) {
       setError(friendlyError(err, 'Accept failed'));
     } finally {
@@ -639,6 +637,8 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
               const state = chainAccepted[proposalKey(p)];
               const localDigest =
                 accepted[`${account.address.toLowerCase()}:${p.blob}`];
+              const pExpiry = (p as { expiryMs?: bigint }).expiryMs;
+              const isExpired = pExpiry && pExpiry > BigInt(0) && pExpiry < BigInt(Date.now());
               return (
                 <tr
                   key={p.txDigest}
@@ -712,6 +712,10 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
                       >
                         SUBMITTED ↗
                       </a>
+                    ) : isExpired ? (
+                      <span className="text-on-surface-variant border border-outline-variant px-2 py-1 rounded text-[10px] opacity-40">
+                        EXPIRED
+                      </span>
                     ) : (
                       <button
                         type="button"
