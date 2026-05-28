@@ -11,9 +11,9 @@ import {
   NETWORK,
 } from '@/lib/sui';
 
-// 24 buckets × 5 min = last 2 hours shown in a 4×6 grid
+// 24 buckets × 60 min = last 24 hours shown in a 4×6 grid
 const BUCKETS = 24;
-const BUCKET_MS = 5 * 60_000;
+const BUCKET_MS = 60 * 60_000;
 
 interface Bucket {
   order: number;
@@ -140,7 +140,7 @@ export default function ShellActivity() {
 
       {/* Footer */}
       <div className="flex justify-between text-[9px] text-on-surface-variant/50 uppercase">
-        <span>2 h · 5 min buckets · dark pool</span>
+        <span>24 h · 1 h buckets · dark pool</span>
         <span>older ← → now</span>
       </div>
     </div>

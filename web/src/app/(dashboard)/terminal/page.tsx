@@ -1,16 +1,31 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import SealedOrderForm, { type SubmittedOrder } from '@/components/terminal/SealedOrderForm';
 import ActiveOrders from '@/components/terminal/ActiveOrders';
 import SettlementReceipts from '@/components/terminal/SettlementReceipts';
 import ShellActivity from '@/components/terminal/ShellActivity';
 
+const ORDERS_KEY = 'shell_session_orders';
+
+function loadOrders(): SubmittedOrder[] {
+  try {
+    const raw = localStorage.getItem(ORDERS_KEY);
+    return raw ? (JSON.parse(raw) as SubmittedOrder[]) : [];
+  } catch { return []; }
+}
+
 export default function TerminalPage() {
   const [orders, setOrders] = useState<SubmittedOrder[]>([]);
 
+  useEffect(() => { setOrders(loadOrders()); }, []);
+
   function handleOrderSubmitted(order: SubmittedOrder) {
-    setOrders((prev) => [order, ...prev]);
+    setOrders((prev) => {
+      const next = [order, ...prev].slice(0, 50); // cap at 50
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(next));
+      return next;
+    });
   }
 
   return (
