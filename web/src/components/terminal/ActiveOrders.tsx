@@ -155,7 +155,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
     <div className="glass-panel rounded-lg border border-outline-variant p-4 flex flex-col h-full">
       <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#1E293B]">
         <div className="flex items-center gap-2">
-          <h2 className="font-headline-md text-[18px] text-on-surface">Active Orders</h2>
+          <h2 className="font-headline-md text-[18px] text-on-surface">Orders</h2>
           <span className="text-[10px] text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded border border-outline-variant">LIVE CHAIN</span>
         </div>
         <div className="flex items-center gap-2">
