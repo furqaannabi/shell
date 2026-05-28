@@ -88,7 +88,7 @@ const WALRUS_PUBLISHER: &str = "https://publisher.walrus-testnet.walrus.space";
 const WALRUS_PROPOSAL_EPOCHS: u32 = 2;
 /// Match proposal grace period — how long the agents have to accept
 /// before the IOI returns to the pool. 60s for hackathon; bump for prod.
-const PROPOSAL_EXPIRY_MS: u64 = 60_000;
+const PROPOSAL_EXPIRY_FALLBACK_MS: u64 = 300_000;
 
 /// 0x6 — the global Clock shared object, initial_shared_version is 1.
 const SUI_CLOCK_OBJECT_ID: &str =
@@ -1615,8 +1615,8 @@ async fn bootstrap_proposed_pairs(
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0);
             // Treat the on-chain emit time as a lower bound on the
-            // proposal's expiry; cap at PROPOSAL_EXPIRY_MS past then.
-            let expiry = ts_ms.saturating_add(PROPOSAL_EXPIRY_MS);
+            // proposal's expiry; cap at PROPOSAL_EXPIRY_FALLBACK_MS past then.
+            let expiry = ts_ms.saturating_add(PROPOSAL_EXPIRY_FALLBACK_MS);
             if expiry <= now_ms {
                 // older than the longest proposal could still be live —
                 // no point seeding it; also lets us stop paginating.
@@ -1847,7 +1847,8 @@ async fn try_match_and_propose(
             continue;
         }
 
-        let proposal_expiry = now_ms + PROPOSAL_EXPIRY_MS;
+        let ioi_expiry = buy.expiry_ms.min(sell.expiry_ms);
+        let proposal_expiry = if ioi_expiry > now_ms { ioi_expiry } else { now_ms + PROPOSAL_EXPIRY_FALLBACK_MS };
         let match_id: u64 = thread_rng().gen();
         let buy_proposal = MatchProposalPlaintext {
             buy_agent: buy.agent_id,

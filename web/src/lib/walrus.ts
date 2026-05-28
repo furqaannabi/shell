@@ -30,12 +30,23 @@ export async function putBlob(bytes: Uint8Array, epochs = 2): Promise<string> {
   return blobId;
 }
 
-/** Read raw bytes from the public Walrus aggregator. */
+const FALLBACK_AGGREGATORS = [
+  'https://wal-aggregator-testnet.staketab.org',
+  'https://walrus-testnet-aggregator.nirvanalabs.io',
+  'https://walrus-testnet.blockscope.net',
+];
+
+/** Read raw bytes from the public Walrus aggregator, trying fallbacks on 404. */
 export async function getBlob(blobId: string): Promise<Uint8Array> {
-  const res = await fetch(`${WALRUS_AGGREGATOR}/v1/blobs/${blobId}`);
-  if (!res.ok) {
-    throw new Error(`walrus get ${res.status}: ${await res.text()}`);
+  const aggregators = [WALRUS_AGGREGATOR, ...FALLBACK_AGGREGATORS];
+  let lastErr: Error = new Error('no aggregators');
+  for (const agg of aggregators) {
+    const res = await fetch(`${agg}/v1/blobs/${blobId}`);
+    if (res.ok) {
+      const buf = await res.arrayBuffer();
+      return new Uint8Array(buf);
+    }
+    lastErr = new Error(`walrus get ${res.status} from ${agg}`);
   }
-  const buf = await res.arrayBuffer();
-  return new Uint8Array(buf);
+  throw lastErr;
 }

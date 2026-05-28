@@ -113,6 +113,27 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     }
   });
   const seenDigests = useRef<Set<string>>(new Set());
+  const DECODED_CACHE_KEY = 'shell_decoded_proposals_v1';
+  type DecodedEntry = { agreedPrice: string; agreedSize: string; asset: string; matchId: string; expiryMs: string };
+  // Persist last-good decoded fields per blob so 404s don't kill proposals
+  // across hot-reloads and page refreshes.
+  const decodedCache = useRef<Map<string, {
+    agreedPrice: bigint;
+    agreedSize: bigint;
+    asset: string;
+    matchId: bigint;
+    expiryMs: bigint;
+  }>>((() => {
+    const m = new Map<string, { agreedPrice: bigint; agreedSize: bigint; asset: string; matchId: bigint; expiryMs: bigint }>();
+    if (typeof window === 'undefined') return m;
+    try {
+      const raw = JSON.parse(localStorage.getItem(DECODED_CACHE_KEY) ?? '{}') as Record<string, DecodedEntry>;
+      for (const [blob, v] of Object.entries(raw)) {
+        m.set(blob, { agreedPrice: BigInt(v.agreedPrice), agreedSize: BigInt(v.agreedSize), asset: v.asset, matchId: BigInt(v.matchId), expiryMs: BigInt(v.expiryMs) });
+      }
+    } catch {}
+    return m;
+  })());
   const CONFIRMED_KEY = 'shell_confirmed_accepted_v1';
   const CLAIMED_RECEIPTS_KEY = 'shell_claimed_receipts_v1';
 
@@ -247,15 +268,25 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
           try {
             const bytes = await getBlob(p.blob);
             const parsed = parseMatchProposal(bytes);
-            return {
-              ...p,
+            const decoded = {
               agreedPrice: BigInt(parsed.agreed_price),
               agreedSize: BigInt(parsed.agreed_size),
               asset: parsed.asset as string,
               matchId: BigInt(parsed.match_id),
               expiryMs: BigInt(parsed.expiry_ms),
             };
+            decodedCache.current.set(p.blob, decoded);
+            try {
+              const raw: Record<string, DecodedEntry> = {};
+              for (const [k, v] of decodedCache.current.entries()) {
+                raw[k] = { agreedPrice: v.agreedPrice.toString(), agreedSize: v.agreedSize.toString(), asset: v.asset, matchId: v.matchId.toString(), expiryMs: v.expiryMs.toString() };
+              }
+              localStorage.setItem(DECODED_CACHE_KEY, JSON.stringify(raw));
+            } catch {}
+            return { ...p, ...decoded };
           } catch {
+            const cached = decodedCache.current.get(p.blob);
+            if (cached) return { ...p, ...cached };
             return { ...p, agreedPrice: BigInt(0), agreedSize: BigInt(0), asset: BASE_COIN_TYPE, matchId: BigInt(0), expiryMs: BigInt(0) };
           }
         }),
@@ -302,6 +333,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
   type ChainState =
     | { status: 'settled'; receiptId: string }
     | { status: 'accepted'; digest: string };
+  // Content-based key — used for acceptedProposalKeys tracking.
   const proposalKey = (p: {
     side: string;
     agreedPrice: bigint;
@@ -310,6 +342,19 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     asset?: string;
   }) =>
     `${p.side}|${p.agreedPrice}|${p.agreedSize}|${p.counterparty}|${(p as { asset?: string }).asset ?? BASE_COIN_TYPE}`;
+  // Row key — unique per match attempt. Uses match_id when present so a new
+  // match with the same terms as an old settled trade gets its own row/state.
+  const rowKey = (p: {
+    side: string;
+    agreedPrice: bigint;
+    agreedSize: bigint;
+    counterparty: string;
+    asset?: string;
+    matchId?: bigint;
+  }) =>
+    p.matchId && p.matchId > BigInt(0)
+      ? `mid:${p.matchId.toString()}`
+      : proposalKey(p);
 
   // Set of proposalKeys this wallet actually accepted (persisted in localStorage
   // under `addr:key:proposalKey`). Also back-compat: derive keys from old
@@ -340,40 +385,22 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     const out: Record<string, ChainState> = {};
     const remainingOrders = [...(aliveOrders ?? [])];
     const remainingReceipts = [...(userReceipts ?? [])];
-    // Dedup by content first so each group claims at most one
-    // receipt / order, then sort asc for stable claim order.
+    // Dedup by rowKey so each distinct match_id gets its own slot.
+    // Sort asc (oldest first) for stable receipt/order claim order.
     const byKey = new Map<string, (typeof data)[number]>();
     for (const p of data) {
-      if (p.agreedSize === BigInt(0)) continue; // blob expired — can't match
-      const k = proposalKey(p);
+      if (p.agreedSize === BigInt(0)) continue; // blob not decoded — skip
+      const k = rowKey(p as typeof p & { matchId?: bigint });
       const existing = byKey.get(k);
       if (!existing || p.timestamp < existing.timestamp) byKey.set(k, p);
     }
     const sorted = Array.from(byKey.values()).sort(
       (a, b) => a.timestamp - b.timestamp,
     );
-    console.log('[ProposalFeed] chainAccepted: sorted proposals:', sorted.length,
-      'receipts:', remainingReceipts.length,
-      'acceptedKeys:', [...acceptedProposalKeys],
-    );
     for (const p of sorted) {
-      const key = proposalKey(p);
-      if (!acceptedProposalKeys.has(key)) {
-        console.log('[ProposalFeed] key NOT in acceptedProposalKeys:', key, '| stored:', [...acceptedProposalKeys]);
-      }
-      if (acceptedProposalKeys.has(key)) {
-        console.log('[ProposalFeed] checking receipts for key', key,
-          '| receipts:', remainingReceipts.map(r => ({
-            id: r.objectId,
-            cp: r.fields.counterparty,
-            price: r.fields.filled_price,
-            size: r.fields.filled_size,
-            claimed: claimedReceiptIds.has(r.objectId),
-          })),
-          '| want cp:', p.counterparty,
-          '| want price:', p.agreedPrice.toString(),
-          '| want size:', p.agreedSize.toString(),
-        );
+      const rk = rowKey(p as typeof p & { matchId?: bigint });
+      const ck = proposalKey(p); // content key — for acceptedProposalKeys lookup
+      if (acceptedProposalKeys.has(ck)) {
         const rIdx = remainingReceipts.findIndex(
           (r) =>
             r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
@@ -381,7 +408,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
             BigInt(r.fields.filled_size) === p.agreedSize,
         );
         if (rIdx >= 0) {
-          out[key] = {
+          out[rk] = {
             status: 'settled',
             receiptId: remainingReceipts[rIdx].objectId,
           };
@@ -403,7 +430,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
           o.collateralValue === expectedValue,
       );
       if (oIdx >= 0) {
-        out[key] = {
+        out[rk] = {
           status: 'accepted',
           digest: remainingOrders[oIdx].submitDigest,
         };
@@ -483,12 +510,22 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     setError(null);
     setAccepting(blobId);
     try {
-      // 1. Fetch proposal blob from Walrus + BCS-decode.
-      const bytes = await getBlob(blobId);
-      const proposal = parseMatchProposal(bytes);
-      const agreedPrice = BigInt(proposal.agreed_price);
-      const agreedSize = BigInt(proposal.agreed_size);
-      const baseCoin = (proposal.asset as string) || BASE_COIN_TYPE;
+      // 1. Decode proposal — use cache if blob is no longer available.
+      const cached = decodedCache.current.get(blobId);
+      let agreedPrice: bigint;
+      let agreedSize: bigint;
+      let baseCoin: string;
+      if (cached) {
+        agreedPrice = cached.agreedPrice;
+        agreedSize = cached.agreedSize;
+        baseCoin = cached.asset || BASE_COIN_TYPE;
+      } else {
+        const bytes = await getBlob(blobId);
+        const proposal = parseMatchProposal(bytes);
+        agreedPrice = BigInt(proposal.agreed_price);
+        agreedSize = BigInt(proposal.agreed_size);
+        baseCoin = (proposal.asset as string) || BASE_COIN_TYPE;
+      }
       const floatScaling = BigInt(10 ** baseDecimalsFor(baseCoin));
 
       // 2. Build sealed Shell order with proposal terms.
@@ -649,11 +686,13 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
           <tbody>
             {displayData.map((p) => {
               const isAccepting = accepting === p.blob;
-              const state = chainAccepted[proposalKey(p)];
+              const state = chainAccepted[rowKey(p as typeof p & { matchId?: bigint })];
               const localDigest =
                 accepted[`${account.address.toLowerCase()}:${p.blob}`];
               const pExpiry = (p as { expiryMs?: bigint }).expiryMs;
-              const isExpired = pExpiry && pExpiry > BigInt(0) && pExpiry < BigInt(Date.now());
+              const expiryMs = pExpiry && pExpiry > BigInt(0) ? Number(pExpiry) : 0;
+              const secsLeft = expiryMs > 0 ? Math.ceil((expiryMs - Date.now()) / 1000) : null;
+              const isExpired = secsLeft !== null && secsLeft <= 0;
               return (
                 <tr
                   key={p.txDigest}
@@ -732,14 +771,21 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
                         EXPIRED
                       </span>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleAccept(p.blob, p.side, p.counterparty)}
-                        disabled={isAccepting}
-                        className="bg-primary/10 border border-primary text-primary px-3 py-1 rounded text-[10px] hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {isAccepting ? 'Accepting…' : 'Accept'}
-                      </button>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleAccept(p.blob, p.side, p.counterparty)}
+                          disabled={isAccepting}
+                          className="bg-primary/10 border border-primary text-primary px-3 py-1 rounded text-[10px] hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {isAccepting ? 'Accepting…' : 'Accept'}
+                        </button>
+                        {secsLeft !== null && secsLeft < 60 && (
+                          <span className={`text-[9px] ${secsLeft < 30 ? 'text-yellow-400' : 'text-on-surface-variant'}`}>
+                            {secsLeft}s
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
