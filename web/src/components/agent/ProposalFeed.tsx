@@ -51,10 +51,14 @@ function shortBlob(b: string): string {
 }
 
 function timeAgo(ms: number): string {
-  const d = Date.now() - ms;
-  if (d < 60_000) return `${Math.floor(d / 1000)}s ago`;
-  if (d < 3_600_000) return `${Math.floor(d / 60_000)}m ago`;
-  return `${Math.floor(d / 3_600_000)}h ago`;
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3_600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86_400) return `${Math.floor(s / 3_600)}h ago`;
+  if (s < 604_800) return `${Math.floor(s / 86_400)}d ago`;
+  if (s < 2_592_000) return `${Math.floor(s / 604_800)}w ago`;
+  if (s < 31_536_000) return `${Math.floor(s / 2_592_000)}mo ago`;
+  return `${Math.floor(s / 31_536_000)}y ago`;
 }
 
 // Format a raw u64 with `decimals` implied decimal places, trimming

@@ -19,11 +19,15 @@ function truncateHash(hash: string, chars = 6): string {
 }
 
 function timeAgo(ts: number, now: number): string {
-  const diff = Math.floor((now - ts) / 1000);
-  if (diff < 0) return 'Just now';
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  return `${Math.floor(diff / 3600)}h ago`;
+  const s = Math.floor((now - ts) / 1000);
+  if (s < 0) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  if (s < 3_600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86_400) return `${Math.floor(s / 3_600)}h ago`;
+  if (s < 604_800) return `${Math.floor(s / 86_400)}d ago`;
+  if (s < 2_592_000) return `${Math.floor(s / 604_800)}w ago`;
+  if (s < 31_536_000) return `${Math.floor(s / 2_592_000)}mo ago`;
+  return `${Math.floor(s / 31_536_000)}y ago`;
 }
 
 export default function ActiveOrders({ orders: sessionOrders }: Props) {
