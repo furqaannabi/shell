@@ -56,7 +56,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
     refetchInterval: 30_000,
   });
 
-  const { data: onChainOrders, isLoading } = useQuery({
+  const { data: onChainOrders, isLoading: onChainLoading } = useQuery({
     queryKey: ['active-commitments', account?.address],
     queryFn: () =>
       getActiveOrders(suiClient, {
@@ -95,7 +95,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   });
 
   // Session orders that disappeared from chain — find their settlement receipt.
-  const settledRows = sessionOrders
+  const settledRows = onChainLoading ? [] : sessionOrders
     .filter(o => o.orderId && !onChainIds.has(o.orderId))
     .map((o) => {
       const baseDecimals = TRADING_PAIRS.find(p => p.baseCoinType === o.baseCoinType)?.baseDecimals ?? 9;
@@ -159,7 +159,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
           <span className="text-[10px] text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded border border-outline-variant">LIVE CHAIN</span>
         </div>
         <div className="flex items-center gap-2">
-          {isLoading && <span className="material-symbols-outlined text-[14px] animate-spin text-primary">sync</span>}
+          {onChainLoading && <span className="material-symbols-outlined text-[14px] animate-spin text-primary">sync</span>}
           {(() => {
             const liveCount = mergedOrders.filter(o =>
               currentEpoch === undefined || o.expiryEpoch > currentEpoch
