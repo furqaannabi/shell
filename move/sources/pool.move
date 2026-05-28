@@ -145,3 +145,11 @@ public(package) fun new_receipt(
 public fun protocol_fee_bps(pool: &Pool): u64 { pool.protocol_fee_bps }
 public fun treasury(pool: &Pool): address { pool.treasury }
 
+public(package) fun set_treasury(pool: &mut Pool, new_treasury: address) {
+    pool.treasury = new_treasury;
+}
+
+public(package) fun set_protocol_fee_bps(pool: &mut Pool, new_fee_bps: u64) {
+    pool.protocol_fee_bps = new_fee_bps;
+}
+

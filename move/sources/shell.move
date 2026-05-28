@@ -1,7 +1,7 @@
 module shell::shell;
 
-use enclave::enclave::{Self, Enclave};
-use shell::pool;
+use enclave::enclave::{Self, Cap, Enclave};
+use shell::pool::{Self, Pool};
 use std::string;
 use sui::address;
 use sui::hash;
@@ -47,6 +47,18 @@ public fun enclave_address(enclave: &Enclave<SHELL>): address {
 /// derives a distinct IBE key per `(pkg, id)` pair.
 entry fun seal_approve(_id: vector<u8>, enclave: &Enclave<SHELL>, ctx: &TxContext) {
     assert!(ctx.sender() == enclave_address(enclave), ENotEnclave);
+}
+
+/// Update the treasury address that receives protocol fees.
+/// Requires the Shell admin cap (owned by the deployer).
+entry fun set_pool_treasury(_cap: &Cap<SHELL>, pool: &mut Pool, new_treasury: address) {
+    pool::set_treasury(pool, new_treasury);
+}
+
+/// Update the protocol fee in basis points (e.g. 10 = 0.1%, 50 = 0.5%).
+/// Requires the Shell admin cap (owned by the deployer).
+entry fun set_pool_fee_bps(_cap: &Cap<SHELL>, pool: &mut Pool, new_fee_bps: u64) {
+    pool::set_protocol_fee_bps(pool, new_fee_bps);
 }
 
 #[test_only]
