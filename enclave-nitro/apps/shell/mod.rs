@@ -52,7 +52,7 @@ use tokio::time::sleep;
 const SHELL_PACKAGE_ID: &str =
     "0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e";
 const SHELL_PACKAGE_ID_LATEST: &str =
-    "0x8956709ebf41e954fad31411be56f94a6f8ccd10f126d214295ec49c14b507fe";
+    "0xd2972abf8df0378463f3b5acf000a2af5de6af05acd893adba37952d2ecc805a";
 const SHELL_POOL_ID: &str =
     "0x33682a9652567989b094989fcabe9eda53fbde32c4a3e0204657a06510bab22b";
 const ENCLAVE_CONFIG_ID: &str =
@@ -176,6 +176,7 @@ pub struct MatchPayload {
     pub taker_order: [u8; 32],
     pub filled_size: u64,
     pub filled_price: u64,
+    pub base_decimals: u8,
     pub deepbook_tx_digest: Vec<u8>,
 }
 
@@ -1185,11 +1186,12 @@ fn build_settle_ptb(
     //  5  taker_order_id            (pure ID)      → verify
     //  6  filled_size               (pure u64)     → verify
     //  7  filled_price              (pure u64)     → verify
-    //  8  deepbook_tx_digest        (pure vec<u8>) → verify
-    //  9  signature                 (pure vec<u8>) → verify
-    // 10  maker_order               (shared mut)   → settle_v2
-    // 11  taker_order               (shared mut)   → settle_v2
-    // 12  Pool                      (shared, imm)  → settle_v2
+    //  8  base_decimals             (pure u8)      → verify
+    //  9  deepbook_tx_digest        (pure vec<u8>) → verify
+    // 10  signature                 (pure vec<u8>) → verify
+    // 11  maker_order               (shared mut)   → settle_v2
+    // 12  taker_order               (shared mut)   → settle_v2
+    // 13  Pool                      (shared, imm)  → settle_v2
     let inputs = vec![
         Input::Shared {
             object_id: enclave_obj,
@@ -1203,6 +1205,7 @@ fn build_settle_ptb(
         pure_bcs(&taker_obj, "taker_order_id")?,
         pure_bcs(&payload.filled_size, "filled_size")?,
         pure_bcs(&payload.filled_price, "filled_price")?,
+        pure_bcs(&payload.base_decimals, "base_decimals")?,
         pure_bcs(&payload.deepbook_tx_digest, "deepbook_tx_digest")?,
         pure_bcs(&signature.to_vec(), "signature")?,
         Input::Shared {
@@ -1226,16 +1229,16 @@ fn build_settle_ptb(
         package: pkg,
         module: Identifier::new("attestation")
             .map_err(|e| EnclaveError::GenericError(format!("module: {e}")))?,
-        function: Identifier::new("verify")
+        function: Identifier::new("verify_v2")
             .map_err(|e| EnclaveError::GenericError(format!("function: {e}")))?,
         type_arguments: vec![],
-        arguments: (0..10).map(Argument::Input).collect(),
+        arguments: (0..11).map(Argument::Input).collect(),
     };
     let settle_call = MoveCall {
         package: pkg,
         module: Identifier::new("settlement")
             .map_err(|e| EnclaveError::GenericError(format!("module: {e}")))?,
-        function: Identifier::new("settle_v2")
+        function: Identifier::new("settle_v3")
             .map_err(|e| EnclaveError::GenericError(format!("function: {e}")))?,
         type_arguments: vec![
             TypeTag::from_str(base_type)
@@ -1245,9 +1248,9 @@ fn build_settle_ptb(
         ],
         arguments: vec![
             Argument::Result(0),  // MatchInstruction
-            Argument::Input(10),  // maker_order
-            Argument::Input(11),  // taker_order
-            Argument::Input(12),  // Pool (fee config + treasury)
+            Argument::Input(11),  // maker_order
+            Argument::Input(12),  // taker_order
+            Argument::Input(13),  // Pool (fee config + treasury)
         ],
     };
 
@@ -1526,6 +1529,7 @@ fn match_orders(orders: &[DecryptedOrder]) -> Vec<MatchPayload> {
             // taker.collateral=quote so type args line up with
             // DeepBook's Pool<TBase, TQuote>. Always pin maker=sell side.
             let (maker, taker) = (ask, bid);
+            let base_decimals: u8 = if maker.asset == "0x2::sui::SUI" { 9 } else { 6 };
             fills.push(MatchPayload {
                 maker: maker.trader,
                 taker: taker.trader,
@@ -1533,6 +1537,7 @@ fn match_orders(orders: &[DecryptedOrder]) -> Vec<MatchPayload> {
                 taker_order: taker.order_id,
                 filled_size: bid.size,
                 filled_price: maker.limit_price,
+                base_decimals,
                 deepbook_tx_digest: vec![],
             });
 
@@ -2288,6 +2293,7 @@ mod test {
             taker_order: [0xDD; 32],
             filled_size: 1_000,
             filled_price: 12_500,
+            base_decimals: 9,
             deepbook_tx_digest: b"db".to_vec(),
         };
         let bytes = bcs::to_bytes(&p).unwrap();
@@ -2298,7 +2304,8 @@ mod test {
         expected.extend(std::iter::repeat(0xDD).take(32));
         expected.extend(1000u64.to_le_bytes());
         expected.extend(12_500u64.to_le_bytes());
-        expected.push(2);
+        expected.push(9u8); // base_decimals
+        expected.push(2);   // ULEB128 length of "db"
         expected.extend(b"db");
         assert_eq!(bytes, expected);
     }

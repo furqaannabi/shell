@@ -38,6 +38,8 @@ export interface SettleMatchOptions {
   takerCollateralType: string;
   filledSize: bigint;
   filledPrice: bigint;
+  /** Decimals of the base coin (9 for SUI, 6 for TBILL/USDY/etc). */
+  baseDecimals: number;
   /** Raw bytes the enclave embedded in MatchPayload.deepbook_tx_digest. */
   deepbookTxDigest: Uint8Array;
   /** Raw 64-byte ed25519 signature over the IntentMessage<MatchPayload>. */
@@ -62,7 +64,7 @@ export function settleMatchTx(opts: SettleMatchOptions): Transaction {
   const tx = opts.tx ?? new Transaction();
 
   const instruction = tx.moveCall({
-    target: `${opts.shellPackageId}::attestation::verify`,
+    target: `${opts.shellPackageId}::attestation::verify_v2`,
     arguments: [
       tx.object(opts.enclaveId),
       tx.pure.u64(opts.timestampMs),
@@ -72,13 +74,14 @@ export function settleMatchTx(opts: SettleMatchOptions): Transaction {
       tx.pure.id(with0x(opts.takerOrderId)),
       tx.pure.u64(opts.filledSize),
       tx.pure.u64(opts.filledPrice),
+      tx.pure.u8(opts.baseDecimals),
       tx.pure.vector("u8", Array.from(opts.deepbookTxDigest)),
       tx.pure.vector("u8", Array.from(opts.signature)),
     ],
   });
 
   tx.moveCall({
-    target: `${opts.shellPackageId}::settlement::settle_v2`,
+    target: `${opts.shellPackageId}::settlement::settle_v3`,
     typeArguments: [opts.makerCollateralType, opts.takerCollateralType],
     arguments: [
       instruction as TransactionObjectArgument,

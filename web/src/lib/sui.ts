@@ -37,7 +37,7 @@ interface NetworkConfig {
 
 const TESTNET: NetworkConfig = {
   shellPackageId: '0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e',
-  shellPackageIdLatest: '0x8956709ebf41e954fad31411be56f94a6f8ccd10f126d214295ec49c14b507fe',
+  shellPackageIdLatest: '0xd2972abf8df0378463f3b5acf000a2af5de6af05acd893adba37952d2ecc805a',
   shellPackageIdIoiTypes: '0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e',
   poolId: '0x33682a9652567989b094989fcabe9eda53fbde32c4a3e0204657a06510bab22b',
   enclaveConfigId: '0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504',
