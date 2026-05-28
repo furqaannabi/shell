@@ -1,29 +1,34 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useCurrentAccount } from '@mysten/dapp-kit';
 import SealedOrderForm, { type SubmittedOrder } from '@/components/terminal/SealedOrderForm';
 import ActiveOrders from '@/components/terminal/ActiveOrders';
 import SettlementReceipts from '@/components/terminal/SettlementReceipts';
 import ShellActivity from '@/components/terminal/ShellActivity';
 
-const ORDERS_KEY = 'shell_session_orders';
+function ordersKey(address: string) { return `shell_orders_${address}`; }
 
-function loadOrders(): SubmittedOrder[] {
+function loadOrders(address: string): SubmittedOrder[] {
   try {
-    const raw = localStorage.getItem(ORDERS_KEY);
+    const raw = localStorage.getItem(ordersKey(address));
     return raw ? (JSON.parse(raw) as SubmittedOrder[]) : [];
   } catch { return []; }
 }
 
 export default function TerminalPage() {
+  const account = useCurrentAccount();
   const [orders, setOrders] = useState<SubmittedOrder[]>([]);
 
-  useEffect(() => { setOrders(loadOrders()); }, []);
+  useEffect(() => {
+    setOrders(account ? loadOrders(account.address) : []);
+  }, [account?.address]);
 
   function handleOrderSubmitted(order: SubmittedOrder) {
+    if (!account) return;
     setOrders((prev) => {
-      const next = [order, ...prev].slice(0, 50); // cap at 50
-      localStorage.setItem(ORDERS_KEY, JSON.stringify(next));
+      const next = [order, ...prev].slice(0, 50);
+      localStorage.setItem(ordersKey(account.address), JSON.stringify(next));
       return next;
     });
   }
