@@ -4,7 +4,7 @@ import { useState } from 'react';
 import SealedOrderForm, { type SubmittedOrder } from '@/components/terminal/SealedOrderForm';
 import ActiveOrders from '@/components/terminal/ActiveOrders';
 import SettlementReceipts from '@/components/terminal/SettlementReceipts';
-import OrderBook from '@/components/terminal/OrderBook';
+import ShellActivity from '@/components/terminal/ShellActivity';
 
 export default function TerminalPage() {
   const [orders, setOrders] = useState<SubmittedOrder[]>([]);
@@ -27,7 +27,7 @@ export default function TerminalPage() {
 
       {/* Right Panel: Order Book & Receipts */}
       <section className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-4 min-h-[600px] lg:min-h-0">
-        <OrderBook />
+        <ShellActivity />
         
         {/* Settlement Receipts — live from chain */}
         <SettlementReceipts />

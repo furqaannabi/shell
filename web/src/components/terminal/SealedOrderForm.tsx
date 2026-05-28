@@ -20,6 +20,8 @@ export interface SubmittedOrder {
   size: string;
   limitPrice: string;
   timestamp: number;
+  baseCoinType: string;
+  baseSymbol: string;
 }
 
 interface Props {
@@ -131,6 +133,8 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         size,
         limitPrice,
         timestamp: Date.now(),
+        baseCoinType: pair.baseCoinType,
+        baseSymbol: pair.baseSymbol,
       });
 
       setSize('');

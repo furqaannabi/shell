@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
-import { SHELL_PACKAGE_ID, QUOTE_SYMBOL } from '@/lib/sui';
+import { SHELL_PACKAGE_ID, QUOTE_SYMBOL, TRADING_PAIRS } from '@/lib/sui';
 import { getActiveOrders, cancelOrderTx } from '@/lib/shell-sdk';
 import type { SubmittedOrder } from './SealedOrderForm';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,6 +11,14 @@ import { friendlyError } from '@/lib/errors';
 
 interface Props {
   orders: SubmittedOrder[];
+}
+
+function symbolFor(coinType: string): string {
+  for (const p of TRADING_PAIRS) {
+    if (p.baseCoinType === coinType) return p.baseSymbol;
+    if (p.quoteCoinType === coinType) return p.quoteSymbol;
+  }
+  return coinType.split('::').pop() ?? '?';
 }
 
 function truncateHash(hash: string, chars = 6): string {
@@ -63,6 +71,9 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   // submitted this session. A refresh wipes them until decrypt flow ships.
   const mergedOrders = (onChainOrders || []).map((oc) => {
     const local = sessionOrders.find((s) => s.orderId === oc.orderId);
+    // Derive base symbol: session order carries it explicitly; fallback to
+    // collateralType lookup (works for sell orders where collateral = base).
+    const baseSymbol = local?.baseSymbol ?? symbolFor(oc.collateralType);
     return {
       ...oc,
       side: local?.side as 'buy' | 'sell' | undefined,
@@ -70,6 +81,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
       limitPrice: local?.limitPrice,
       backupKey: local?.backupKey || '',
       isLocal: !!local,
+      baseSymbol,
     };
   });
 
@@ -167,7 +179,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
                   </td>
                   <td className="py-3 text-right">
                     {order.size ? (
-                      `${order.size} SUI`
+                      <span>{order.size} <span className="text-on-surface-variant text-[10px]">{order.baseSymbol}</span></span>
                     ) : (
                       <span className="text-[10px] text-on-surface-variant italic">ENCRYPTED</span>
                     )}
