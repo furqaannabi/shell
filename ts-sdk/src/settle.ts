@@ -49,6 +49,12 @@ export interface SettleMatchOptions {
 /// atomically with both OrderCommitments. The two type arguments must
 /// match each order's actual `T` parameter — use `getOrderCollateralType`.
 export function settleMatchTx(opts: SettleMatchOptions): Transaction {
+  if (opts.signature.length !== 64) {
+    throw new Error(`settleMatchTx: signature must be 64 bytes (ed25519), got ${opts.signature.length}`);
+  }
+  if (opts.deepbookTxDigest.length !== 32) {
+    throw new Error(`settleMatchTx: deepbookTxDigest must be 32 bytes, got ${opts.deepbookTxDigest.length}`);
+  }
   const tx = opts.tx ?? new Transaction();
 
   const instruction = tx.moveCall({

@@ -15,6 +15,12 @@ export interface SubmitOrderTxOptions {
 
 /// Builds a PTB call to `shell::pool::submit_order<T>`.
 export function submitOrderTx(opts: SubmitOrderTxOptions): Transaction {
+  if (opts.commitHash.length !== 32) {
+    throw new Error(`submitOrderTx: commitHash must be 32 bytes (SHA-256), got ${opts.commitHash.length}`);
+  }
+  if (opts.sealedEnvelope.length < 33) {
+    throw new Error(`submitOrderTx: sealedEnvelope too short (${opts.sealedEnvelope.length} bytes); expected 32-byte id prefix + ciphertext`);
+  }
   const tx = opts.tx ?? new Transaction();
   tx.moveCall({
     target: `${opts.shellPackageId}::pool::submit_order`,

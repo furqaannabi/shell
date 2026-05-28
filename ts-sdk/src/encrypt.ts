@@ -36,9 +36,12 @@ export async function encryptOrder(opts: EncryptOrderOptions): Promise<Encrypted
     await webcrypto.subtle.digest("SHA-256", plaintext as ArrayBufferView<ArrayBuffer>),
   );
 
+  const packageId = opts.shellPackageId.startsWith("0x")
+    ? opts.shellPackageId
+    : `0x${opts.shellPackageId}`;
   const { encryptedObject, key } = await opts.sealClient.encrypt({
     threshold: opts.threshold,
-    packageId: opts.shellPackageId,
+    packageId,
     id: toHex(id),
     data: plaintext,
   });

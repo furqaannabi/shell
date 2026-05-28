@@ -33,16 +33,13 @@ export interface GetActiveOrdersOptions {
 ///
 /// Orders that have been cancelled, expired-and-deleted, or consumed
 /// by `settle` are pruned (their object no longer exists on-chain).
+///
+/// Paginates through all `OrderSubmitted` events (up to `limit` per page)
+/// so traders with many historical orders are not silently truncated.
 export async function getActiveOrders(
   suiClient: SuiJsonRpcClient,
   opts: GetActiveOrdersOptions,
 ): Promise<ActiveOrder[]> {
-  const events = await suiClient.queryEvents({
-    query: { MoveEventType: `${opts.shellPackageId}::pool::OrderSubmitted` },
-    limit: opts.limit ?? 50,
-    order: "descending",
-  });
-
   type SubmittedJson = {
     order_id: string;
     trader: string;
@@ -50,12 +47,28 @@ export async function getActiveOrders(
     expiry_epoch: string;
   };
 
-  const candidates = events.data
-    .map((e) => ({
-      json: e.parsedJson as SubmittedJson,
-      submittedAtMs: e.timestampMs ? Number(e.timestampMs) : 0,
-    }))
-    .filter((x) => !opts.trader || x.json.trader === opts.trader)
+  const pageSize = opts.limit ?? 50;
+  const allEvents: Array<{ json: SubmittedJson; submittedAtMs: number }> = [];
+  let cursor: { txDigest: string; eventSeq: string } | null | undefined = undefined;
+
+  do {
+    const res = await suiClient.queryEvents({
+      query: { MoveEventType: `${opts.shellPackageId}::pool::OrderSubmitted` },
+      limit: pageSize,
+      order: "descending",
+      ...(cursor ? { cursor } : {}),
+    });
+    for (const e of res.data) {
+      allEvents.push({
+        json: e.parsedJson as SubmittedJson,
+        submittedAtMs: e.timestampMs ? Number(e.timestampMs) : 0,
+      });
+    }
+    cursor = res.hasNextPage ? (res.nextCursor ?? null) : null;
+  } while (cursor);
+
+  const candidates = allEvents
+    .filter((x) => !opts.trader || x.json.trader.toLowerCase() === opts.trader.toLowerCase())
     .map(({ json, submittedAtMs }) => ({
       orderId: json.order_id,
       trader: json.trader,
