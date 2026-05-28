@@ -66,6 +66,9 @@ export async function submitOrderFromProposal(opts: {
       throw new Error(`no ${sym} coin in wallet to use as collateral`);
     }
     const primary = tx.object(coins.data[0]!.coinObjectId);
+    if (coins.data.length > 1) {
+      tx.mergeCoins(primary, coins.data.slice(1).map((c) => tx.object(c.coinObjectId)));
+    }
     const [c] = tx.splitCoins(primary, [tx.pure.u64(collateralAmount)]);
     collateralArg = c!;
   }

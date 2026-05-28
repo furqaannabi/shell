@@ -11,7 +11,7 @@ function optional(name: string, fallback = ""): string {
 }
 
 export const config = {
-  agentPrivateKey: optional("AGENT_PRIVATE_KEY"),
+  agentPrivateKey: optional("AGENT_PRIVATE_KEY"),  // validated in runAgent(); optional here so demo mode can import config
   // ── LLM provider config ──────────────────────────────────────────────
   // v2: pluggable provider. Defaults preserve pre-v2 OPENAI_API_KEY-only behaviour.
   llmProvider: optional("LLM_PROVIDER"),       // openai | anthropic | google | openai-compatible

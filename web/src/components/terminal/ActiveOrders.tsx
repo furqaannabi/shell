@@ -152,7 +152,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   }
 
   return (
-    <div className="glass-panel rounded-lg p-4 flex flex-col h-full">
+    <div className="glass-panel rounded-lg border border-outline-variant p-4 flex flex-col h-full">
       <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#1E293B]">
         <div className="flex items-center gap-2">
           <h2 className="font-headline-md text-[18px] text-on-surface">Active Orders</h2>
@@ -172,7 +172,7 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
           })()}
         </div>
       </div>
-      <div className="overflow-auto flex-1 w-full">
+      <div className="overflow-auto flex-1 w-full max-h-[55vh] lg:max-h-none">
         {mergedOrders.length === 0 && settledRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-on-surface-variant font-mono-sm text-mono-sm gap-2 py-12">
             <span className="material-symbols-outlined text-[32px] opacity-30">shield</span>

@@ -53,6 +53,7 @@ export async function decideOnProposal(opts: {
         messages.push({
           role: "tool",
           toolCallId: tc.id,
+          name: tc.name,
           content: JSON.stringify(result),
         });
       }

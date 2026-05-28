@@ -104,7 +104,7 @@ function toGoogleContent(m: ChatMessage): Content[] {
           parts: [
             {
               functionResponse: {
-                name: m.toolCallId,
+                name: m.name,
                 response: safeJsonParse(m.content) as Record<string, unknown>,
               },
             },

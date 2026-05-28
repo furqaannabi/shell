@@ -111,7 +111,14 @@ export default function LandingPage() {
       {/* Navbar */}
       <nav className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 h-20 transition-all duration-500 ${scrolled ? 'bg-[#0A0C10]/80 backdrop-blur-xl border-b border-outline-variant/30 shadow-[0_4px_30px_rgba(0,0,0,0.5)]' : 'bg-transparent'}`}>
         <div className="font-headline-md text-headline-md font-extrabold tracking-tighter text-primary">SHELL FINANCE</div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/docs"
+            className="h-10 px-4 border border-outline-variant/50 text-on-surface-variant hover:border-primary/50 hover:text-primary transition-all duration-300 font-mono-sm text-sm rounded-lg flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-[16px]">menu_book</span>
+            Docs
+          </Link>
           {mounted && account && (
             <>
               <span className="font-mono-sm text-[12px] text-on-surface-variant hidden sm:inline px-3 py-1.5 rounded-full bg-surface-container-high/50 border border-outline-variant/50">
@@ -268,6 +275,10 @@ export default function LandingPage() {
           <span>SHELL FINANCE · Sui Testnet</span>
         </div>
         <div className="flex items-center gap-6">
+          <Link href="/docs" className="hover:text-primary transition-colors flex items-center gap-2">
+            <span className="material-symbols-outlined text-[14px]">menu_book</span>
+            Docs
+          </Link>
           <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors flex items-center gap-2">
             <span className="material-symbols-outlined text-[14px]">code</span>
             GitHub

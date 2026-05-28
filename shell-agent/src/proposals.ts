@@ -60,21 +60,17 @@ function bytesToAddress(b: Uint8Array | number[]): string {
 export async function pollProposals(opts: {
   suiClient: SuiJsonRpcClient;
   agentAddr: string;
-  cursor?: { txDigest: string; eventSeq: string };
   /** Blob IDs to skip. 404-expired blobs are added here so they're never retried. */
   skipBlobIds?: Set<string>;
-}): Promise<{
-  proposals: MatchProposal[];
-  nextCursor: { txDigest: string; eventSeq: string } | null;
-}> {
-  // Event type id is rooted at the package that first defined the type
-  // (`shellPackageIdIoiTypes`). On a clean-slate publish this matches the
-  // current packageId; on legacy chains where ioi was added in an
-  // upgrade, it stays pinned to the introducing version.
+}): Promise<{ proposals: MatchProposal[] }> {
+  // Always query from the latest end (no cursor) — descending means newest first.
+  // seenProposals in the caller handles deduplication across ticks.
+  // Using a cursor with descending order would drift backwards through history,
+  // causing new events to be missed entirely.
   const eventType = `${config.shellPackageIdIoiTypes}::ioi::MatchProposed`;
   const res = await opts.suiClient.queryEvents({
     query: { MoveEventType: eventType },
-    cursor: opts.cursor ?? null,
+    cursor: null,
     limit: 50,
     order: "descending",
   });
@@ -122,10 +118,7 @@ export async function pollProposals(opts: {
     }
   }
 
-  return {
-    proposals,
-    nextCursor: res.hasNextPage && res.nextCursor ? res.nextCursor : null,
-  };
+  return { proposals };
 }
 
 function decodeBlobId(v: unknown): string {

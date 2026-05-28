@@ -27,6 +27,9 @@ const SEAL_TESTNET_KEY_SERVER = {
 
 /** Main decision loop: poll MatchProposed → LLM evaluate → submit order. */
 export async function runAgent(): Promise<void> {
+  if (!config.agentPrivateKey) {
+    throw new Error("AGENT_PRIVATE_KEY is required — set it in .env");
+  }
   const keypair = Ed25519Keypair.fromSecretKey(config.agentPrivateKey);
   const agentAddr = keypair.toSuiAddress();
   logEvent('INFO', `address ${agentAddr}`);
@@ -49,11 +52,11 @@ export async function runAgent(): Promise<void> {
   await loadMcpTools(tools);
   const toolCtx = { suiClient, sealClient, keypair, address: agentAddr };
 
-  process.once("SIGTERM", () => void closeMcpClients());
-  process.once("SIGINT", () => void closeMcpClients());
+  const shutdown = () => { void closeMcpClients().finally(() => process.exit(0)); };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
   logEvent('INFO', `tools: ${tools.list().map((t) => t.name).join(', ')}`);
 
-  let cursor: { txDigest: string; eventSeq: string } | undefined;
   // blobId → expiryMs; pruned each tick so memory stays bounded.
   const seenProposals = new Map<string, number>();
   // Blob IDs that returned 404 — expired on Walrus, skip forever.
@@ -104,13 +107,11 @@ export async function runAgent(): Promise<void> {
         }
       }
 
-      const { proposals, nextCursor } = await pollProposals({
+      const { proposals } = await pollProposals({
         suiClient,
         agentAddr,
-        cursor,
         skipBlobIds,
       });
-      if (nextCursor) cursor = nextCursor;
 
       for (const p of proposals) {
         if (seenProposals.has(p.blobId)) continue;
@@ -171,6 +172,9 @@ export async function runAgent(): Promise<void> {
           });
         } catch (e) {
           logFail(`proposal ${p.blobId.slice(0, 12)} error: ${(e as Error).message}`);
+          // Allow retry next tick — remove from seen so a transient failure
+          // (e.g. RPC timeout, LLM error) doesn't permanently skip this proposal.
+          seenProposals.delete(p.blobId);
         }
       }
     } catch (e) {
