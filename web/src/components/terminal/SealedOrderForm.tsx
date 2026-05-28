@@ -35,7 +35,6 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
   const [side, setSide] = useState<OrderSide>('buy');
   const [size, setSize] = useState('');
   const [limitPrice, setLimitPrice] = useState('');
-  const [slippage, setSlippage] = useState('0.5');
   const [expiry, setExpiry] = useState('5');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,8 +58,6 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
 
       const sizeBase = BigInt(Math.round(parseFloat(size) * 10 ** pair.baseDecimals));
       const priceBase = BigInt(Math.round(parseFloat(limitPrice) * 1_000_000));
-      const maxSlippageBps = Math.round(parseFloat(slippage) * 100);
-
       const enc = await encryptOrder({
         sealClient: seal,
         shellPackageId: SHELL_PACKAGE_ID,
@@ -70,7 +67,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
           size: sizeBase,
           limitPrice: priceBase,
           expiryEpoch,
-          maxSlippageBps,
+          maxSlippageBps: 50,
           asset: pair.baseCoinType,
         },
       });
@@ -244,34 +241,18 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          {/* Expiry */}
-          <div className="relative group">
-            <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Expiry (epochs)</label>
-            <select
-              className="input-sealed w-full rounded p-2 text-on-surface font-mono-sm text-mono-sm appearance-none cursor-pointer"
-              value={expiry}
-              onChange={(e) => setExpiry(e.target.value)}
-            >
-              <option value="1">1 Epoch (~24h)</option>
-              <option value="5">5 Epochs (~5d)</option>
-              <option value="10">10 Epochs (~10d)</option>
-            </select>
-          </div>
-          {/* Max Slippage */}
-          <div className="relative group">
-            <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Max Slippage</label>
-            <div className="relative">
-              <input
-                className="input-sealed w-full rounded p-2 text-on-surface font-mono-data text-mono-data text-right pr-10"
-                type="text"
-                value={slippage}
-                onChange={(e) => setSlippage(e.target.value)}
-                inputMode="decimal"
-              />
-              <span className="absolute right-2 top-2 text-on-surface-variant font-mono-sm pointer-events-none select-none">%</span>
-            </div>
-          </div>
+        {/* Expiry */}
+        <div>
+          <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Expiry</label>
+          <select
+            className="input-sealed w-full rounded p-2 text-on-surface font-mono-sm text-mono-sm appearance-none cursor-pointer"
+            value={expiry}
+            onChange={(e) => setExpiry(e.target.value)}
+          >
+            <option value="1">1 Epoch (~24h)</option>
+            <option value="5">5 Epochs (~5d)</option>
+            <option value="10">10 Epochs (~10d)</option>
+          </select>
         </div>
 
         {error && (
