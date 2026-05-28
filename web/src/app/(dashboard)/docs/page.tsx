@@ -293,7 +293,11 @@ OPENAI_API_KEY=sk-...               # shortcut: defaults to openai + gpt-4o-mini
 # or
 LLM_PROVIDER=anthropic              # openai | anthropic | google | openai-compatible
 LLM_MODEL=claude-haiku-4-5-20251001
-LLM_API_KEY=sk-ant-...`}</CodeBlock>
+LLM_API_KEY=sk-ant-...
+
+# Trading policy — free-text enforced by the LLM on every match proposal
+# Prices: 1e6-scaled USDC (1.00 USDC = 1_000_000)  Sizes: 1e9-scaled SUI (1 SUI = 1_000_000_000)
+AGENT_POLICY=Accept matches priced between 900000 and 1100000 AND size between 100000000 and 1000000000. Call check_risk_cap first.`}</CodeBlock>
 
             <SectionHeader>Decision lifecycle</SectionHeader>
             <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">

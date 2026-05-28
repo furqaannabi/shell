@@ -43,10 +43,13 @@ export async function submitOrderFromProposal(opts: {
     order: plaintext,
   });
 
-  // Collateral: buy → quote coin, sell → base coin.
+  // Collateral: buy → quote coin, sell → the actual asset in the proposal.
   const isBuy = proposal.side === "buy";
-  const collateralType = isBuy ? config.quoteCoinType : config.baseCoinType;
-  const floatScaling = BigInt(10 ** config.baseDecimals);
+  const collateralType = isBuy ? config.quoteCoinType : proposal.asset;
+  // Derive decimals from the proposal asset so demo (always SUI=9) works
+  // even when AGENT_BASE_DECIMALS is overridden for a different pair.
+  const baseDecimals = proposal.asset === SUI_TYPE ? 9 : config.baseDecimals;
+  const floatScaling = BigInt(10 ** baseDecimals);
   const collateralAmount = isBuy
     ? (proposal.agreedSize * proposal.agreedPrice) / floatScaling
     : proposal.agreedSize;
