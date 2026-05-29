@@ -404,6 +404,7 @@ export async function runDemo(): Promise<void> {
         logEvent('ORDER', `[${role}]  tx=${digest}`);
         if (role === "buyer") { buyerOrderDigest = digest; buyerDone = true; }
         else { sellerOrderDigest = digest; sellerDone = true; }
+        break; // one order per role — stop processing further proposals
       }
     }
   }
