@@ -31,14 +31,22 @@ export async function runAgent(): Promise<void> {
   if (!config.agentPrivateKey) {
     throw new Error("AGENT_PRIVATE_KEY is required — set it in .env");
   }
+  if (config.network === "mainnet" && config.shellPackageId === "0x0") {
+    throw new Error(
+      "Shell Finance is not yet deployed to Sui mainnet. " +
+      "Set AGENT_NETWORK=testnet in .env to run against the testnet enclave, " +
+      "or override SHELL_PACKAGE_ID / SHELL_PACKAGE_ID_LATEST / ENCLAVE_ID / ENCLAVE_CONFIG_ID once a mainnet deploy exists.",
+    );
+  }
   const keypair = Ed25519Keypair.fromSecretKey(config.agentPrivateKey);
   const agentAddr = keypair.toSuiAddress();
+  logEvent('INFO', `network ${config.network}`);
   logEvent('INFO', `address ${agentAddr}`);
   logEvent('INFO', `policy: ${config.agentPolicy}`);
 
   const suiClient = new SuiJsonRpcClient({
     url: config.suiRpcUrl,
-    network: "testnet",
+    network: config.network,
   });
   const sealClient = new SealClient({
     suiClient: suiClient as never,

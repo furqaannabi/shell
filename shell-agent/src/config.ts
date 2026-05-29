@@ -4,7 +4,7 @@ function optional(name: string, fallback = ""): string {
   return process.env[name] ?? fallback;
 }
 
-const NETWORK = (process.env.AGENT_NETWORK ?? "mainnet") as "testnet" | "mainnet";
+const NETWORK = (process.env.AGENT_NETWORK ?? "testnet") as "testnet" | "mainnet";
 
 // ─────────────────────────────────────────────────────────────────────
 // Per-network defaults. Mirrors web/src/lib/sui.ts NETWORK_CONFIG.

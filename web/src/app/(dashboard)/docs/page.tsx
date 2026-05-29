@@ -323,8 +323,14 @@ shell-agent demo         # dry-run: two synthetic agents trade against each othe
 shell-agent post-ioi     # post one IOI and exit`}</CodeBlock>
 
             <SectionHeader>Minimal .env</SectionHeader>
+            <Note>
+              <span className="text-primary">Shell is currently testnet-only.</span> The agent defaults
+              to <span className="text-primary">AGENT_NETWORK=testnet</span> — flip to{' '}
+              <span className="text-primary">mainnet</span> once Shell deploys there.
+            </Note>
             <CodeBlock lang="env">{`# Required
 AGENT_PRIVATE_KEY=suiprivkey1...    # Sui Ed25519 keypair (sui keytool export)
+# AGENT_NETWORK=testnet             # default. Flip to "mainnet" once Shell ships on mainnet.
 
 # LLM — pick one
 OPENAI_API_KEY=sk-...               # shortcut: defaults to openai + gpt-4o-mini
@@ -743,10 +749,10 @@ AGENT_EXTRA_PAIRS_JSON=[
   }
 ]
 
-# Network gate (defaults to mainnet). Default pairs declare which network
-# they're valid on — TBILL mock is testnet-only, USDY is mainnet-only.
-# Set to testnet for hackathon/dev work against the testnet enclave.
-AGENT_NETWORK=mainnet`}</CodeBlock>
+# Network gate (defaults to testnet — Shell is testnet-only until a
+# mainnet deploy ships). Default pairs declare which network they're
+# valid on — TBILL mock is testnet-only, USDY is mainnet-only.
+AGENT_NETWORK=testnet`}</CodeBlock>
             <Note>
               For oracles Pyth doesn&apos;t cover (issuer-signed feeds, off-chain APIs), write a plugin under
               <span className="text-primary"> plugins/</span> or wire an MCP server in
