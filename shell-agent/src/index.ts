@@ -9,12 +9,7 @@ import { appendEntry } from "./journal.js";
 import { postIoi } from "./ioi.js";
 import { runDemo } from "./demo.js";
 
-const SEAL_TESTNET_KEY_SERVER = {
-  objectId:
-    "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98",
-  aggregatorUrl: 'https://seal-aggregator-testnet.mystenlabs.com',
-  weight: 1,
-};
+import { sealKeyServer } from "./seal.js";
 
 /**
  * CLI:
@@ -52,11 +47,11 @@ async function main() {
       const keypair = Ed25519Keypair.fromSecretKey(config.agentPrivateKey);
       const suiClient = new SuiJsonRpcClient({
         url: config.suiRpcUrl,
-        network: "testnet",
+        network: config.network,
       });
       const sealClient = new SealClient({
         suiClient: suiClient as never,
-        serverConfigs: [SEAL_TESTNET_KEY_SERVER],
+        serverConfigs: [sealKeyServer()],
         verifyKeyServers: false,
       });
 

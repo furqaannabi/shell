@@ -15,12 +15,7 @@ import { builtinTools } from "./tools/builtin.js";
 import { loadPlugins } from "./tools/plugins.js";
 import { loadMcpTools } from "./tools/mcp.js";
 
-const SEAL_KEY_SERVER = {
-  objectId:
-    "0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98",
-  aggregatorUrl: "https://seal-aggregator-testnet.mystenlabs.com",
-  weight: 1,
-};
+import { sealKeyServer } from "./seal.js";
 
 const POLL_MS = 5_000;
 const TIMEOUT_MS = 5 * 60_000;
@@ -93,7 +88,7 @@ function makeSui() {
 function makeSeal(sui: SuiJsonRpcClient) {
   return new SealClient({
     suiClient: sui as never,
-    serverConfigs: [SEAL_KEY_SERVER],
+    serverConfigs: [sealKeyServer()],
     verifyKeyServers: false,
   });
 }
