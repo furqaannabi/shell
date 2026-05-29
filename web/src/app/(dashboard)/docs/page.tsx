@@ -705,21 +705,48 @@ Or: { "skip": true, "reasoning": "..." }`}</CodeBlock>
               </li>
             </ul>
             <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
-              Add custom pairs without editing code via <span className="text-primary">AGENT_EXTRA_PAIRS_JSON</span> env:
+              Add custom pairs without editing code via <span className="text-primary">AGENT_EXTRA_PAIRS_JSON</span> env.
+              <span className="text-primary"> Two pieces of info are required for each new RWA pair:</span>
+            </p>
+            <ol className="font-mono-sm text-[11px] text-on-surface-variant mb-4 space-y-2 list-decimal list-inside">
+              <li>
+                <span className="text-primary">The Sui coin type</span> — Move type tag for the base asset
+                (e.g. <code>0x...::usdy::USDY</code>). Find on Suiscan or from the issuer&apos;s docs.
+                Must match the on-chain coin you actually want to trade.
+              </li>
+              <li>
+                <span className="text-primary">The Pyth feed ID</span> matching that asset — 32-byte hex
+                (e.g. <code>0xe786153c...</code>). Look up at{' '}
+                <a href="https://pyth.network/developers/price-feed-ids" className="text-primary underline" target="_blank" rel="noopener noreferrer">
+                  pyth.network/developers/price-feed-ids
+                </a>. Same feed ID works on both Sui networks; pick the asset&apos;s ticker (e.g. USDY/USD).
+              </li>
+            </ol>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
+              Wire both into one JSON entry:
             </p>
             <CodeBlock lang="env">{`# JSON array of TradingPair. Env wins on baseCoinType collision.
 # Find Pyth feed IDs at https://pyth.network/developers/price-feed-ids
+# Each pair may include "network": "testnet" | "mainnet" | "both"
+# (defaults to "both" if omitted) — pairs whose network doesn't match
+# AGENT_NETWORK are silently filtered out.
 AGENT_EXTRA_PAIRS_JSON=[
   {
     "symbol": "USDY/USDC",
+    "network": "mainnet",
     "baseCoinType": "0x...::usdy::USDY",
     "baseDecimals": 6,
-    "quoteCoinType": "0xa1ec...::usdc::USDC",
+    "quoteCoinType": "0xdba3...::usdc::USDC",
     "quoteDecimals": 6,
     "priceSource": "pyth",
     "pythFeedId": "0xe786153c..."
   }
-]`}</CodeBlock>
+]
+
+# Network gate (defaults to mainnet). Default pairs declare which network
+# they're valid on — TBILL mock is testnet-only, USDY is mainnet-only.
+# Set to testnet for hackathon/dev work against the testnet enclave.
+AGENT_NETWORK=mainnet`}</CodeBlock>
             <Note>
               For oracles Pyth doesn&apos;t cover (issuer-signed feeds, off-chain APIs), write a plugin under
               <span className="text-primary"> plugins/</span> or wire an MCP server in

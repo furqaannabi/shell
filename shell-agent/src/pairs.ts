@@ -1,9 +1,12 @@
 import { config } from "./config.js";
 
 export type PriceSource = "deepbook" | "fixed" | "pyth";
+export type Network = "testnet" | "mainnet" | "both";
 
 export interface TradingPair {
   symbol: string;
+  /** Which Sui network this pair is valid on. */
+  network: Network;
   baseCoinType: string;
   baseDecimals: number;
   quoteCoinType: string;
@@ -17,27 +20,51 @@ export interface TradingPair {
 const SUI_TYPE = "0x2::sui::SUI";
 const USDC_TESTNET =
   "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC";
+const USDC_MAINNET =
+  "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC";
 const TBILL_TESTNET =
   "0x70d3c2d589fcbe55eff1be5eebbe5cf50f051c0a274e1e34cd383ecd8a107719::tbill::TBILL";
 
+// Pyth Hermes feed IDs — same id works against both networks.
+// Source: https://pyth.network/developers/price-feed-ids
+const PYTH_USDY_USD = "0xe786153cc54abd4b0e53b4c246d54d9f8eb3f3b5a34d4fc5a1e9a8a4c43afb4d";
+// Placeholder — BUIDL has no public Pyth feed at time of writing.
+// Users who want BUIDL wire it themselves via AGENT_EXTRA_PAIRS_JSON.
+
 export const DEFAULT_PAIRS: TradingPair[] = [
+  // SUI/USDC works on both networks via DeepBook.
   {
     symbol: "SUI/USDC",
+    network: "both",
     baseCoinType: SUI_TYPE,
     baseDecimals: 9,
-    quoteCoinType: USDC_TESTNET,
+    quoteCoinType: USDC_TESTNET, // overridden at runtime if mainnet
     quoteDecimals: 6,
     priceSource: "deepbook",
     deepbookPoolKey: "SUI_DBUSDC",
   },
+  // TBILL is a mock token Shell deployed on testnet only.
   {
     symbol: "TBILL/USDC",
+    network: "testnet",
     baseCoinType: TBILL_TESTNET,
     baseDecimals: 6,
     quoteCoinType: USDC_TESTNET,
     quoteDecimals: 6,
     priceSource: "fixed",
     fixedPrice: 1.0,
+  },
+  // USDY (Ondo) — real RWA, mainnet only. Pyth Hermes feed.
+  // Address placeholder — set the real one when adopting USDY on Sui mainnet.
+  {
+    symbol: "USDY/USDC",
+    network: "mainnet",
+    baseCoinType: "0x0000000000000000000000000000000000000000000000000000000000000000::usdy::USDY",
+    baseDecimals: 6,
+    quoteCoinType: USDC_MAINNET,
+    quoteDecimals: 6,
+    priceSource: "pyth",
+    pythFeedId: PYTH_USDY_USD,
   },
 ];
 
@@ -78,6 +105,7 @@ export function loadExtraPairsFromEnv(): TradingPair[] {
     }
     out.push({
       symbol: p.symbol ?? `${p.baseCoinType.split("::").pop()}/${p.quoteCoinType.split("::").pop()}`,
+      network: p.network ?? "both",
       baseCoinType: p.baseCoinType,
       baseDecimals: typeof p.baseDecimals === "number" ? p.baseDecimals : 6,
       quoteCoinType: p.quoteCoinType,
@@ -91,12 +119,15 @@ export function loadExtraPairsFromEnv(): TradingPair[] {
   return out;
 }
 
-/** All known pairs: env overrides + defaults. Env wins on baseCoinType
- *  collision so users can override a default pair's pricing. */
+/** All known pairs: env overrides + defaults, filtered to current network.
+ *  Env wins on baseCoinType collision so users can override a default
+ *  pair's pricing. */
 export function allPairs(): TradingPair[] {
   const extras = loadExtraPairsFromEnv();
   const seen = new Set(extras.map((p) => p.baseCoinType));
-  return [...extras, ...DEFAULT_PAIRS.filter((p) => !seen.has(p.baseCoinType))];
+  const merged = [...extras, ...DEFAULT_PAIRS.filter((p) => !seen.has(p.baseCoinType))];
+  const net = config.network;
+  return merged.filter((p) => p.network === "both" || p.network === net);
 }
 
 export function pairForAsset(asset: string): TradingPair | undefined {
