@@ -247,6 +247,27 @@ const appendJournal: Tool = {
   },
 };
 
+/** Returns the agent's recent IOI history with match outcomes — gives
+ *  the LLM memory across posting windows so it can adapt (e.g. widen
+ *  range after repeated no-match). Backed by an in-process ring buffer
+ *  populated in agent.ts. Empty array if not in `run` mode. */
+const getMyRecentIois: Tool = {
+  name: "get_my_recent_iois",
+  description:
+    "Returns the agent's recent posted IOIs with their match outcome. " +
+    "Each entry: { posted_at_ms, side, asset, size_lo/hi, price_lo/hi, ttl_min, status: pending|matched|expired, reasoning }. " +
+    "Use this to inform the next IOI: e.g. if recent same-side IOIs at the same range expired without matching, " +
+    "widen the price range or change side. Most recent first.",
+  parameters: z.object({
+    limit: z.number().int().min(1).max(50).optional(),
+  }),
+  async execute(args, ctx) {
+    const history = ctx.getIoiHistory ? ctx.getIoiHistory() : [];
+    const limit = args.limit ?? 10;
+    return history.slice(0, limit);
+  },
+};
+
 /** POST JSON to WEBHOOK_URL if configured; no-op otherwise. */
 const notifyWebhook: Tool = {
   name: "notify_webhook",
@@ -282,6 +303,7 @@ export const builtinTools: Tool[] = [
   getMyActiveProposals,
   cancelOrder,
   checkRiskCap,
+  getMyRecentIois,
   appendJournal,
   notifyWebhook,
 ];

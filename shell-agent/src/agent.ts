@@ -11,7 +11,7 @@ import { decideIoiTerms } from "./llm/strategy.js";
 import { logEvent, logFail, logVerdict, logWarn } from "./log.js";
 import { submitOrderFromProposal } from "./orders.js";
 import { pollProposals } from "./proposals.js";
-import { ToolRegistry } from "./tools/registry.js";
+import { ToolRegistry, type IoiHistoryEntry } from "./tools/registry.js";
 import { builtinTools } from "./tools/builtin.js";
 import { loadPlugins } from "./tools/plugins.js";
 import { loadMcpTools, closeMcpClients } from "./tools/mcp.js";
@@ -51,7 +51,19 @@ export async function runAgent(): Promise<void> {
   tools.registerMany(builtinTools);
   await loadPlugins(tools);
   await loadMcpTools(tools);
-  const toolCtx = { suiClient, sealClient, keypair, address: agentAddr };
+  // In-process IOI history. Newest first. Capped at 20.
+  const ioiHistory: IoiHistoryEntry[] = [];
+  const HISTORY_MAX = 20;
+  function getIoiHistory(): IoiHistoryEntry[] {
+    // Mark expired entries (still pending past their expiry_ms).
+    const nowMs = Date.now();
+    for (const e of ioiHistory) {
+      if (e.status === "pending" && e.expiry_ms < nowMs) e.status = "expired";
+    }
+    return ioiHistory;
+  }
+
+  const toolCtx = { suiClient, sealClient, keypair, address: agentAddr, getIoiHistory };
 
   const shutdown = () => { void closeMcpClients().finally(() => process.exit(0)); };
   process.once("SIGTERM", shutdown);
@@ -119,6 +131,22 @@ export async function runAgent(): Promise<void> {
               expiryEpoch,
             });
             ioiExpiryMs = Date.now() + ttlMs;
+            // Record in ring buffer so future ticks can read past terms + outcomes.
+            ioiHistory.unshift({
+              posted_at_ms: Date.now(),
+              blob_id: blobId,
+              side: strategy.side!,
+              asset: strategy.asset!,
+              size_lo: strategy.sizeLo!.toString(),
+              size_hi: strategy.sizeHi!.toString(),
+              price_lo: strategy.priceLo!.toString(),
+              price_hi: strategy.priceHi!.toString(),
+              ttl_min: ttlMin,
+              expiry_ms: ioiExpiryMs,
+              status: "pending",
+              reasoning: strategy.reasoning,
+            });
+            if (ioiHistory.length > HISTORY_MAX) ioiHistory.length = HISTORY_MAX;
             logEvent('IOI', `posted  side=${strategy.side}  size=${strategy.sizeLo}-${strategy.sizeHi}  price=${strategy.priceLo}-${strategy.priceHi}  ttl=${ttlMin}min  blob=${blobId}  tx=${digest}`);
             logEvent('IOI', `reason: ${strategy.reasoning}`);
             await appendEntry({
@@ -145,6 +173,24 @@ export async function runAgent(): Promise<void> {
       for (const p of proposals) {
         if (seenProposals.has(p.blobId)) continue;
         seenProposals.set(p.blobId, Number(p.expiryMs));
+
+        // Mark matching IOI in history. Enclave guarantees proposal terms
+        // fall inside the IOI's declared range — find most recent pending
+        // IOI of same side+asset where (price, size) are in range.
+        const ioi = ioiHistory.find(
+          (e) =>
+            e.status === "pending" &&
+            e.side === p.side &&
+            e.asset === p.asset &&
+            p.agreedPrice >= BigInt(e.price_lo) &&
+            p.agreedPrice <= BigInt(e.price_hi) &&
+            p.agreedSize >= BigInt(e.size_lo) &&
+            p.agreedSize <= BigInt(e.size_hi),
+        );
+        if (ioi) {
+          ioi.status = "matched";
+          ioi.matched_at_ms = Date.now();
+        }
 
         const priceUsdc = (Number(p.agreedPrice) / 1e6).toFixed(4);
         const sizeSui   = (Number(p.agreedSize)  / 1e9).toFixed(4);

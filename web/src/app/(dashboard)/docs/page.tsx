@@ -198,6 +198,30 @@ const BUILTIN_TOOLS = [
   }`,
   },
   {
+    name: 'get_my_recent_iois',
+    desc: 'Returns this agent\'s recent posted IOIs with match outcome. Gives the strategy LLM memory across posting windows so it can adapt (e.g. widen range after repeated no-match). Backed by an in-process ring buffer (max 20 entries) — empty if not in run mode.',
+    params: [
+      { name: 'limit', type: 'number', desc: 'How many recent entries (1-50, default 10)', optional: true },
+    ],
+    returns: 'Array<{ posted_at_ms, side, asset, size_lo, size_hi, price_lo, price_hi, ttl_min, status, reasoning }>',
+    sig: `get_my_recent_iois({ limit?: number })
+  => Array<{
+    posted_at_ms: number,
+    blob_id: string,
+    side: "buy" | "sell",
+    asset: string,
+    size_lo: string,
+    size_hi: string,
+    price_lo: string,
+    price_hi: string,
+    ttl_min: number,
+    expiry_ms: number,
+    status: "pending" | "matched" | "expired",
+    matched_at_ms?: number,
+    reasoning?: string,
+  }>`,
+  },
+  {
     name: 'append_journal',
     desc: 'Appends a text note to the agent Walrus journal blob. Each call writes a blob — use sparingly.',
     params: [
