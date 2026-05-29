@@ -131,10 +131,21 @@ function FnCard({ name, sig, desc, params }: {
 const BUILTIN_TOOLS = [
   {
     name: 'get_ref_price',
-    desc: 'Returns DeepBook mid, bid, ask for SUI/USDC in USDC. Call before evaluating a proposal price. Returns { error } if indexer is down.',
-    params: [],
-    returns: '{ bid: number, ask: number, mid: number }',
-    sig: 'get_ref_price() => { bid, ask, mid }',
+    desc: 'Returns { bid, ask, mid, source, asset } for a trading pair. Pass asset (Move type tag) to pick the pair — omitted falls back to the default agent asset. Sources: "deepbook" (live indexer), "fixed" (NAV stub for testnet RWA), "pyth" (live Hermes price + confidence). Returns { error } if no source is wired for the asset — do NOT invent a price; wire via AGENT_EXTRA_PAIRS_JSON env, a plugin, or an MCP oracle.',
+    params: [
+      { name: 'asset', type: 'string', desc: 'Move coin type tag (e.g. 0x2::sui::SUI). Omit to use agent default.', optional: true },
+    ],
+    returns: '{ bid, ask, mid, source: "deepbook"|"fixed"|"pyth", asset, conf?: number, publish_time?: number }',
+    sig: `get_ref_price({ asset?: string })
+  => {
+    bid: number,
+    ask: number,
+    mid: number,
+    source: "deepbook" | "fixed" | "pyth",
+    asset: string,
+    conf?: number,         // pyth only — confidence interval
+    publish_time?: number, // pyth only — feed publish timestamp
+  }`,
   },
   {
     name: 'get_my_balance',
@@ -671,6 +682,49 @@ Respond with ONLY a JSON object:
     "price_lo": <number, 1e6 scale>, "price_hi": <number>,
     "ttl_min": <number 5-1440> }
 Or: { "skip": true, "reasoning": "..." }`}</CodeBlock>
+
+            <SectionHeader>Multi-pair pricing — deepbook, fixed, pyth</SectionHeader>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
+              <span className="text-primary">get_ref_price({'{ asset }'})</span> dispatches by the asset's
+              registered price source. Three sources ship built-in:
+            </p>
+            <ul className="font-mono-sm text-[11px] text-on-surface-variant mb-4 space-y-2 list-disc list-inside">
+              <li>
+                <span className="text-primary">deepbook</span> — live SUI/USDC indexer.{' '}
+                Real bid/ask/mid. Default for SUI/USDC.
+              </li>
+              <li>
+                <span className="text-primary">fixed</span> — NAV stub for testnet RWA (e.g. TBILL at $1.00).{' '}
+                Returned as <code className="text-primary">{`{ bid: NAV, ask: NAV, mid: NAV, source: "fixed" }`}</code>.{' '}
+                LLM should keep tighter acceptance bands (±0.5%) for these — no market depth signal.
+              </li>
+              <li>
+                <span className="text-primary">pyth</span> — live Pyth Hermes HTTPS feed.{' '}
+                <span className="text-primary">Free, no API key.</span> Returns price + confidence interval
+                used as bid/ask spread. Recommended for real RWA pairs (USDY, BUIDL, gold, equities).
+              </li>
+            </ul>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
+              Add custom pairs without editing code via <span className="text-primary">AGENT_EXTRA_PAIRS_JSON</span> env:
+            </p>
+            <CodeBlock lang="env">{`# JSON array of TradingPair. Env wins on baseCoinType collision.
+# Find Pyth feed IDs at https://pyth.network/developers/price-feed-ids
+AGENT_EXTRA_PAIRS_JSON=[
+  {
+    "symbol": "USDY/USDC",
+    "baseCoinType": "0x...::usdy::USDY",
+    "baseDecimals": 6,
+    "quoteCoinType": "0xa1ec...::usdc::USDC",
+    "quoteDecimals": 6,
+    "priceSource": "pyth",
+    "pythFeedId": "0xe786153c..."
+  }
+]`}</CodeBlock>
+            <Note>
+              For oracles Pyth doesn&apos;t cover (issuer-signed feeds, off-chain APIs), write a plugin under
+              <span className="text-primary"> plugins/</span> or wire an MCP server in
+              <span className="text-primary"> mcp.json</span>. The LLM picks the most specific tool available.
+            </Note>
           </>
         )}
       </div>

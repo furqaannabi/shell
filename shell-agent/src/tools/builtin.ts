@@ -5,28 +5,79 @@ import { config } from "../config.js";
 import { appendEntry } from "../journal.js";
 import { pollProposals } from "../proposals.js";
 import { cancelOrderTx } from "@shell-finance/sdk";
+import { pairForAsset, type TradingPair } from "../pairs.js";
 import type { Tool } from "./registry.js";
 
-/** DeepBook indexer mid/bid/ask for the configured reference pool. */
+async function fetchDeepbookMid(poolKey: string): Promise<{ bid: number; ask: number; mid: number } | { error: string }> {
+  const url = `${config.deepbookIndexerUrl}/orderbook/${poolKey}?level=2&depth=2`;
+  const res = await fetch(url);
+  if (!res.ok) return { error: `deepbook indexer ${res.status}` };
+  const j = (await res.json()) as { bids: [string, string][]; asks: [string, string][] };
+  const bid = parseFloat(j.bids[0]?.[0] ?? "0");
+  const ask = parseFloat(j.asks[0]?.[0] ?? "0");
+  if (!bid || !ask) return { error: "empty orderbook" };
+  return { bid, ask, mid: (bid + ask) / 2 };
+}
+
+/** Pyth Hermes HTTP — free, no API key. Returns latest price + conf
+ *  for the given feed id. Confidence used as bid/ask spread. */
+async function fetchPythHermes(feedId: string): Promise<
+  { bid: number; ask: number; mid: number; conf: number; publish_time: number } | { error: string }
+> {
+  const id = feedId.startsWith("0x") ? feedId.slice(2) : feedId;
+  const url = `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${id}`;
+  const res = await fetch(url);
+  if (!res.ok) return { error: `pyth hermes ${res.status}` };
+  const j = (await res.json()) as {
+    parsed: Array<{ price: { price: string; conf: string; expo: number; publish_time: number } }>;
+  };
+  const p = j.parsed?.[0]?.price;
+  if (!p) return { error: "pyth empty response" };
+  const expo = p.expo;
+  const price = Number(p.price) * Math.pow(10, expo);
+  const conf = Number(p.conf) * Math.pow(10, expo);
+  return {
+    bid: price - conf,
+    ask: price + conf,
+    mid: price,
+    conf,
+    publish_time: p.publish_time,
+  };
+}
+
+/** Reference price for any registered trading pair. */
 const getRefPrice: Tool = {
   name: "get_ref_price",
   description:
-    "Returns DeepBook reference price for SUI/USDC as { bid, ask, mid } " +
-    "in USDC. Call before evaluating size/price to verify the proposal " +
-    "is sensible vs current market. May return { error } if indexer down.",
-  parameters: z.object({}),
-  async execute() {
-    const url = `${config.deepbookIndexerUrl}/orderbook/${config.deepbookPoolKey}?level=2&depth=2`;
-    const res = await fetch(url);
-    if (!res.ok) return { error: `deepbook indexer ${res.status}` };
-    const j = (await res.json()) as {
-      bids: [string, string][];
-      asks: [string, string][];
-    };
-    const bid = parseFloat(j.bids[0]?.[0] ?? "0");
-    const ask = parseFloat(j.asks[0]?.[0] ?? "0");
-    if (!bid || !ask) return { error: "empty orderbook" };
-    return { bid, ask, mid: (bid + ask) / 2 };
+    "Returns { bid, ask, mid, source, asset } for a trading pair. " +
+    "Pass `asset` (Move type tag) to pick the pair; omitted = default agent asset. " +
+    "Sources: 'deepbook' (live SUI/USDC indexer), 'fixed' (NAV stub for testnet RWA), " +
+    "'pyth' (live Hermes price + confidence). Returns { error } if no source is wired " +
+    "for the asset — do NOT invent a price; ask the user to add a plugin/MCP/env pair.",
+  parameters: z.object({
+    asset: z.string().optional(),
+  }),
+  async execute(args) {
+    const asset = args.asset ?? config.baseCoinType;
+    const pair: TradingPair | undefined = pairForAsset(asset);
+    if (!pair) {
+      return { error: `no ref price source for ${asset}. Add via AGENT_EXTRA_PAIRS_JSON or a plugin.` };
+    }
+    if (pair.priceSource === "fixed") {
+      const fp = pair.fixedPrice!;
+      return { bid: fp, ask: fp, mid: fp, source: "fixed", asset };
+    }
+    if (pair.priceSource === "deepbook") {
+      const r = await fetchDeepbookMid(pair.deepbookPoolKey!);
+      if ("error" in r) return { error: r.error, source: "deepbook", asset };
+      return { ...r, source: "deepbook", asset };
+    }
+    if (pair.priceSource === "pyth") {
+      const r = await fetchPythHermes(pair.pythFeedId!);
+      if ("error" in r) return { error: r.error, source: "pyth", asset };
+      return { ...r, source: "pyth", asset };
+    }
+    return { error: `unknown priceSource: ${(pair as { priceSource: string }).priceSource}`, asset };
   },
 };
 

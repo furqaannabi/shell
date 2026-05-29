@@ -76,4 +76,8 @@ export const config = {
   riskDailyVolumeSui: parseFloat(process.env.RISK_DAILY_VOLUME_SUI ?? "0"),
   // ── Webhook (optional) ────────────────────────────────────────────────
   webhookUrl: optional("WEBHOOK_URL"),
+  // ── Extra trading pairs (JSON array of TradingPair) ───────────────────
+  // See shell-agent/src/pairs.ts for the type. Parsed at startup; bad
+  // entries are logged + skipped. Env wins on baseCoinType collision.
+  extraPairsJson: optional("AGENT_EXTRA_PAIRS_JSON"),
 };

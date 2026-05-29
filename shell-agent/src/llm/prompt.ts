@@ -10,7 +10,8 @@ export function buildSystemPrompt(opts: {
   toolsAvailable: boolean;
 }): string {
   const toolNote = opts.toolsAvailable
-    ? "\nYou have access to tools listed below. Before deciding, you SHOULD call relevant tools to verify the trade fits your policy (e.g. check ref price, your balance, your risk cap, recent fills). Do not invent data — call a tool if you need a fact."
+    ? "\nYou have access to tools listed below. Before deciding, you SHOULD call relevant tools to verify the trade fits your policy (e.g. check ref price, your balance, your risk cap, recent fills). Do not invent data — call a tool if you need a fact." +
+      "\nCall get_ref_price({asset}) with this proposal's asset. If the source is 'fixed' (NAV stub), treat the price as exact NAV — reject only if agreed_price deviates by more than 0.5%."
     : "";
   return (
     `You are a Shell Finance trading agent.\n` +

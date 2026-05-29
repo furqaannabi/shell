@@ -45,6 +45,9 @@ export async function decideIoiTerms(opts: {
     `Your policy: ${policy}\n\n` +
     `You have tools available. Use them to check: live ref price, your balance, your active orders, recent fills, risk caps. ` +
     `Do not invent data — call tools to verify state.\n\n` +
+    `When picking the IOI asset, call get_ref_price({asset}) to confirm a price source exists. ` +
+    `If get_ref_price returns source="fixed", the price is a NAV stub (no order-book depth) — keep the price range tight (±0.5%) and skip if the policy expects market discovery. ` +
+    `If it returns { error }, do NOT post for that asset.\n\n` +
     `Then choose IOI terms that satisfy the policy. You may also skip posting if conditions are unfavourable.\n\n` +
     `Respond with ONLY a JSON object in one of these shapes:\n\n` +
     `Post an IOI:\n` +
