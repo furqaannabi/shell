@@ -41,15 +41,15 @@ const PRICE_HI = 1_100_000n;         // 1.10 USDC
 const DEMO_POLICY =
   "You are a quant trading agent for Shell Finance. " +
   "Before evaluating any proposal, you MUST call tools in this order: " +
-  "(1) get_ref_price — verify agreed_price is within 20% of live mid price. " +
+  "(1) get_ref_price — record live bid/ask/mid for context (informational only, do NOT use for accept/reject). " +
   "(2) get_my_balance — verify balance is sufficient to cover collateral. " +
-  "Accept the proposal if ALL of these hold: " +
-  "(a) agreed_price is between 900_000 and 1_100_000 (0.90–1.10 USDC, 1e6 scale); " +
-  "(b) agreed_size is between 100_000_000 and 200_000_000 (0.1–0.2 SUI, 1e9 scale); " +
+  "Accept the proposal if ALL of these hold (strict integer comparison on agreed_price/agreed_size, NOT on ref price): " +
+  "(a) agreed_price >= 900000 AND agreed_price <= 1100000 (this is 0.90–1.10 USDC at 1e6 scale); " +
+  "(b) agreed_size >= 100000000 AND agreed_size <= 200000000 (this is 0.1–0.2 SUI at 1e9 scale); " +
   "(c) balance is sufficient for collateral. " +
-  "Reject ONLY if price is out of range, size is out of range, or balance is too low. " +
-  "Do NOT reject for any other reason. Do NOT call check_risk_cap. " +
-  "Set policy_check=true only when all checks passed via tools.";
+  "Reject ONLY if (a), (b), or (c) fails. DO NOT reject based on ref price deviation. " +
+  "DO NOT call check_risk_cap. " +
+  "Set policy_check=true only when (a), (b), and (c) all passed via tools.";
 
 // Risk cap step uses a separate policy — only enforces cap, ignores size bounds,
 // so we can isolate the check_risk_cap tool as the rejection cause.

@@ -265,16 +265,19 @@ function AgentTab() {
           <>
             <p className="font-mono-sm text-[11px] text-on-surface-variant mb-6">
               <span className="text-primary">shell-agent</span> is an autonomous trading daemon for Shell Finance.
-              It posts encrypted IOIs to Walrus, polls the Sui chain for enclave-generated match proposals,
-              and uses an LLM — with live on-chain tools — to decide whether to accept, reject, or wait on each match.
-              When it accepts, it builds and submits the sealed order transaction without any human intervention.
+              The LLM drives <span className="text-primary">both</span> sides of the loop: it picks IOI terms
+              (side, size range, price range, TTL) from live market data + your policy each posting window,
+              then decides accept / reject / wait on every match proposal the enclave returns. When it accepts,
+              it builds and submits the sealed order transaction without any human intervention.
             </p>
             <p className="font-mono-sm text-[11px] text-on-surface-variant mb-6">
               The agent is designed for quants running systematic strategies or market makers who want to operate
               in the dark pool programmatically. Bring your own LLM key (OpenAI, Anthropic, Google, or any
               OpenAI-compatible endpoint including local Ollama). Write your trading policy in plain English —
-              the LLM will call tools like <span className="text-primary">get_ref_price</span> and{' '}
-              <span className="text-primary">check_risk_cap</span> to verify compliance before deciding.
+              the LLM calls tools like <span className="text-primary">get_ref_price</span>,{' '}
+              <span className="text-primary">get_my_balance</span>, and{' '}
+              <span className="text-primary">check_risk_cap</span> to inform both IOI-term selection and
+              match acceptance.
             </p>
             <SectionHeader>Install</SectionHeader>
             <CodeBlock lang="sh">{`npm install -g @shell-finance/shell-agent`}</CodeBlock>
@@ -295,13 +298,29 @@ LLM_PROVIDER=anthropic              # openai | anthropic | google | openai-compa
 LLM_MODEL=claude-haiku-4-5-20251001
 LLM_API_KEY=sk-ant-...
 
-# Trading policy — free-text enforced by the LLM on every match proposal
+# Trading policy — LLM uses this for BOTH IOI posting and match acceptance.
 # Prices: 1e6-scaled USDC (1.00 USDC = 1_000_000)  Sizes: 1e9-scaled SUI (1 SUI = 1_000_000_000)
-AGENT_POLICY=Accept matches priced between 900000 and 1100000 AND size between 100000000 and 1000000000. Call check_risk_cap first.`}</CodeBlock>
+AGENT_POLICY=Accumulate 1-3 SUI when DeepBook mid < 1.0 USDC. Max position 10 SUI. Skip posting if spread > 2%. Accept matches priced between 900000 and 1100000.`}</CodeBlock>
 
-            <SectionHeader>Decision lifecycle</SectionHeader>
+            <SectionHeader>Decision lifecycle — two LLM-driven decisions per cycle</SectionHeader>
             <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
-              For each MatchProposal the agent receives, the LLM goes through a bounded tool-use loop (max 6 rounds), then produces a final JSON verdict:
+              <span className="text-primary">(1) IOI posting</span> — every TTL window (default 60min) the LLM
+              runs a bounded tool-use loop (max 6 rounds), then returns:
+            </p>
+            <CodeBlock lang="json">{`// Post an IOI
+{ "skip": false,
+  "reasoning": "string",
+  "side": "buy" | "sell",
+  "asset": "0x2::sui::SUI",
+  "size_lo": 100000000, "size_hi": 200000000,
+  "price_lo": 900000, "price_hi": 1100000,
+  "ttl_min": 60 }
+
+// Or skip this window
+{ "skip": true, "reasoning": "spread too wide" }`}</CodeBlock>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3 mt-4">
+              <span className="text-primary">(2) Match acceptance</span> — for each MatchProposal received, a
+              second LLM loop produces:
             </p>
             <CodeBlock lang="json">{`{
   "decision": "accept_match" | "reject_match" | "wait",
@@ -365,16 +384,22 @@ DEMO_SELLER_KEY=suiprivkey1...`}</CodeBlock>
 
 OPENAI_MODEL=gpt-4o-mini         # legacy — ignored when LLM_MODEL set`}</CodeBlock>
 
-            <SectionHeader>IOI parameters (run mode auto-posting)</SectionHeader>
+            <SectionHeader>IOI fallback defaults (LLM picks terms each window from policy)</SectionHeader>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
+              In <span className="text-primary">run</span> mode the LLM chooses IOI terms each posting window
+              based on <span className="text-primary">AGENT_POLICY</span> + live tools. These env values are
+              used only as fallbacks when the LLM response is missing a field or fails to parse. Override
+              <span className="text-primary"> AGENT_POLICY</span> to control behaviour, not these values.
+            </p>
             <CodeBlock lang="env">{`# Size  = raw u64 at 1e9 scale: 1 SUI  = 1_000_000_000
 # Price = raw u64 at 1e6 scale: 1 USDC = 1_000_000
-AGENT_IOI_SIDE=buy                  # buy | sell
-AGENT_IOI_ASSET=0x2::sui::SUI
-AGENT_IOI_SIZE_LO=100000000         # 0.1 SUI  — min size advertised
-AGENT_IOI_SIZE_HI=200000000         # 0.2 SUI  — max size advertised
-AGENT_IOI_PRICE_LO=900000           # 0.90 USDC — min price
-AGENT_IOI_PRICE_HI=1100000          # 1.10 USDC — max price
-AGENT_IOI_TTL_MIN=60                # re-post IOI every N minutes
+AGENT_IOI_SIDE=buy                  # fallback side
+AGENT_IOI_ASSET=0x2::sui::SUI       # fallback asset
+AGENT_IOI_SIZE_LO=100000000         # 0.1 SUI fallback min
+AGENT_IOI_SIZE_HI=200000000         # 0.2 SUI fallback max
+AGENT_IOI_PRICE_LO=900000           # 0.90 USDC fallback min
+AGENT_IOI_PRICE_HI=1100000          # 1.10 USDC fallback max
+AGENT_IOI_TTL_MIN=60                # fallback TTL minutes (LLM may override 5-1440)
 AGENT_POLL_INTERVAL_SEC=15          # proposal poll interval (seconds)`}</CodeBlock>
 
             <SectionHeader>Risk caps (optional)</SectionHeader>
@@ -553,25 +578,37 @@ export default [toolA, toolB];   // array also accepted`}</CodeBlock>
         {section === 'policy' && (
           <>
             <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
-              The <span className="text-primary">AGENT_POLICY</span> env is plain text appended to the LLM system prompt before every proposal evaluation. Write it like compliance rules — the LLM will call tools like <span className="text-primary">check_risk_cap</span> and <span className="text-primary">get_ref_price</span> to verify compliance, then set <span className="text-primary">policy_check: true</span> only when it has actually verified.
+              The <span className="text-primary">AGENT_POLICY</span> env is plain text the LLM consults for
+              <span className="text-primary"> two</span> decisions per cycle:{' '}
+              <span className="text-primary">(1)</span> choosing IOI terms (side, size range, price range, TTL)
+              each posting window, and <span className="text-primary">(2)</span> evaluating each match proposal
+              to accept / reject / wait. The LLM calls tools (<span className="text-primary">get_ref_price</span>,{' '}
+              <span className="text-primary">get_my_balance</span>,{' '}
+              <span className="text-primary">check_risk_cap</span>, etc.) to verify policy against live state,
+              then sets <span className="text-primary">policy_check: true</span> only when verified.
             </p>
 
             <SectionHeader>Example policies</SectionHeader>
-            <CodeBlock lang="env">{`# Conservative market maker
-AGENT_POLICY="Only accept SUI/USDC matches where agreed_price is within 0.5%
-of the DeepBook mid (call get_ref_price to verify). Max position: 500 SUI.
-Max daily volume: 2000 SUI. Call check_risk_cap with proposed_size_sui before
-accepting. Reject if within_cap is false."
+            <CodeBlock lang="env">{`# Directional accumulator — buy SUI cheap, scale down with position
+AGENT_POLICY="Accumulate 1-3 SUI when DeepBook mid < 1.0 USDC. Max position
+10 SUI. Scale down size as position grows. Skip posting if spread > 2%.
+Accept matches priced between 900000 and 1100000 (0.90-1.10 USDC)."
+
+# Conservative market maker
+AGENT_POLICY="Post buy IOIs 5-10 bps below mid, sell 5-10 bps above. Refresh
+every 30 min. Accept matches within 0.5% of current mid. Call check_risk_cap;
+reject if within_cap=false. Max position 500 SUI, max daily volume 2000 SUI."
 
 # RWA desk (TBILL, fixed NAV)
-AGENT_POLICY="Accept any TBILL/USDC match where agreed_price is between
-0.995 and 1.005. Max position: 10000 TBILL. Always verify balance first."
+AGENT_POLICY="Post TBILL IOIs at fixed NAV (price_lo = price_hi = 1000000).
+Accept any TBILL/USDC match where agreed_price is between 0.995 and 1.005.
+Max position 10000 TBILL."
 
 # Passive — accept everything within declared IOI range
-AGENT_POLICY="Accept any match within declared range. Reject if size > 1000."`}</CodeBlock>
+AGENT_POLICY="Use fallback IOI defaults. Accept any match within declared range."`}</CodeBlock>
 
-            <SectionHeader>System prompt structure</SectionHeader>
-            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-2">The full system prompt the LLM sees for each proposal:</p>
+            <SectionHeader>System prompt structure (acceptance loop)</SectionHeader>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-2">For each proposal:</p>
             <CodeBlock>{`You are a Shell Finance trading agent.
 Your address: <agent_address>.
 Your side on this proposal: buy | sell.
@@ -587,6 +624,29 @@ When you have enough information, respond with ONLY a JSON object:
 
 Set policy_check=true only if the decision provably stays within the
 declared policy (having actually checked it via tools when applicable).`}</CodeBlock>
+
+            <SectionHeader>System prompt structure (IOI selection)</SectionHeader>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-2">Each posting window:</p>
+            <CodeBlock>{`You are a Shell Finance trading agent deciding IOI terms for the next
+posting window.
+Your address: <agent_address>.
+Your policy: <AGENT_POLICY>.
+
+You have tools available. Use them to check: live ref price, your balance,
+your active orders, recent fills, risk caps. Do not invent data.
+
+Then choose IOI terms that satisfy the policy. You may also skip posting
+if conditions are unfavourable.
+
+Respond with ONLY a JSON object:
+  { "skip": false,
+    "reasoning": "...",
+    "side": "buy" | "sell",
+    "asset": "0x2::sui::SUI",
+    "size_lo": <number, 1e9 scale>, "size_hi": <number>,
+    "price_lo": <number, 1e6 scale>, "price_hi": <number>,
+    "ttl_min": <number 5-1440> }
+Or: { "skip": true, "reasoning": "..." }`}</CodeBlock>
           </>
         )}
       </div>

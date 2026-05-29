@@ -7,6 +7,7 @@ import { appendEntry } from "./journal.js";
 import { postIoi } from "./ioi.js";
 import { makeLlmClient } from "./llm/index.js";
 import { decideOnProposal } from "./llm/loop.js";
+import { decideIoiTerms } from "./llm/strategy.js";
 import { logEvent, logFail, logVerdict, logWarn } from "./log.js";
 import { submitOrderFromProposal } from "./orders.js";
 import { pollProposals } from "./proposals.js";
@@ -74,36 +75,64 @@ export async function runAgent(): Promise<void> {
 
       // Auto-post IOI if none active (or expiring within 60s).
       if (Date.now() >= ioiExpiryMs - 60_000) {
-        const ttlMs = config.ioiTtlMin * 60_000;
-        const sys = await suiClient.getLatestSuiSystemState();
-        const expiryEpoch = BigInt(sys.epoch) + 10n;
         try {
-          const { blobId, digest } = await postIoi({
-            suiClient,
-            sealClient,
-            keypair,
-            plaintext: {
+          // LLM picks IOI terms from live data + policy. Falls back to
+          // env defaults on failure / missing fields.
+          const strategy = await decideIoiTerms({
+            llm,
+            tools,
+            ctx: toolCtx,
+            policy: config.agentPolicy,
+            defaults: {
               side: config.ioiSide,
               asset: config.ioiAsset,
               sizeLo: config.ioiSizeLo,
               sizeHi: config.ioiSizeHi,
               priceLo: config.ioiPriceLo,
               priceHi: config.ioiPriceHi,
-              expiryMs: BigInt(Date.now()) + BigInt(ttlMs),
+              ttlMin: config.ioiTtlMin,
             },
-            expiryEpoch,
           });
-          ioiExpiryMs = Date.now() + ttlMs;
-          logEvent('IOI', `posted  blob=${blobId}  tx=${digest}  ttl=${config.ioiTtlMin}min`);
-          await appendEntry({
-            timestamp_ms: Date.now(),
-            agent_id: agentAddr,
-            event: "ioi_posted",
-            action_digest: digest,
-            notes: `blob=${blobId} side=${config.ioiSide}`,
-          });
+
+          if (strategy.skip) {
+            logEvent('IOI', `skipped — ${strategy.reasoning}`);
+            // Re-check next tick rather than waiting full TTL.
+            ioiExpiryMs = Date.now() + POLL_INTERVAL_MS;
+          } else {
+            const ttlMin = strategy.ttlMin ?? config.ioiTtlMin;
+            const ttlMs = ttlMin * 60_000;
+            const sys = await suiClient.getLatestSuiSystemState();
+            const expiryEpoch = BigInt(sys.epoch) + 10n;
+            const { blobId, digest } = await postIoi({
+              suiClient,
+              sealClient,
+              keypair,
+              plaintext: {
+                side: strategy.side!,
+                asset: strategy.asset!,
+                sizeLo: strategy.sizeLo!,
+                sizeHi: strategy.sizeHi!,
+                priceLo: strategy.priceLo!,
+                priceHi: strategy.priceHi!,
+                expiryMs: BigInt(Date.now()) + BigInt(ttlMs),
+              },
+              expiryEpoch,
+            });
+            ioiExpiryMs = Date.now() + ttlMs;
+            logEvent('IOI', `posted  side=${strategy.side}  size=${strategy.sizeLo}-${strategy.sizeHi}  price=${strategy.priceLo}-${strategy.priceHi}  ttl=${ttlMin}min  blob=${blobId}  tx=${digest}`);
+            logEvent('IOI', `reason: ${strategy.reasoning}`);
+            await appendEntry({
+              timestamp_ms: Date.now(),
+              agent_id: agentAddr,
+              event: "ioi_posted",
+              action_digest: digest,
+              notes: `blob=${blobId} side=${strategy.side} reasoning=${strategy.reasoning}`,
+            });
+          }
         } catch (e) {
           logFail(`IOI post failed: ${(e as Error).message}`);
+          // Don't retry every tick on failure — back off one poll window.
+          ioiExpiryMs = Date.now() + POLL_INTERVAL_MS;
         }
       }
 
