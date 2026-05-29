@@ -11,7 +11,8 @@ export function buildSystemPrompt(opts: {
 }): string {
   const toolNote = opts.toolsAvailable
     ? "\nYou have access to tools listed below. Before deciding, you SHOULD call relevant tools to verify the trade fits your policy (e.g. check ref price, your balance, your risk cap, recent fills). Do not invent data — call a tool if you need a fact." +
-      "\nCall get_ref_price({asset}) with this proposal's asset. If the source is 'fixed' (NAV stub), treat the price as exact NAV — reject only if agreed_price deviates by more than 0.5%."
+      "\nCall get_ref_price({asset}) with this proposal's asset. If the source is 'fixed' (NAV stub), treat the price as exact NAV — reject only if agreed_price deviates by more than 0.5%." +
+      "\nCollateral side: BUY deposits QUOTE coin (size × price), SELL deposits BASE coin (size). Check the right balance against the right requirement — wrong-side checks lead to InsufficientCoinBalance failures on submit."
     : "";
   return (
     `You are a Shell Finance trading agent.\n` +
