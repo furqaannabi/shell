@@ -1,6 +1,6 @@
 {
   "name": "@shell-finance/shell-agent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Headless trading agent for Shell Finance — posts sealed IOIs to Walrus, polls MatchProposed events, LLM-evaluates proposals, submits Shell orders.",
   "type": "module",
   "main": "./dist/index.js",
