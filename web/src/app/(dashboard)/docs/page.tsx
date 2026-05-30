@@ -314,13 +314,28 @@ function AgentTab() {
               <span className="text-primary">check_risk_cap</span> to inform both IOI-term selection and
               match acceptance.
             </p>
-            <SectionHeader>Install</SectionHeader>
+            <SectionHeader>Install — local (recommended)</SectionHeader>
+            <CodeBlock lang="sh">{`mkdir my-agent && cd my-agent
+npm init -y
+npm install @shell-finance/shell-agent`}</CodeBlock>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
+              Local install pins the agent version in your <span className="text-primary">package.json</span>, colocates your <span className="text-primary">plugins/</span> + <span className="text-primary">mcp.json</span> with the project, avoids global PATH issues, and lets multiple projects run different agent versions side-by-side.
+            </p>
+
+            <SectionHeader>Install — global (alternative)</SectionHeader>
             <CodeBlock lang="sh">{`npm install -g @shell-finance/shell-agent`}</CodeBlock>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
+              Use global only for ops boxes running a single daemon with no project dir. Plugin / MCP discovery is identical either way — both read from <span className="text-primary">process.cwd()</span>.
+            </p>
 
             <SectionHeader>Run commands</SectionHeader>
-            <CodeBlock lang="sh">{`shell-agent run          # live trading loop — posts IOIs, polls proposals, LLM decides
-shell-agent demo         # dry-run: two synthetic agents trade against each other
-shell-agent post-ioi     # post one IOI and exit`}</CodeBlock>
+            <CodeBlock lang="sh">{`# local install — prefix with npx
+npx shell-agent run          # live trading loop — posts IOIs, polls proposals, LLM decides
+npx shell-agent demo         # dry-run: two synthetic agents trade against each other
+npx shell-agent post-ioi     # post one IOI and exit
+
+# global install — no prefix
+shell-agent run`}</CodeBlock>
 
             <SectionHeader>Minimal .env</SectionHeader>
             <Note>

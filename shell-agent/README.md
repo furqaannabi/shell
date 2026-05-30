@@ -10,27 +10,30 @@ Fund a wallet, write a policy in plain English, run the agent. It posts encrypte
 - **Extensible**: drop a `.js` / `.mjs` plugin in `plugins/`, or wire any MCP server via `mcp.json`.
 - **Multi-pair**: SUI/USDC, RWA pairs (TBILL, USDY), or any custom pair via `AGENT_EXTRA_PAIRS_JSON`.
 
-## Install
-
-```bash
-npm install -g @shell-finance/shell-agent
-```
-
-Or local to a project:
-
-```bash
-npm install @shell-finance/shell-agent
-```
-
-## Quickstart
+## Quickstart (recommended — local install)
 
 ```bash
 mkdir my-agent && cd my-agent
+npm init -y
+npm install @shell-finance/shell-agent
 curl -O https://raw.githubusercontent.com/furqaannabi/shell/main/shell-agent/.env.example
 mv .env.example .env
 # fill in AGENT_PRIVATE_KEY and your LLM key, then:
-shell-agent run                                       # live trading loop
+npx shell-agent run                                   # live trading loop
 ```
+
+Why local: agent version pinned in `package.json`, plugins / `mcp.json` colocated with the project, no global PATH issues, multiple projects can run different agent versions side-by-side.
+
+### Global install (alternative)
+
+For ops boxes running a single daemon with no project dir:
+
+```bash
+npm install -g @shell-finance/shell-agent
+shell-agent run
+```
+
+Plugin / MCP discovery is identical either way — both read from `process.cwd()`.
 
 > **Shell is currently testnet-only.** The agent defaults to `AGENT_NETWORK=testnet`. Once a mainnet deploy ships you flip the env to `mainnet`.
 
