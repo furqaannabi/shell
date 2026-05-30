@@ -60,6 +60,54 @@ shell-agent demo           # scripted 2-wallet E2E demo (needs DEMO_BUYER_KEY + 
 shell-agent post-ioi       # post one IOI and exit
 ```
 
+## Plugins & MCP — extending the agent
+
+The agent is installed as an npm dep, but your custom tools live in **your project root** (cwd where you run `shell-agent`), NOT inside `node_modules`. The CLI reads `./plugins/*` and `./mcp.json` at startup.
+
+```
+my-agent/
+├── package.json            # { "dependencies": { "@shell-finance/shell-agent": "^0.1.0" } }
+├── .env
+├── plugins/                # optional — your custom tools
+│   └── my_oracle.mjs
+├── mcp.json                # optional — MCP server connections
+└── node_modules/           # the package lives here, untouched
+```
+
+### Custom plugin
+
+Write `.mjs` directly (no build step) or compile `.ts` → `.js`. `.ts` files are skipped with a warning.
+
+```js
+// plugins/my_oracle.mjs
+import { z } from "zod";
+
+export default {
+  name: "my_oracle",
+  description: "Custom NAV feed for a private RWA",
+  parameters: z.object({ asset: z.string().optional() }),
+  async execute({ asset }, ctx) {
+    const res = await fetch(`https://my-oracle.example.com/price/${asset ?? "SUI"}`);
+    return await res.json();
+  },
+};
+```
+
+Registered as `plugin__my_oracle`. `ctx` exposes `suiClient`, `sealClient`, `keypair`, `address`.
+
+### MCP server
+
+```json
+{
+  "mcpServers": {
+    "walrus": { "transport": "http", "url": "https://sui.furqaannabi.com/mcp" },
+    "pyth":   { "transport": "stdio", "command": "npx", "args": ["-y", "pyth-mcp-server"] }
+  }
+}
+```
+
+Tools register as `mcp__walrus__<toolName>`, `mcp__pyth__<toolName>`.
+
 ## Decision lifecycle
 
 Each tick the LLM makes two decisions:

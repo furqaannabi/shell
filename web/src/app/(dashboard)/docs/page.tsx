@@ -511,9 +511,37 @@ AGENT_POLL_INTERVAL_SEC=15          # proposal poll interval (seconds)`}</CodeBl
         {section === 'plugins' && (
           <>
             <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
-              Drop a <span className="text-primary">.js</span> or <span className="text-primary">.mjs</span> file into <span className="text-primary">shell-agent/plugins/</span>. The agent auto-discovers and registers it at startup as <span className="text-primary">plugin__{'<name>'}</span>.
+              Drop a <span className="text-primary">.js</span> or <span className="text-primary">.mjs</span> file into a <span className="text-primary">plugins/</span> directory in <span className="text-primary">your own project root</span> (NOT inside <span className="text-primary">node_modules</span>). The agent reads <span className="text-primary">process.cwd()</span> at startup — the dir you run <span className="text-primary">shell-agent run</span> from — and auto-registers each plugin as <span className="text-primary">plugin__{'<name>'}</span>.
             </p>
-            <Warn>.ts files are NOT loaded directly — compile to .js/.mjs first. The agent logs a warning and skips .ts files.</Warn>
+            <Warn>.ts files are NOT loaded directly — compile to .js/.mjs first, or write .mjs directly. The agent logs a warning and skips .ts files.</Warn>
+
+            <SectionHeader>Project layout when consuming via npm</SectionHeader>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-2">
+              When you install <span className="text-primary">@shell-finance/shell-agent</span> as a dep, the package lives in <span className="text-primary">node_modules/</span> and stays untouched. Your config files live in your project root alongside <span className="text-primary">package.json</span>:
+            </p>
+            <CodeBlock lang="txt">{`my-trading-bot/
+├── package.json            # { "dependencies": { "@shell-finance/shell-agent": "^0.1.0" } }
+├── .env                    # AGENT_PRIVATE_KEY, AGENT_POLICY, LLM_*, AGENT_NETWORK
+├── plugins/                # optional — your custom tools (.mjs / .js)
+│   ├── my_oracle.mjs
+│   └── compliance_check.mjs
+├── mcp.json                # optional — MCP server connections
+└── node_modules/
+    └── @shell-finance/
+        └── shell-agent/    # the package (DO NOT edit)`}</CodeBlock>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
+              Run from the project root: <span className="text-primary">npx shell-agent run</span> (or <span className="text-primary">shell-agent run</span> if installed globally). The CLI resolves <span className="text-primary">./plugins/*</span> and <span className="text-primary">./mcp.json</span> from your cwd — never from inside <span className="text-primary">node_modules</span>.
+            </p>
+
+            <SectionHeader>Why .mjs (not .ts)</SectionHeader>
+            <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
+              The agent runs as compiled Node — no TypeScript loader. Two options:
+            </p>
+            <CodeBlock lang="sh">{`# Option A — write .mjs directly (recommended, zero build step)
+plugins/my_oracle.mjs
+
+# Option B — write .ts, compile to .js, drop output in plugins/
+tsc src/my_oracle.ts --outDir plugins/`}</CodeBlock>
 
             <SectionHeader>Plugin shape</SectionHeader>
             <CodeBlock lang="ts">{`// The Tool interface your default export must satisfy:
@@ -561,7 +589,7 @@ export default [toolA, toolB];   // array also accepted`}</CodeBlock>
           <>
             <p className="font-mono-sm text-[11px] text-on-surface-variant mb-3">
               MCP (Model Context Protocol) lets you connect any external data source or service to the agent
-              without writing plugin code. The agent reads <span className="text-primary">mcp.json</span> at startup,
+              without writing plugin code. The agent reads <span className="text-primary">mcp.json</span> from <span className="text-primary">your project root</span> (cwd, sibling to <span className="text-primary">package.json</span> — NOT inside <span className="text-primary">node_modules</span>) at startup,
               connects to each listed server, and registers all its tools as{' '}
               <span className="text-primary">mcp__{'<server>'}__{'<toolName>'}</span> in the LLM tool list alongside built-ins.
             </p>
