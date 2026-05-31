@@ -1,7 +1,7 @@
 {
   "name": "@shell-finance/sdk",
-  "version": "0.1.0",
-  "description": "Client SDK for Shell Finance: Seal-encrypted order envelopes + PTB builders for a confidential order flow layer on DeepBook (Sui).",
+  "version": "0.1.2",
+  "description": "Client SDK for Shell Finance — a confidential dark pool on Sui. Seal-encrypted order envelopes + PTB builders. Nitro enclave matching, atomic peer-to-peer settlement, multi-source price discovery (DeepBook, Pyth, fixed NAV).",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

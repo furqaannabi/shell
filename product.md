@@ -55,7 +55,7 @@ Shell Finance composes three Sui-native primitives into a single institutional e
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Seal**       | Threshold-encrypts the order envelope with a Move-policy access rule. Decryption keys are released only when the policy fires — i.e. when the enclave's PCR matches and the matching window opens.                        |
 | **Nautilus**   | AWS Nitro Enclave (or Marlin Oyster) runs the matching engine. The enclave's PCR measurements are registered on-chain via Move; only that exact binary can request decryption keys. Output is a signed match instruction. |
-| **Settlement** | Move-side `shell::settlement::settle_direct` consumes the signed `MatchInstruction` (a hot-potato) and atomically crosses both parties' escrowed collateral in a single PTB. Mints a public `SettlementReceipt` to each side. |
+| **Settlement** | Move-side `shell::settlement::settle_v3` consumes the signed `MatchInstruction` hot-potato together with both `OrderCommitment`s in a single PTB, atomically crosses the escrowed collateral peer-to-peer, takes a 0.1% protocol fee from each side, refunds buyer price improvement, and mints a public `SettlementReceipt` to each party. DeepBook is referenced only via the enclave-signed `deepbook_tx_digest` (proof of which DeepBook state was used for matching) — settlement does not route through DeepBook. |
 
 ## **3.1 The user flow**
 
@@ -65,7 +65,7 @@ Shell Finance composes three Sui-native primitives into a single institutional e
 - Sealed envelope is published to the Shell shared object on Sui as an OrderCommitment.
 - Nautilus enclave watches for new commitments, requests decryption from Seal key servers (which verify the enclave's attestation), pulls the orders into private memory.
 - Enclave runs the matching algorithm against other sealed orders in the same window, computes price-time-priority fills, and signs a match instruction.
-- Settlement PTB lands on Sui: Move verifies the enclave signature against the registered PCR, atomically crosses both parties' escrowed collateral via `settle_direct`, and mints a settlement receipt object owned by each trader.
+- Settlement PTB lands on Sui: Move verifies the enclave signature against the registered PCR, atomically crosses both parties' escrowed collateral peer-to-peer via `settle_v3` (with 0.1% protocol fee + buyer price-improvement refund), and mints a settlement receipt object owned by each trader.
 - Receipt is publicly auditable; the original sealed order remains encrypted forever.
 
 ## **3.2 What's revealed, what isn't**
@@ -262,7 +262,7 @@ _These are honest limitations, called out in the pitch. Mysten judges have expli
 | **1**    | shell::pool + shell::attestation Move modules. Unit tests with sui move test.                         | @shell-finance/sdk skeleton, Seal policy builder, npm publish 0.0.1.     |
 | **2**    | Nautilus enclave Rust skeleton. Reproducible build via Marlin Oyster. PCR registry on devnet.         | Operator console scaffold (Next.js, dapp-kit, Tailwind).                 |
 | **3**    | Matching engine v1: price-time-priority, sealed orders.                                              | Trader view: place + cancel + view sealed receipts.                      |
-| **4**    | `settle_direct` PTB plumbing: enclave consumes hot-potato, crosses collateral, mints receipts.       | Public stats view, fill-quality charts, time-to-match histograms.        |
+| **4**    | `settle_v3` PTB plumbing: enclave consumes hot-potato, crosses collateral peer-to-peer, takes protocol fee, mints receipts. | Public stats view, fill-quality charts, time-to-match histograms.        |
 | **5**    | End-to-end testnet flow. Stress test with 1000 simulated orders.                                      | Enoki sponsored transactions, zkLogin integration for trader onboarding. |
 | **6**    | Mainnet deployment dry run. Failure-mode handling: stale orders, enclave restart, key-server timeout. | Demo flow polish. Recording rig setup.                                   |
 | **7**    | Audit support: OtterSec / OpenZeppelin sponsor bounty submission. Security writeup.                   | 3-minute demo video. Twitter thread. Submission packet.                  |

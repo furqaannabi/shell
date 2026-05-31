@@ -8,11 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-Shell Finance — a confidential order flow layer for DeepBook on Sui. Composition:
+Shell Finance — a confidential dark pool on Sui. Composition:
 
 - **Seal** (Mysten threshold encryption with Move-policy access control) seals the order envelope.
 - **Nautilus** (AWS Nitro Enclave, PCR-registered on-chain) decrypts and matches.
-- **DeepBook v3** is the settlement venue (CLOB).
+- **`shell::settlement`** crosses both parties atomically on Sui (Shell-internal peer-to-peer settlement, not via DeepBook).
+- **Price discovery** is multi-source via `shell-agent/src/pairs.ts`: DeepBook v3 (SUI/USDC mid), Pyth Hermes (RWA pairs like USDY), or fixed NAV stub (testnet TBILL). Settlement does NOT route through any of them — they're match-time inputs, not settlement venues.
 
 Full spec — architecture, Move sketches, threat model, 8-week plan — is in `product.md`. Read it before any non-trivial work.
 
@@ -28,11 +29,11 @@ Full spec — architecture, Move sketches, threat model, 8-week plan — is in `
 
 When code starts, expect three top-level packages, built and tested independently:
 
-1. **Move package** — `shell::pool` (shared object with `OrderCommitment`, registered PCRs), `shell::attestation` (verifies Nautilus signatures vs PCR set), `shell::settlement` (hot-potato `MatchInstruction` consumed atomically with DeepBook trades). Test via `sui move test`.
+1. **Move package** — `shell::pool` (shared object with `OrderCommitment`, registered PCRs), `shell::attestation` (verifies Nautilus signatures vs PCR set), `shell::settlement` (hot-potato `MatchInstruction` consumed atomically alongside both `OrderCommitment`s in the same PTB, crossing collateral peer-to-peer and minting `SettlementReceipt`s). DeepBook is referenced only via the signed `deepbook_tx_digest` witness — settlement does not call DeepBook trade fns. Test via `sui move test`.
 2. **Matching enclave (Rust)** — runs in AWS Nitro, reproducible build via Marlin Oyster. Watches Sui RPC for `OrderCommitment`, requests Seal keys (gated by attestation), runs price-time-priority matching, signs match instructions with an enclave Ed25519 key, submits the settlement PTB.
 3. **TS SDK + operator console** — `@shell-finance/sdk` wraps `@mysten/seal` for client-side encryption and PTB construction; the Next.js console uses `@mysten/dapp-kit`, Enoki sponsored tx, and zkLogin.
 
-The hot-potato in `shell::settlement` is load-bearing — `MatchInstruction` must be consumed in the same PTB that hits DeepBook and mints a `SettlementReceipt`. Don't break that invariant.
+The hot-potato in `shell::settlement` is load-bearing — `MatchInstruction` must be consumed in the same PTB that consumes both `OrderCommitment`s and mints a `SettlementReceipt`. The enclave-signed `deepbook_tx_digest` is the price-reference witness, not a DeepBook settlement leg. Don't break that invariant.
 
 ## Working conventions
 

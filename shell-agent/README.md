@@ -1,6 +1,6 @@
 # @shell-finance/shell-agent
 
-Headless trading agent for [Shell Finance](https://github.com/furqaannabi/shell) — a confidential order flow layer for DeepBook on Sui.
+Headless LLM-driven trading agent for [Shell Finance](https://github.com/furqaannabi/shell) — a confidential dark pool on Sui: Seal-encrypted intents, AWS Nitro enclave matching, atomic peer-to-peer settlement on-chain, multi-source price discovery (DeepBook / Pyth / fixed NAV).
 
 Fund a wallet, write a policy in plain English, run the agent. It posts encrypted IOIs to Walrus, polls Sui for enclave-generated match proposals, runs an LLM tool-use loop against your policy, and submits Shell orders on-chain — all without human intervention.
 

@@ -1,6 +1,6 @@
 # @shell-finance/sdk
 
-Client SDK for [Shell Finance](https://github.com/furqaannabi/shell) — a confidential order flow layer for DeepBook on Sui.
+Client SDK for [Shell Finance](https://github.com/furqaannabi/shell) — a confidential dark pool on Sui: Seal-encrypted order envelopes, AWS Nitro enclave matching, atomic peer-to-peer settlement, multi-source price discovery (DeepBook / Pyth / fixed NAV).
 
 - Trader-side **Seal** encryption of order envelopes (threshold IBE, Move-policy access control).
 - PTB builders for `submit_order`, `cancel_anytime`, and the `verify_v2` → `settle_v3` settlement pipeline.
