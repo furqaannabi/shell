@@ -111,10 +111,19 @@ export async function pollProposals(opts: {
       });
     } catch (e) {
       const msg = (e as Error).message;
-      if (opts.skipBlobIds && msg.includes('404')) {
-        opts.skipBlobIds.add(blobId);
+      if (msg.includes('404')) {
+        // Walrus blob expired (testnet ~14d retention). Silence after first
+        // encounter so old test data doesn't drown the log. Only print at
+        // DEBUG verbosity.
+        if (opts.skipBlobIds && !opts.skipBlobIds.has(blobId)) {
+          opts.skipBlobIds.add(blobId);
+          if (process.env.SHELL_AGENT_LOG === 'debug') {
+            console.debug(`[proposals] skip ${blobId.slice(0, 12)}… (walrus blob expired)`);
+          }
+        }
+      } else {
+        console.error(`[proposals] fetch/decode ${blobId}: ${msg}`);
       }
-      console.error(`[proposals] fetch/decode ${blobId}: ${msg}`);
     }
   }
 
