@@ -274,7 +274,147 @@ Full output in [`docs/report.txt`](docs/report.txt).
 
 See [`ts-sdk/docs/frontend-integration.md`](ts-sdk/docs/frontend-integration.md) — covers client setup, encrypt + submit, dapp-kit wallet flow, receipt observation, and pitfalls.
 
-## Architecture in one breath
+## Architecture
+
+```
+╔═════════════════════════════════════════════════════════════════════════════╗
+║                              SHELL FINANCE                                  ║
+║              confidential dark pool on Sui — sealed intent                  ║
+╚═════════════════════════════════════════════════════════════════════════════╝
+
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │                          CLIENT LAYER                                │
+  │                                                                      │
+  │   ┌────────────┐      ┌────────────┐      ┌──────────────────────┐   │
+  │   │   TRADER   │      │  TRADER    │      │  HEADLESS AGENT      │   │
+  │   │  Sui wallet│      │  dApp UI   │      │ @shell-finance/      │   │
+  │   │ (dapp-kit) │      │ Next.js    │      │   shell-agent (npm)  │   │
+  │   └─────┬──────┘      └─────┬──────┘      └──────────┬───────────┘   │
+  │         │                   │                        │               │
+  │         └─────┬─────────────┴──────────┬─────────────┘               │
+  │               │                        │                             │
+  │               ▼                        ▼                             │
+  │      ┌──────────────────────────────────────────┐                    │
+  │      │       @shell-finance/sdk  (npm)          │                    │
+  │      │  encryptOrder · submitOrderTx ·          │                    │
+  │      │  settleMatchTx · getActiveOrders ·       │                    │
+  │      │  getReceipts                             │                    │
+  │      └────────┬─────────────────────────┬───────┘                    │
+  │   plaintext   │                         │  sealed envelope           │
+  │   OrderPlain  │                         │  + commit hash             │
+  └───────────────┼─────────────────────────┼────────────────────────────┘
+                  │                         │
+                  ▼                         │
+  ┌──────────────────────────────┐          │
+  │     SEAL (Mysten threshold)  │          │
+  │  • IBE encrypt under         │          │
+  │    Move-policy identity      │          │
+  │  • threshold N-of-M key      │          │
+  │    servers                   │          │
+  └──────────────┬───────────────┘          │
+                 │ ciphertext               │
+                 ▼                          │
+  ┌──────────────────────────────┐          │
+  │           WALRUS             │          │
+  │   ciphertext blob storage    │          │
+  │   returns blobId             │          │
+  └──────────────┬───────────────┘          │
+                 │ blobId                   │
+                 └──────────┬───────────────┘
+                            ▼
+  ╔═════════════════════════════════════════════════════════════════════════╗
+  ║                          SUI ON-CHAIN                                   ║
+  ║                                                                         ║
+  ║  ┌──────────────────────────────────────────────────────────────────┐   ║
+  ║  │  shell::pool   (shared object)                                   │   ║
+  ║  │   • OrderCommitment<T>  ← locked collateral coin<T>              │   ║
+  ║  │   • commitHash · blobId · expiryEpoch · trader                   │   ║
+  ║  │   • registered Nitro PCR set                                     │   ║
+  ║  │   ─ submit_order<T>                                              │   ║
+  ║  │   ─ cancel_anytime<T>   (post-expiry collateral reclaim)         │   ║
+  ║  └────────────┬─────────────────────────────────────────┬───────────┘   ║
+  ║               │ event:                                  ▲               ║
+  ║               │  OrderSubmitted{id, blobId, ...}        │ consume       ║
+  ║               ▼                                         │ in same PTB   ║
+  ║  ┌──────────────────────────────────────────────────────┴───────────┐   ║
+  ║  │  shell::attestation                                              │   ║
+  ║  │   ─ verify_v2(enclave, MatchPayloadV2, sig)                      │   ║
+  ║  │      checks Ed25519 sig vs enclave pubkey + PCR registry         │   ║
+  ║  └────────────┬─────────────────────────────────────────────────────┘   ║
+  ║               │ verified MatchInstruction (hot potato)                  ║
+  ║               ▼                                                         ║
+  ║  ┌──────────────────────────────────────────────────────────────────┐   ║
+  ║  │  shell::settlement                                               │   ║
+  ║  │   ─ settle_v3<TBase, TQuote>(pool, maker_cmt, taker_cmt,         │   ║
+  ║  │       MatchInstruction, base_decimals)                           │   ║
+  ║  │   • consumes BOTH OrderCommitments atomically                    │   ║
+  ║  │   • crosses collateral peer-to-peer (NOT via DeepBook)           │   ║
+  ║  │   • 0.1% protocol fee per side → treasury                        │   ║
+  ║  │   • buyer price-improvement surplus refunded                     │   ║
+  ║  │   • mints SettlementReceipt × 2 → owned by maker + taker         │   ║
+  ║  └──────────────────────────────────────────────────────────────────┘   ║
+  ║                                                                         ║
+  ╚═════════════════════════════════════════════════════════════════════════╝
+                            ▲                ▲
+                            │ submit         │ poll OrderSubmitted
+                            │ settlement PTB │ events
+                            │                │
+  ┌─────────────────────────┴────────────────┴────────────────────────────┐
+  │                  AWS NITRO ENCLAVE  (matching)                        │
+  │                                                                       │
+  │   reproducible Marlin Oyster build · PCR set registered on-chain      │
+  │                                                                       │
+  │   1.  watches Sui RPC for OrderCommitment events                      │
+  │   2.  fetches ciphertext from Walrus by blobId                        │
+  │   3.  requests Seal decryption key                                    │
+  │         └─ Seal Move policy gates release on PCR match                │
+  │   4.  decrypts OrderPlaintext (side/size/limit/slippage)              │
+  │   5.  price-time-priority match against book in memory                │
+  │   6.  pulls reference price witness:                                  │
+  │         ┌──────────────┬──────────────┬──────────────┐                │
+  │         │   DeepBook   │  Pyth Hermes │  fixed NAV   │                │
+  │         │  SUI/USDC    │  USDY + RWA  │ TBILL stub   │                │
+  │         └──────────────┴──────────────┴──────────────┘                │
+  │   7.  signs MatchPayloadV2 with enclave Ed25519 key                   │
+  │         (carries deepbook_tx_digest as price witness, not settlement) │
+  │   8.  publishes MatchProposed blob to Walrus                          │
+  │   9.  submits settlement PTB → verify_v2 → settle_v3                  │
+  │                                                                       │
+  └───────────────────────────────┬───────────────────────────────────────┘
+                                  │ MatchProposed (Walrus blobId on event)
+                                  ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │                  AGENT / TRADER POLLING LOOP                         │
+  │                                                                      │
+  │   shell-agent (15s tick):                                            │
+  │     • fetch MatchProposed blob → decode payload                      │
+  │     • LLM tool-loop (max 6 rounds):                                  │
+  │         get_ref_price · get_my_balance · check_risk_cap ·            │
+  │         get_my_recent_iois · get_active_orders · plugins · MCP       │
+  │     • decision: accept_match | reject_match                          │
+  │     • if accept → SDK settleMatchTx → sign → submit                  │
+  │                                                                      │
+  └──────────────────────────────────────────────────────────────────────┘
+
+
+╔═════════════════════════════════════════════════════════════════════════════╗
+║  PRIVACY INVARIANTS                                                         ║
+║                                                                             ║
+║   pre-match:    side · size · limit · slippage   ALL SEALED                 ║
+║   on-chain:     only commitHash + locked collateral coin                    ║
+║   post-settle:  filled_size + filled_price       public                     ║
+║                 original limit + max_slippage    STAY SEALED forever        ║
+║                                                                             ║
+║  TRUST BOUNDARIES                                                           ║
+║                                                                             ║
+║   Seal key servers:  threshold N-of-M, no single party decrypts             ║
+║   Nitro enclave:     PCR-attested, reproducible build, ephemeral keys       ║
+║   Sui validators:    see commitHash + collateral only                       ║
+║   DeepBook / Pyth:   price witness only — NEVER a settlement venue          ║
+╚═════════════════════════════════════════════════════════════════════════════╝
+```
+
+### In one breath
 
 1. Trader's wallet (or SDK) Seal-encrypts an order envelope under a Move-policy IBE.
 2. Sealed envelope is published to Sui as a shared `OrderCommitment` object.
