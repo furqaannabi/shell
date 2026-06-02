@@ -2,7 +2,7 @@
 
 > Cryptographically trust-minimized institutional execution. Move enforces the rules, Seal + Nautilus enforce the privacy, the hot-potato `MatchInstruction` enforces atomic on-chain settlement — the composition exists nowhere else on-chain.
 
-Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minimized Finance slot. Full spec lives in [`product.md`](product.md). Track positioning in [`product.md` §7.1](product.md). Honest threat model in [`product.md` §5](product.md).
+Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minimized Finance slot.
 
 **Live on testnet:**
 
@@ -34,7 +34,7 @@ Shell composes three Sui-native primitives — and nothing else does it:
 
 Pre-match the chain sees only ciphertext + a commit hash. Post-settlement the chain shows a `SettlementReceipt` per side and the swapped balances. Side, size, limit price, and slippage from the original order stay private forever.
 
-The threat-model honesty: there is an irreducible trust set (Sui consensus + Seal key-server quorum + AWS Nitro hardware), and we don't hide it. The full adversary-vs-mitigation table is in [`product.md` §5](product.md).
+The threat-model honesty: there is an irreducible trust set (Sui consensus + Seal key-server quorum + AWS Nitro hardware), and we don't hide it.
 
 ## User flow
 
@@ -57,7 +57,7 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 | Nitro    | **Prod-mode** `Enclave<SHELL>` `0xd002490d…`, PCR0/1 `0xf9f2d0e4…`, persistent eph_kp via host seed | running on `m5.xlarge` at `https://sui.furqaannabi.com`         |
 | RWA      | Multi-pair: SUI/USDC + TBILL/USDC (mock 6-decimal token). Pair selector in web UI + agent. `fixedPrice` source for non-DeepBook pairs. Mainnet slots for USDY (Ondo) and BUIDL (BlackRock) pre-configured (disabled). | [`web/src/lib/sui.ts`](web/src/lib/sui.ts)                      |
 | SDK      | `encryptOrder` (Seal IBE) + `submitOrderTx` (PTB builder)                               | [`ts-sdk/`](ts-sdk/)                                             |
-| Demo     | E2E retest 2026-05-24 ~3 min total: IOI → match → accept → settle_direct → SettlementReceipts ([`2b96TNRe…`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig)) | [`docs/republish-brief.md`](docs/republish-brief.md) §"E2E re-test" |
+| Demo     | E2E retest 2026-05-24 ~3 min total: IOI → match → accept → settle_direct → SettlementReceipts ([`2b96TNRe…`](https://suiscan.xyz/testnet/tx/2b96TNRe788nXw82bRyU4FpXA28RyMdMwUEsHRnAPKig)) | Testnet |
 | Web      | Connect wallet, place sealed order, view receipts — all on testnet                     | <https://shell-finance.vercel.app/> ([source](web/))             |
 | shell-agent | Autonomous Node daemon (v2): pluggable LLM (OpenAI / Anthropic / Google / any OpenAI-compatible), bounded tool-use loop, 9 built-in trading tools, local plugin loader, MCP client. E2E demo runs end-to-end with tool calls visible in logs. | [`shell-agent/`](shell-agent/) |
 | Agents   | Walrus + MemWal MCP server (11 typed tools); stdio for local + Streamable HTTP at `https://sui.furqaannabi.com/mcp` | [`mcp/walrus-mcp/`](mcp/walrus-mcp/), [`skills/walrus/`](skills/walrus/) |
@@ -66,7 +66,6 @@ The threat-model honesty: there is an irreducible trust set (Sui consensus + Sea
 ## Repo layout
 
 ```
-product.md                 Authoritative spec (v0.1). Read before non-trivial work.
 move/                      Sui Move package — published to testnet
   sources/
     shell.move             SHELL OTW + init bootstrap + seal_approve policy
@@ -76,7 +75,6 @@ move/                      Sui Move package — published to testnet
 ts-sdk/                    @shell-finance/sdk
   src/                     encryptOrder, submitOrderTx, OrderPlaintext BCS schema
   scripts/                 submit-test-order.mjs, spike-end-to-end.mjs
-  docs/                    frontend-integration.md
   deployments/testnet.json Object IDs from testnet publish
 enclave-nitro/             Nautilus app overlay (drops into a MystenLabs/nautilus checkout)
   apps/shell/              Rust /process_data handler + allowed_endpoints.yaml
@@ -94,11 +92,6 @@ mcp/walrus-mcp/            Walrus + MemWal MCP server — 11 typed tools over st
   src/tools/               put / get / status / extend / delete / put_quilt /
                            list_owned / head_pointer / memwal.{remember,recall,restore}
 skills/walrus/SKILL.md     Zero-install Claude Code skill — CLI install + flow + head-pointer pattern
-docs/
-  agent-mode.md            Headless Node-daemon agent design (Walrus state, head pointer)
-  walrus-agent-tooling.md  MCP + skill design for LLM-driven agents
-  aws-deployment.md        Nitro provisioning runbook (assemble → configure → register)
-  seal-in-nitro.md         Autonomous loop walkthrough + wire-format gotchas
 ui-guide/                  Static HTML mockups (design intent, not code to import)
 ```
 
@@ -114,7 +107,7 @@ sui move test                 # 9 tests pass
 
 ### Nautilus enclave overlay
 
-The Rust matcher + signer lives in [`enclave-nitro/apps/shell/`](enclave-nitro/apps/shell/) and drops into a clone of [`MystenLabs/nautilus`](https://github.com/MystenLabs/nautilus). See [`docs/aws-deployment.md`](docs/aws-deployment.md) for the full AWS deploy. Tldr:
+The Rust matcher + signer lives in [`enclave-nitro/apps/shell/`](enclave-nitro/apps/shell/) and drops into a clone of [`MystenLabs/nautilus`](https://github.com/MystenLabs/nautilus). Tldr:
 
 ```bash
 enclave-nitro/scripts/assemble.sh ~/nautilus   # idempotent
@@ -181,7 +174,7 @@ npm install && npm run build
 claude mcp add walrus -- node "$(pwd)/dist/server.js"
 ```
 
-Eleven tools become available either way: `walrus.put/get/status/extend/delete/put_quilt/list_owned/head_pointer` and `memwal.remember/recall/restore`. `put`/`get`/`status` and the two Sui RPC tools work with zero config against testnet; the signed-tx tools need `WALRUS_KEYPAIR_PATH` and the MemWal tools need a delegate key from <https://app.memwal.com>. Design rationale + composition stories in [`docs/walrus-agent-tooling.md`](docs/walrus-agent-tooling.md). Deploy runbook in [`mcp/walrus-mcp/deploy/DEPLOY.md`](mcp/walrus-mcp/deploy/DEPLOY.md).
+Eleven tools become available either way: `walrus.put/get/status/extend/delete/put_quilt/list_owned/head_pointer` and `memwal.remember/recall/restore`. `put`/`get`/`status` and the two Sui RPC tools work with zero config against testnet; the signed-tx tools need `WALRUS_KEYPAIR_PATH` and the MemWal tools need a delegate key from <https://app.memwal.com>. Deploy runbook in [`mcp/walrus-mcp/deploy/DEPLOY.md`](mcp/walrus-mcp/deploy/DEPLOY.md).
 
 Zero-install fallback skill: drop [`skills/walrus/SKILL.md`](skills/walrus/SKILL.md) into your Claude Code skills directory, or fetch it from the live frontend at <https://shell-finance.vercel.app/skills.md>.
 
@@ -266,13 +259,9 @@ BUYER  SUI=2.2870  USDC=19.7000   (+0.15 SUI, -0.15 USDC ✓)
 SELLER SUI=1.6861  USDC=40.3000   (-0.15 SUI, +0.15 USDC ✓)
 ```
 
-Full output in [`docs/report.txt`](docs/report.txt).
-
----
-
 ## Frontend integration
 
-See [`ts-sdk/docs/frontend-integration.md`](ts-sdk/docs/frontend-integration.md) — covers client setup, encrypt + submit, dapp-kit wallet flow, receipt observation, and pitfalls.
+The TS SDK covers client setup, encrypt + submit, dapp-kit wallet flow, receipt observation, and pitfalls.
 
 ## Architecture
 
@@ -423,12 +412,9 @@ See [`ts-sdk/docs/frontend-integration.md`](ts-sdk/docs/frontend-integration.md)
 5. Enclave builds a `Transaction` chaining `shell::attestation::verify` → `shell::settlement::settle<TMaker, TTaker>`, signs it with `sui-crypto::SuiSigner` (IntentMessage + blake2b + Ed25519), BCS-serializes, and submits via `sui_executeTransactionBlock`.
 6. Move side: `verify_v2` re-derives the BCS bytes and checks the enclave signature, produces a `MatchInstructionV2` hot-potato; `settle_v3` consumes it atomically with both `OrderCommitment`s, deducts a 0.1% protocol fee from each side, crosses collateral directly between maker and taker, and mints a `SettlementReceipt` per trader.
 
-Full system diagram in [`product.md` §4.1](product.md). Wire-level walkthrough in [`docs/seal-in-nitro.md`](docs/seal-in-nitro.md).
-
 ## On-chain testnet artifacts
 
-Current testnet IDs after the 2026-05-24 clean-slate republish (full
-context in [`docs/republish-brief.md`](docs/republish-brief.md)):
+Current testnet IDs after the 2026-05-24 clean-slate republish:
 
 | Object | ID |
 | --- | --- |
@@ -454,14 +440,13 @@ deliberately did not migrate any of it.
 
 ## Conventions
 
-- Spec is the source of truth — design changes belong in [`product.md`](product.md) before code.
 - Privacy invariants are non-negotiable: side, size, limit price, slippage are private pre-match and the original limit + max slippage stay private post-settlement. Anything that risks exposing these gets flagged explicitly.
 - Move tests via `sui move test`; TS via `npm run build` (no test runner wired up yet); Nitro app tests run inside the nautilus tree once assembled.
 - Commit per meaningful unit. Short imperative subject. The why goes in the body if it isn't obvious from the diff.
 
 ## Threat model
 
-In one line: pre-trade privacy via Seal + Nautilus, post-trade auditability via on-chain receipts, atomic settlement via the hot-potato `MatchInstruction`, **no operator trust** (the matcher's binary is PCR-pinned). The full table — adversary capability vs mitigation, plus the four things we explicitly do NOT defend against — is in [`product.md` §5](product.md).
+In one line: pre-trade privacy via Seal + Nautilus, post-trade auditability via on-chain receipts, atomic settlement via the hot-potato `MatchInstruction`, **no operator trust** (the matcher's binary is PCR-pinned).
 
 ## License
 
