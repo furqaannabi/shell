@@ -2,6 +2,8 @@
 
 > Cryptographically trust-minimized institutional execution. Move enforces the rules, Seal + Nautilus enforce the privacy, the hot-potato `MatchInstruction` enforces atomic on-chain settlement — the composition exists nowhere else on-chain.
 
+![Shell Finance architecture](assets/architecture.png)
+
 Hackathon build for Sui Overflow 2026 — **DeFi & Payments** track, Trust-Minimized Finance slot.
 
 **Live on testnet:**
