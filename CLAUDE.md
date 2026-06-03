@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-**Spec / design phase only — no implementation code yet.** No package manifest, no build system, no tests. Don't invent build/test commands; if a task needs them, scaffold first and confirm tooling with the user.
+Implementation shipped on testnet. Move package, TS SDK, Next.js trader UI, Nautilus enclave, headless agent — all live. README is the source of truth for current state.
 
 ## What this project is
 
@@ -15,23 +15,28 @@ Shell Finance — a confidential dark pool on Sui. Composition:
 - **`shell::settlement`** crosses both parties atomically on Sui (Shell-internal peer-to-peer settlement, not via DeepBook).
 - **Price discovery** is multi-source via `shell-agent/src/pairs.ts`: DeepBook v3 (SUI/USDC mid), Pyth Hermes (RWA pairs like USDY), or fixed NAV stub (testnet TBILL). Settlement does NOT route through any of them — they're match-time inputs, not settlement venues.
 
-Full spec — architecture, Move sketches, threat model, 8-week plan — is in `product.md`. Read it before any non-trivial work.
+Read `README.md` before any non-trivial work — it covers architecture, on-chain artifacts, threat model, and current status.
 
 ## Repository layout
 
-- `product.md` — authoritative technical spec (v0.1). Source of truth for module names, types, user flow, threat model, build phases.
-- `ui-guide/` — static HTML mockups, one dir per screen (`trader_terminal/`, `operator_dashboard/`, `onboarding_login/`, `vaults_management/`, `system_logs/`, etc.). Each has `code.html` (Tailwind via CDN, dark theme) and `screen.png`. Treat as design intent, not code to import.
-- `ui-guide/shell_finance_technical_specification_summary.txt` — short summary of `product.md`.
-- `.agents/skills/` and `skills-lock.json` — skills synced from `mattpocock/skills`. Tooling for the agent, not project code.
-- `README.md` — stub.
+- `README.md` — current architecture, status table, on-chain IDs, threat model.
+- `move/` — Sui Move package (`shell::pool`, `shell::attestation`, `shell::settlement`); 9/9 tests passing.
+- `ts-sdk/` — `@shell-finance/sdk` on npm.
+- `shell-agent/` — `@shell-finance/shell-agent` on npm; headless LLM trading daemon.
+- `enclave-nitro/` — Nautilus app overlay for AWS Nitro.
+- `web/` — Next.js trader UI on Vercel.
+- `mcp/walrus-mcp/` — Walrus + MemWal MCP server (11 typed tools).
+- `skills/walrus/` — zero-install Claude Code skill.
+- `assets/architecture.png` — system diagram (embedded in README).
+- `ui-guide/` — static HTML mockups (design intent, not code).
 
-## Planned architecture (from product.md)
+## Architecture invariants
 
-When code starts, expect three top-level packages, built and tested independently:
+Three top-level packages, built and tested independently:
 
 1. **Move package** — `shell::pool` (shared object with `OrderCommitment`, registered PCRs), `shell::attestation` (verifies Nautilus signatures vs PCR set), `shell::settlement` (hot-potato `MatchInstruction` consumed atomically alongside both `OrderCommitment`s in the same PTB, crossing collateral peer-to-peer and minting `SettlementReceipt`s). DeepBook is referenced only via the signed `deepbook_tx_digest` witness — settlement does not call DeepBook trade fns. Test via `sui move test`.
 2. **Matching enclave (Rust)** — runs in AWS Nitro, reproducible build via Marlin Oyster. Watches Sui RPC for `OrderCommitment`, requests Seal keys (gated by attestation), runs price-time-priority matching, signs match instructions with an enclave Ed25519 key, submits the settlement PTB.
-3. **TS SDK + operator console** — `@shell-finance/sdk` wraps `@mysten/seal` for client-side encryption and PTB construction; the Next.js console uses `@mysten/dapp-kit`, Enoki sponsored tx, and zkLogin.
+3. **TS SDK + trader UI** — `@shell-finance/sdk` wraps `@mysten/seal` for client-side encryption and PTB construction; the Next.js trader UI uses `@mysten/dapp-kit` for wallet integration.
 
 The hot-potato in `shell::settlement` is load-bearing — `MatchInstruction` must be consumed in the same PTB that consumes both `OrderCommitment`s and mints a `SettlementReceipt`. The enclave-signed `deepbook_tx_digest` is the price-reference witness, not a DeepBook settlement leg. Don't break that invariant.
 
@@ -58,13 +63,13 @@ Write the **simplest functional form** of code that solves the problem.
 - Short approach. No layered abstraction the task doesn't demand. No defensive scaffolding for impossible inputs.
 - A one-liner that's clear beats a five-line helper.
 
-### Spec is the source of truth
+### README is the source of truth
 
-Spec changes belong in `product.md`. If a design decision is reached in conversation, update the relevant section there rather than scattering notes.
+Architectural and status changes belong in `README.md`. If a design decision is reached in conversation, update the relevant section there rather than scattering notes.
 
 ### Privacy invariants are non-negotiable
 
-Pre-match: side, size, limit price, slippage are private. Post-settlement: original limit and original max slippage stay private. Any change that risks exposing these must be flagged explicitly. Don't write code or copy that overstates guarantees — Section 5 of `product.md` is the honest threat model.
+Pre-match: side, size, limit price, slippage are private. Post-settlement: original limit and original max slippage stay private. Any change that risks exposing these must be flagged explicitly. Don't write code or copy that overstates guarantees — see README threat model.
 
 
 

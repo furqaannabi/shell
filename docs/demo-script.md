@@ -139,8 +139,8 @@ Architecture diagram: [`architecture.png`](architecture.png) (source: [`architec
 Paste into NotebookLM after attaching:
 - `shell-agent/README.md`
 - `ts-sdk/README.md`
-- `product.md` §1–5
-- `docs/architecture.png`
+- `README.md` (project root)
+- `assets/architecture.png`
 - this file
 
 ````
