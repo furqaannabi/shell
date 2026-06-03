@@ -1,0 +1,9 @@
+{
+  "rust-analyzer.linkedProjects": [
+    "nautilus/src/nautilus-server/Cargo.toml"
+  ],
+  "rust-analyzer.cargo.features": ["shell"],
+  "rust-analyzer.check.features": ["shell"],
+  "rust-analyzer.cargo.allFeatures": false,
+  "rust-analyzer.cargo.noDefaultFeatures": false
+}
