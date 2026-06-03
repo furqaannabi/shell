@@ -161,9 +161,14 @@ The SDK is deployment-agnostic. Pass your own `shellPackageId`, `poolId`, `encla
 
 Full dapp-kit walkthrough and API reference at **<https://shell-finance.vercel.app/docs>** (`SDK` tab). Covers `SuiClient` construction, the `@mysten/sui` 2.x import paths, every SDK function with live examples, and the trader → enclave → settlement lifecycle.
 
+## Changelog
+
+- **0.1.4** — `settleMatchTx` now targets `shell::settlement::settle_v4` (self-match-aware canonical entrypoint) and throws synchronously when `maker === taker`. No call-site changes required for consumers.
+- **0.1.2** — Multi-source price discovery (DeepBook / Pyth / fixed NAV) descriptions; npm metadata polish.
+
 ## Stability
 
-`0.1.x` — early. Breaking changes possible until `1.0`. Tracks the Shell Move package's on-chain interface; minor version bumps when the package introduces new `_v2/_v3` entrypoints.
+`0.1.x` — early. Breaking changes possible until `1.0`. Tracks the Shell Move package's on-chain interface; minor version bumps when the package introduces new `_v2/_v3/_v4` entrypoints.
 
 ## License
 

@@ -1238,7 +1238,7 @@ fn build_settle_ptb(
         package: pkg,
         module: Identifier::new("settlement")
             .map_err(|e| EnclaveError::GenericError(format!("module: {e}")))?,
-        function: Identifier::new("settle_v3")
+        function: Identifier::new("settle_v4")
             .map_err(|e| EnclaveError::GenericError(format!("function: {e}")))?,
         type_arguments: vec![
             TypeTag::from_str(base_type)
@@ -1519,6 +1519,19 @@ fn match_orders(orders: &[DecryptedOrder]) -> Vec<MatchPayload> {
 
             if bid.limit_price < ask.limit_price {
                 break;
+            }
+            // Self-match guard: skip if both sides come from the same trader.
+            // Wash trading is disallowed; Move `settle_v4` also asserts this,
+            // so producing a self-match proposal would always abort on-chain.
+            if bid.trader == ask.trader {
+                eprintln!(
+                    "[shell-match] self-match skipped: trader={} bid={:?} ask={:?}",
+                    Hex::encode(&bid.trader[..8]),
+                    bid.order_id,
+                    ask.order_id,
+                );
+                ai += 1;
+                continue;
             }
             if bid.size != ask.size {
                 if bid.size > ask.size { ai += 1; } else { bi += 1; }
@@ -1954,6 +1967,17 @@ fn match_iois(iois: &[DecryptedIoi]) -> Vec<(DecryptedIoi, DecryptedIoi, u64, u6
                 continue;
             }
             if b.asset != s.asset {
+                continue;
+            }
+            // Self-match guard: same agent_id on both sides = wash trading.
+            // Skip silently; surfaces as an info log for ops visibility.
+            if b.agent_id == s.agent_id {
+                eprintln!(
+                    "[shell-ioi] self-match IOI skipped: agent_id={} buy={} sell={}",
+                    Hex::encode(&b.agent_id[..8]),
+                    b.blob_id,
+                    s.blob_id,
+                );
                 continue;
             }
             // Price overlap: buy.price_hi >= sell.price_lo AND buy.price_lo <= sell.price_hi

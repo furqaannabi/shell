@@ -104,7 +104,7 @@ ui-guide/                  Static HTML mockups (design intent, not code to impor
 ```bash
 cd move
 sui move build                # requires sui 1.71+
-sui move test                 # 9 tests pass
+sui move test                 # 11 tests pass
 ```
 
 ### Nautilus enclave overlay
@@ -449,6 +449,17 @@ deliberately did not migrate any of it.
 ## Threat model
 
 In one line: pre-trade privacy via Seal + Nautilus, post-trade auditability via on-chain receipts, atomic settlement via the hot-potato `MatchInstruction`, **no operator trust** (the matcher's binary is PCR-pinned).
+
+### Self-match prevention
+
+Wash trading is blocked at four layers:
+
+- **Move** — `shell::settlement::settle_v4` aborts with `ESelfMatch` if `maker == taker`. `settle_v2` / `settle_v3` patched with the same assert for defense-in-depth on legacy callers.
+- **Enclave matcher** — same-trader bid/ask pairs are skipped silently in both the order book scanner and the IOI pairer; an info log line surfaces the attempt for ops visibility.
+- **TS SDK** — `settleMatchTx` throws synchronously when `maker === taker`, before building the PTB.
+- **Move tests** — `move/tests/self_match_tests.move` covers both `settle_v3` and `settle_v4`.
+
+**Residual risk — cross-address wash trading.** Self-match via two distinct on-chain addresses controlled by the same real-world actor is not prevented at protocol level. Vault contracts that mediate multiple users under a single on-chain address are likewise not supported as self-match exceptions — block is on the raw `address`, not a deeper notion of beneficial ownership. Both are out of hackathon scope; production deployments should layer KYC linkage at the consumer/vault tier or move to per-envelope `user_id` matching inside the enclave.
 
 ## License
 

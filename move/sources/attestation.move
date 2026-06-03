@@ -214,3 +214,28 @@ public fun new_for_testing(
         enclave_signature,
     }
 }
+
+#[test_only]
+public fun new_v2_for_testing(
+    maker: address,
+    taker: address,
+    maker_order: ID,
+    taker_order: ID,
+    filled_size: u64,
+    filled_price: u64,
+    base_decimals: u8,
+    deepbook_tx_digest: vector<u8>,
+    enclave_signature: vector<u8>,
+): MatchInstructionV2 {
+    MatchInstructionV2 {
+        maker,
+        taker,
+        maker_order,
+        taker_order,
+        filled_size,
+        filled_price,
+        base_decimals,
+        deepbook_tx_digest,
+        enclave_signature,
+    }
+}

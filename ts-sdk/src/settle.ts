@@ -48,18 +48,23 @@ export interface SettleMatchOptions {
   tx?: Transaction;
 }
 
-/// Builds the settlement PTB: `shell::attestation::verify` produces the
-/// `MatchInstruction` hot-potato, which `shell::settlement::settle_v2` consumes
+/// Builds the settlement PTB: `shell::attestation::verify_v2` produces the
+/// `MatchInstructionV2` hot-potato, which `shell::settlement::settle_v4` consumes
 /// atomically with both OrderCommitments. The two type arguments must
 /// match each order's actual `T` parameter — use `getOrderCollateralType`.
-/// `settle_v2` collects a protocol fee (pool.protocol_fee_bps) from both
-/// buyer and seller, sending it to pool.treasury.
+/// `settle_v4` rejects self-match (maker == taker), collects a 0.1% protocol
+/// fee from both sides, and refunds buyer's price-improvement surplus.
 export function settleMatchTx(opts: SettleMatchOptions): Transaction {
   if (opts.signature.length !== 64) {
     throw new Error(`settleMatchTx: signature must be 64 bytes (ed25519), got ${opts.signature.length}`);
   }
   if (opts.deepbookTxDigest.length !== 32) {
     throw new Error(`settleMatchTx: deepbookTxDigest must be 32 bytes, got ${opts.deepbookTxDigest.length}`);
+  }
+  if (with0x(opts.maker).toLowerCase() === with0x(opts.taker).toLowerCase()) {
+    throw new Error(
+      `settleMatchTx: maker and taker addresses are identical (${with0x(opts.maker)}) — self-match is disallowed`,
+    );
   }
   const tx = opts.tx ?? new Transaction();
 
@@ -81,7 +86,7 @@ export function settleMatchTx(opts: SettleMatchOptions): Transaction {
   });
 
   tx.moveCall({
-    target: `${opts.shellPackageId}::settlement::settle_v3`,
+    target: `${opts.shellPackageId}::settlement::settle_v4`,
     typeArguments: [opts.makerCollateralType, opts.takerCollateralType],
     arguments: [
       instruction as TransactionObjectArgument,
