@@ -1,6 +1,6 @@
 {
   "name": "@shell-finance/sdk",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Client SDK for Shell Finance — a confidential dark pool on Sui. Seal-encrypted order envelopes + PTB builders. Nitro enclave matching, atomic peer-to-peer settlement, multi-source price discovery (DeepBook, Pyth, fixed NAV).",
   "type": "module",
   "main": "./dist/index.js",
