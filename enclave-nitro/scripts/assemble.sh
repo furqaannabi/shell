@@ -73,6 +73,28 @@ else
   mv "$CARGO_TOML.tmp" "$CARGO_TOML"
 fi
 
+# ── Step 3b: ensure default = ["shell"] under [features] ──────────────
+# Without a default the bare `cargo check`/`cargo build` picks no feature
+# and `use nautilus_server::app::process_data;` (in main.rs) fails to
+# resolve because the re-export in lib.rs is `#[cfg(feature = "shell")]`.
+if grep -qE '^default = \["shell"\]' "$CARGO_TOML"; then
+  echo "[assemble] Cargo.toml: default = [\"shell\"] already set"
+elif grep -qE '^default = \[' "$CARGO_TOML"; then
+  echo "[assemble] Cargo.toml: default features set to non-shell value — leaving alone"
+else
+  echo "[assemble] Cargo.toml: adding default = [\"shell\"] under [features]"
+  awk '
+    /^\[features\]/ && !done {
+      print
+      print "default = [\"shell\"]"
+      done = 1
+      next
+    }
+    { print }
+  ' "$CARGO_TOML" > "$CARGO_TOML.tmp"
+  mv "$CARGO_TOML.tmp" "$CARGO_TOML"
+fi
+
 # ── Step 4: overlay patched lib.rs + main.rs ──────────────────────────
 # We replace these files wholesale rather than in-place patch because the
 # additions (AppState shell field, ShellState construction, start_poller

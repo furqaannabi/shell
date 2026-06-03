@@ -34,6 +34,7 @@ sui-crypto = { version = "0.1.0", features = ["ed25519"], optional = true }
 seal-sdk = { git = "https://github.com/MystenLabs/seal", rev = "cfb29d2e08ff1ae34bfe8dfb6c2f0849eaf84054", package = "seal-sdk", optional = true }
 
 [features]
+default = ["shell"]
 shell = ["sui-crypto", "sui-sdk-types", "seal-sdk"]
 weather-example = []
 twitter-example = ["regex"]
