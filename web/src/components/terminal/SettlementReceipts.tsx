@@ -55,21 +55,26 @@ export default function SettlementReceipts() {
     refetchInterval: 5_000,
   });
 
-  // Chime when a new settlement receipt lands.
+  // Chime when a new settlement receipt lands. Uses a time-based grace window
+  // instead of size-based first-pass so client-side route remounts that load
+  // cached receipts + a background-arrived item don't fire spurious chimes.
+  const GRACE_MS = 3_000;
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
   const seenIds = useRef<Set<string>>(new Set());
   const seenForAccount = useRef<string | undefined>(undefined);
+  const mountTime = useRef<number>(Date.now());
   useEffect(() => {
     if (!receipts) return;
     // Reset when wallet changes so existing receipts of the new wallet don't chime.
     if (seenForAccount.current !== account?.address) {
       seenIds.current = new Set();
       seenForAccount.current = account?.address;
+      mountTime.current = Date.now();
     }
     const fresh = receipts.filter((r) => !seenIds.current.has(r.objectId));
-    const isFirstPass = seenIds.current.size === 0;
     fresh.forEach((r) => seenIds.current.add(r.objectId));
-    if (isFirstPass || fresh.length === 0) return;
+    const inGrace = Date.now() - mountTime.current < GRACE_MS;
+    if (inGrace || fresh.length === 0) return;
     const newIds = fresh.map((r) => r.objectId);
     setFlashIds(new Set(newIds));
     setTimeout(() => setFlashIds(new Set()), 1500);
