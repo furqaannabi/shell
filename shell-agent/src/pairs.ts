@@ -31,6 +31,29 @@ const PYTH_USDY_USD = "0xe786153cc54abd4b0e53b4c246d54d9f8eb3f3b5a34d4fc5a1e9a8a
 // Placeholder — BUIDL has no public Pyth feed at time of writing.
 // Users who want BUIDL wire it themselves via AGENT_EXTRA_PAIRS_JSON.
 
+// Pyth indexes by ticker symbol (e.g. "BTC"), not Sui address. Map the Sui-native
+// ticker subset we want to surface in the picker. Keep small — these are the majors
+// where a wrapped/native Sui coin exists. USDC quote chosen because we settle in it.
+//
+// IMPORTANT — every entry must be: (a) a real coin type deployed on the target network,
+// (b) decimals verified against the deployed CoinMetadata. Wrong values will mis-scale
+// raw amounts in the UI. The values below are the only entries that have been verified
+// at time of writing. Wormhole-bridged USDT on Sui mainnet is 6 decimals; the coin type
+// resolves under wormhole's `::coin::COIN` module pattern.
+//
+// NOTE: web/src/app/api/pairs/route.ts has a copy of this map — keep in sync.
+const PYTH_SUI_MAJORS: Array<{ symbol: string; baseCoinType: string; baseDecimals: number; network: Network }> = [
+  // USDT (Wormhole bridged) — mainnet only. Verified.
+  { symbol: "USDT/USDC", baseCoinType: "0xc060006111016b8a020ad5b33834984a437aaa7d3c74c18e09a95d48aceab08c::coin::COIN", baseDecimals: 6, network: "mainnet" },
+  // TODO mainnet: add verified Wormhole BTC/ETH/SOL coin types + their CoinMetadata-confirmed decimals.
+];
+
+const PYTH_TICKER_TO_FEED: Record<string, string> = {
+  // Filled from https://hermes.pyth.network/v2/price_feeds?query=<TICKER>
+  "USDT": "2b89b9dc8fdf9f34709a5b106b472f0f39bb6ca9ce04b0fd7f2e971688e2e53b",
+  "USDY": "e786153cc54abd4b0e53b4c246d54d9f8eb3f3b5a34d4fc5a1e9a8a4c43afb4d",
+};
+
 export const DEFAULT_PAIRS: TradingPair[] = [
   // SUI/USDC works on both networks via DeepBook.
   {
@@ -132,4 +155,101 @@ export function allPairs(): TradingPair[] {
 
 export function pairForAsset(asset: string): TradingPair | undefined {
   return allPairs().find((p) => p.baseCoinType === asset);
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Dynamic pair discovery — DeepBook indexer + Pyth Hermes
+// ───────────────────────────────────────────────────────────────────────
+
+interface DeepBookPool {
+  pool_id: string;
+  pool_name: string;
+  base_asset_id: string;
+  base_asset_decimals: number;
+  base_asset_symbol: string;
+  quote_asset_id: string;
+  quote_asset_decimals: number;
+  quote_asset_symbol: string;
+}
+
+interface PythFeed {
+  id: string;
+  attributes: { base: string; quote_currency: string; display_symbol: string; asset_type: string };
+}
+
+const PAIR_CACHE_TTL_MS = 5 * 60 * 1000;
+const pairCache: Map<Network, { pairs: TradingPair[]; expiresAt: number }> = new Map();
+
+export async function loadDeepBookPairs(): Promise<TradingPair[]> {
+  try {
+    const res = await fetch(`${config.deepbookIndexerUrl}/get_pools`);
+    if (!res.ok) {
+      console.warn(`[pairs] deepbook indexer ${res.status}`);
+      return [];
+    }
+    const pools = (await res.json()) as DeepBookPool[];
+    return pools.map((p) => ({
+      symbol: `${p.base_asset_symbol}/${p.quote_asset_symbol}`,
+      network: config.network as Network,
+      baseCoinType: p.base_asset_id,
+      baseDecimals: p.base_asset_decimals,
+      quoteCoinType: p.quote_asset_id,
+      quoteDecimals: p.quote_asset_decimals,
+      priceSource: "deepbook" as const,
+      deepbookPoolKey: p.pool_name,
+    }));
+  } catch (e) {
+    console.warn(`[pairs] deepbook fetch failed: ${(e as Error).message}`);
+    return [];
+  }
+}
+
+export async function loadPythPairs(): Promise<TradingPair[]> {
+  const quoteCoinType = config.network === "mainnet" ? USDC_MAINNET : USDC_TESTNET;
+  const out: TradingPair[] = [];
+  for (const major of PYTH_SUI_MAJORS) {
+    if (major.network !== "both" && major.network !== config.network) continue;
+    const ticker = major.symbol.split("/")[0];
+    const feedId = PYTH_TICKER_TO_FEED[ticker];
+    if (!feedId) continue;
+    out.push({
+      symbol: major.symbol,
+      network: major.network,
+      baseCoinType: major.baseCoinType,
+      baseDecimals: major.baseDecimals,
+      quoteCoinType,
+      quoteDecimals: 6,
+      priceSource: "pyth",
+      pythFeedId: feedId,
+    });
+  }
+  return out;
+}
+
+/** Merged dynamic + static + env pairs. 5-min memoized per network. */
+export async function allPairsAsync(): Promise<TradingPair[]> {
+  const net = config.network as Network;
+  const cached = pairCache.get(net);
+  if (cached && cached.expiresAt > Date.now()) return cached.pairs;
+
+  const [deepbook, pyth] = await Promise.all([loadDeepBookPairs(), loadPythPairs()]);
+  const extras = loadExtraPairsFromEnv();
+  const seen = new Set<string>();
+  const merged: TradingPair[] = [];
+  // Priority: env > deepbook > pyth > static defaults. First-seen wins per coin type.
+  for (const list of [extras, deepbook, pyth, DEFAULT_PAIRS]) {
+    for (const p of list) {
+      if (p.network !== "both" && p.network !== net) continue;
+      if (seen.has(p.baseCoinType)) continue;
+      seen.add(p.baseCoinType);
+      merged.push(p);
+    }
+  }
+  pairCache.set(net, { pairs: merged, expiresAt: Date.now() + PAIR_CACHE_TTL_MS });
+  return merged;
+}
+
+export async function pairForAssetAsync(asset: string): Promise<TradingPair | undefined> {
+  const list = await allPairsAsync();
+  return list.find((p) => p.baseCoinType === asset);
 }

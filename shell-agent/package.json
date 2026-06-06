@@ -1,6 +1,6 @@
 {
   "name": "@shell-finance/shell-agent",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Headless LLM-driven trading agent for Shell Finance — a confidential dark pool on Sui. Posts Seal-encrypted IOIs to Walrus, polls Nitro-enclave match proposals, LLM picks IOI terms and accept/reject decisions, settles atomically peer-to-peer on Sui. Multi-source price discovery: DeepBook, Pyth, fixed NAV.",
   "type": "module",
   "main": "./dist/index.js",

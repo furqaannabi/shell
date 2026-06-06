@@ -5,7 +5,7 @@ import { config } from "../config.js";
 import { appendEntry } from "../journal.js";
 import { pollProposals } from "../proposals.js";
 import { cancelOrderTx } from "@shell-finance/sdk";
-import { pairForAsset, type TradingPair } from "../pairs.js";
+import { pairForAssetAsync, type TradingPair } from "../pairs.js";
 import type { Tool } from "./registry.js";
 
 async function fetchDeepbookMid(poolKey: string): Promise<{ bid: number; ask: number; mid: number } | { error: string }> {
@@ -59,7 +59,7 @@ const getRefPrice: Tool = {
   }),
   async execute(args) {
     const asset = args.asset ?? config.baseCoinType;
-    const pair: TradingPair | undefined = pairForAsset(asset);
+    const pair: TradingPair | undefined = await pairForAssetAsync(asset);
     if (!pair) {
       return { error: `no ref price source for ${asset}. Add via AGENT_EXTRA_PAIRS_JSON or a plugin.` };
     }

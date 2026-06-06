@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import ConnectWalletButton from '@/components/wallet/ConnectWalletButton';
+import { NETWORK } from '@/lib/sui';
 
 export default function TopNavBar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const pathname = usePathname();
@@ -43,6 +44,9 @@ export default function TopNavBar({ onMenuToggle }: { onMenuToggle?: () => void 
         </div>
       </div>
       <div className="flex items-center gap-2 md:gap-4">
+        <span className="font-mono-sm text-[10px] text-primary border border-primary/30 px-2 py-0.5 rounded bg-primary/10 uppercase">
+          {NETWORK}
+        </span>
         <ConnectWalletButton />
       </div>
     </nav>

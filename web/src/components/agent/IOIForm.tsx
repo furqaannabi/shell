@@ -16,10 +16,10 @@ import {
   SHELL_PACKAGE_ID,
   SHELL_PACKAGE_ID_LATEST,
   getSealClient,
-  TRADING_PAIRS,
   DEFAULT_PAIR,
   type TradingPair,
 } from '@/lib/sui';
+import TokenSearch from '@/components/token-search/TokenSearch';
 
 interface MidPrice {
   bid: number;
@@ -31,6 +31,22 @@ async function fetchMidPrice(pair: TradingPair): Promise<MidPrice | null> {
   if (pair.priceSource === 'fixed' && pair.fixedPrice != null) {
     return { bid: pair.fixedPrice, ask: pair.fixedPrice, mid: pair.fixedPrice };
   }
+  if (pair.priceSource === 'pyth' && pair.pythFeedId) {
+    try {
+      const id = pair.pythFeedId.startsWith('0x') ? pair.pythFeedId.slice(2) : pair.pythFeedId;
+      const r = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${id}`);
+      if (!r.ok) return null;
+      const j = (await r.json()) as { parsed: Array<{ price: { price: string; conf: string; expo: number } }> };
+      const p = j.parsed?.[0]?.price;
+      if (!p) return null;
+      const price = Number(p.price) * Math.pow(10, p.expo);
+      const conf = Number(p.conf) * Math.pow(10, p.expo);
+      return { bid: price - conf, ask: price + conf, mid: price };
+    } catch {
+      return null;
+    }
+  }
+  if (!pair.deepbookPoolKey) return null;
   try {
     const res = await fetch(
       `${DEEPBOOK_INDEXER_URL}/orderbook/${pair.deepbookPoolKey}?level=2&depth=2`,
@@ -175,23 +191,10 @@ export default function IOIForm() {
 
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         {/* Pair selector */}
-        <div>
-          <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1">Pair</label>
-          <select
-            className="w-full rounded p-2 bg-surface-container-high border border-outline-variant text-on-surface font-mono-sm text-mono-sm focus:outline-none focus:border-primary cursor-pointer"
-            value={pair.baseCoinType}
-            onChange={(e) => {
-              const p = TRADING_PAIRS.find((t) => t.baseCoinType === e.target.value && t.enabled);
-              if (p) { setPair(p); setSizeLo(''); setSizeHi(''); setPriceLo(''); setPriceHi(''); }
-            }}
-          >
-            {TRADING_PAIRS.map((p) => (
-              <option key={p.baseCoinType} value={p.baseCoinType} disabled={!p.enabled}>
-                {p.baseSymbol}/{p.quoteSymbol}{p.label ? ` — ${p.label}` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+        <TokenSearch
+          value={pair}
+          onChange={(p) => { setPair(p); setSizeLo(''); setSizeHi(''); setPriceLo(''); setPriceHi(''); }}
+        />
 
         <div className="grid grid-cols-2 gap-2">
           <button

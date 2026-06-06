@@ -7,9 +7,10 @@ import { encryptOrder, submitOrderTx } from '@/lib/shell-sdk';
 import type { OrderSide } from '@/lib/shell-sdk';
 import {
   SHELL_PACKAGE_ID, collateralTypeFor, getSealClient,
-  TRADING_PAIRS, DEFAULT_PAIR, type TradingPair,
+  DEFAULT_PAIR, type TradingPair,
 } from '@/lib/sui';
 import { friendlyError } from '@/lib/errors';
+import TokenSearch from '@/components/token-search/TokenSearch';
 
 export interface SubmittedOrder {
   orderId?: string;
@@ -160,34 +161,16 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
           <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>lock</span>
           Sealed Order
         </h2>
-        {account && (
-          <span className="font-mono-sm text-[10px] text-primary border border-primary/30 px-2 py-0.5 rounded bg-primary/10">
-            TESTNET
-          </span>
-        )}
+        <span className="font-mono-sm text-[10px] text-primary border border-primary/30 px-2 py-0.5 rounded bg-primary/10">
+          ENCRYPTED
+        </span>
       </div>
       <form className="flex flex-col gap-4 flex-1" onSubmit={handleSubmit}>
         {/* Pair selector */}
-        <div>
-          <div className="flex justify-between items-center mb-1">
-            <label className="font-mono-sm text-mono-sm text-on-surface-variant">Pair</label>
-            <span className="text-primary font-mono-sm text-[10px] border border-primary/30 px-2 py-0.5 rounded bg-primary/10">ENCRYPTED</span>
-          </div>
-          <select
-            className="w-full rounded p-2 bg-surface-container-high border border-outline-variant text-on-surface font-mono-sm text-mono-sm focus:outline-none focus:border-primary cursor-pointer"
-            value={pair.baseCoinType}
-            onChange={(e) => {
-              const p = TRADING_PAIRS.find((t) => t.baseCoinType === e.target.value && t.enabled);
-              if (p) { setPair(p); setSize(''); setLimitPrice(''); }
-            }}
-          >
-            {TRADING_PAIRS.map((p) => (
-              <option key={p.baseCoinType} value={p.baseCoinType} disabled={!p.enabled}>
-                {p.baseSymbol}/{p.quoteSymbol}{p.label ? ` — ${p.label}` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+        <TokenSearch
+          value={pair}
+          onChange={(p) => { setPair(p); setSize(''); setLimitPrice(''); }}
+        />
 
 
 
@@ -237,7 +220,7 @@ export default function SealedOrderForm({ onOrderSubmitted }: Props) {
         <div className="relative group">
           <label className="block font-mono-sm text-mono-sm text-on-surface-variant mb-1 flex justify-between">
             Limit Price
-            <span className="text-secondary text-[10px] border border-secondary/30 px-1 rounded">Private</span>
+            <span className="text-secondary text-[10px]">Private</span>
           </label>
           <div className="relative">
             <input

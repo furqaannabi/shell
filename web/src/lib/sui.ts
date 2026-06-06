@@ -122,12 +122,16 @@ export interface TradingPair {
   quoteCoinType: string;
   quoteDecimals: number;
   deepbookPoolKey: string | null;
-  priceSource: 'deepbook' | 'fixed';
+  priceSource: 'deepbook' | 'fixed' | 'pyth';
   fixedPrice?: number;
+  /** Pyth Hermes feed id (hex, no leading 0x). Required when priceSource === 'pyth'. */
+  pythFeedId?: string;
   /** Sui TransferPolicy object ID — set for policy-gated RWA tokens. */
   transferPolicyId?: string;
   /** Human-readable reason this pair is disabled on the current network. */
   disabledReason?: string;
+  /** Token icon URL when known (CoinMetadata or registry). */
+  iconUrl?: string;
 }
 
 // TBILL coin type is set after publishing rwa-mock package.
@@ -186,6 +190,39 @@ export const TRADING_PAIRS: TradingPair[] = [
 
 // All pairs shown in UI; only enabled ones are selectable.
 export const DEFAULT_PAIR = TRADING_PAIRS.find((p) => p.enabled) ?? TRADING_PAIRS[0]!;
+
+// ── CoinMetadata lookup ──────────────────────────────────────────────
+
+export interface CoinMeta {
+  symbol: string;
+  name: string;
+  decimals: number;
+  iconUrl: string | null;
+}
+
+const coinMetaCache = new Map<string, CoinMeta>();
+
+/** Reads on-chain CoinMetadata<T> for a coin type. Returns null on failure. */
+export async function getCoinMetadata(
+  suiClient: { getCoinMetadata: (args: { coinType: string }) => Promise<{ symbol: string; name: string; decimals: number; iconUrl?: string | null } | null> },
+  coinType: string,
+): Promise<CoinMeta | null> {
+  if (coinMetaCache.has(coinType)) return coinMetaCache.get(coinType)!;
+  try {
+    const m = await suiClient.getCoinMetadata({ coinType });
+    if (!m) return null;
+    const meta: CoinMeta = {
+      symbol: m.symbol,
+      name: m.name,
+      decimals: m.decimals,
+      iconUrl: m.iconUrl ?? null,
+    };
+    coinMetaCache.set(coinType, meta);
+    return meta;
+  } catch {
+    return null;
+  }
+}
 
 // ── Seal client factory ─────────────────────────────────────────────
 let _sealClient: SealClient | null = null;
