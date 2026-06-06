@@ -127,6 +127,14 @@ Architecture image: [`assets/architecture.png`](../assets/architecture.png).
 | Wallet popup blocked | Use Chrome (not Brave/arc), test signer pre-demo |
 | LLM provider rate limit | Pre-cache `.env` with low-latency provider (Anthropic Haiku or OpenAI mini) |
 
+## Q&A one-liners
+
+| Question | Answer |
+|---|---|
+| "How are fees handled across all the new pairs?" | "Flat 10 bps each side, paid in the pair's quote coin. Multi-pair didn't change the model — the Move package is generic over `<TBase, TQuote>` and the fee math uses signed `base_decimals`. Per-pair tiering is a post-hackathon governance question." |
+| "Can same trader match self?" | "Blocked at 4 layers — Move asserts in `settle_v2/v3/v4`, enclave skips silently, SDK throws client-side, Move tests cover both paths. Cross-address wash is a residual — out of protocol scope, consumer KYC layer." |
+| "Why not allow tokens with no price source?" | "Fairness guarantee. Matcher needs a reference mid to validate cross. Limit-only mode for unlisted coins weakens that — deferred." |
+
 ## Tagline options (intro hook, pick one)
 
 - "One protocol. Two access points. Both seal your intent before chain ever sees it."

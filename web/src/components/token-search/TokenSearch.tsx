@@ -163,7 +163,7 @@ export default function TokenSearch({ value, onChange, label = 'Pair' }: Props) 
           style={{ backgroundColor: '#1e2024', backdropFilter: 'none' }}
         >
           <div
-            className="p-2 border-b border-outline-variant sticky top-0"
+            className="p-2 border-b border-outline-variant sticky top-0 z-10"
             style={{ backgroundColor: '#1e2024', backdropFilter: 'none' }}
           >
             <input
