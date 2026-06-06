@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { SHELL_PACKAGE_ID, QUOTE_SYMBOL, TRADING_PAIRS, NETWORK } from '@/lib/sui';
 import { getActiveOrders, cancelOrderTx, getReceipts } from '@/lib/shell-sdk';
@@ -67,12 +67,21 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
     refetchInterval: 5_000,
   });
 
-  const { data: receipts } = useQuery({
+  const { data: receipts, isLoading: receiptsLoading } = useQuery({
     queryKey: ['user-receipts-active', account?.address],
     queryFn: () => getReceipts(suiClient, { shellPackageId: SHELL_PACKAGE_ID, owner: account!.address }),
     enabled: !!account,
     refetchInterval: 10_000,
   });
+
+  // Sticky-settled cache: once we observe an order in a SETTLED state we never
+  // downgrade it. Prevents the flicker SETTLED → AWAITING MATCH → SETTLED
+  // caused by transient RPC blips or stale onChainOrders snapshots.
+  const settledCache = useRef<Map<string, string>>(new Map());
+
+  // Track receipts we've already attributed to a sessionOrder so we don't
+  // accidentally re-attribute the same receipt to a later identical-size order.
+  const consumedReceipts = useRef<Set<string>>(new Set());
 
   // Side, size, limit price are encrypted on-chain — only known for orders
   // submitted this session. A refresh wipes them until decrypt flow ships.
@@ -95,35 +104,55 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   });
 
   // Session orders that disappeared from chain — find their settlement receipt.
-  const settledRows = onChainLoading ? [] : sessionOrders
-    .filter(o => o.orderId && !onChainIds.has(o.orderId))
-    .map((o) => {
-      const baseDecimals = TRADING_PAIRS.find(p => p.baseCoinType === o.baseCoinType)?.baseDecimals ?? 9;
-      const sizeRaw = BigInt(Math.round(parseFloat(o.size || '0') * 10 ** baseDecimals));
-      const priceRaw = BigInt(Math.round(parseFloat(o.limitPrice || '0') * 1_000_000));
-      const receipt = receipts?.find(r =>
-        BigInt(r.fields.filled_size) === sizeRaw &&
-        BigInt(r.fields.filled_price) === priceRaw
-      ) ?? receipts?.find(r => BigInt(r.fields.filled_size) === sizeRaw);
-      const expired = currentEpoch !== undefined && (o as { expiryEpoch?: number }).expiryEpoch !== undefined
-        ? (o as unknown as { expiryEpoch: number }).expiryEpoch <= currentEpoch
-        : false;
-      const status = receipt ? 'settled' : expired ? 'expired' : 'matched';
-      return {
-        orderId: o.orderId ?? '',
-        collateralType: '',
-        expiryEpoch: (o as unknown as { expiryEpoch?: number }).expiryEpoch ?? 0,
-        submittedAtMs: o.timestamp,
-        side: o.side as 'buy' | 'sell' | undefined,
-        size: o.size,
-        limitPrice: o.limitPrice,
-        backupKey: o.backupKey,
-        isLocal: true,
-        baseSymbol: o.baseSymbol,
-        status: status as 'active' | 'settled' | 'matched' | 'expired',
-        receiptId: receipt?.objectId,
-      };
-    });
+  // Only run when BOTH queries have data (onChainOrders + receipts) to avoid
+  // false positives during transient RPC empty responses or initial mount.
+  const settledRows = (onChainLoading || receiptsLoading || !onChainOrders || !receipts)
+    ? []
+    : sessionOrders
+        .filter(o => o.orderId && !onChainIds.has(o.orderId))
+        .map((o) => {
+          // Sticky: if we've already settled this orderId, reuse the cached receipt id.
+          const cachedReceiptId = settledCache.current.get(o.orderId!);
+
+          const baseDecimals = TRADING_PAIRS.find(p => p.baseCoinType === o.baseCoinType)?.baseDecimals ?? 9;
+          const sizeRaw = BigInt(Math.round(parseFloat(o.size || '0') * 10 ** baseDecimals));
+          const priceRaw = BigInt(Math.round(parseFloat(o.limitPrice || '0') * 1_000_000));
+
+          // Require BOTH size and price to match — drop the lossy size-only fallback
+          // that caused cross-receipt attribution on identical-size orders.
+          // Skip receipts already consumed by another sessionOrder.
+          let receipt = cachedReceiptId
+            ? receipts.find(r => r.objectId === cachedReceiptId)
+            : receipts.find(r =>
+                !consumedReceipts.current.has(r.objectId) &&
+                BigInt(r.fields.filled_size) === sizeRaw &&
+                BigInt(r.fields.filled_price) === priceRaw
+              );
+
+          if (receipt && !cachedReceiptId) {
+            settledCache.current.set(o.orderId!, receipt.objectId);
+            consumedReceipts.current.add(receipt.objectId);
+          }
+
+          const expired = currentEpoch !== undefined && (o as { expiryEpoch?: number }).expiryEpoch !== undefined
+            ? (o as unknown as { expiryEpoch: number }).expiryEpoch <= currentEpoch
+            : false;
+          const status = receipt ? 'settled' : expired ? 'expired' : 'matched';
+          return {
+            orderId: o.orderId ?? '',
+            collateralType: '',
+            expiryEpoch: (o as unknown as { expiryEpoch?: number }).expiryEpoch ?? 0,
+            submittedAtMs: o.timestamp,
+            side: o.side as 'buy' | 'sell' | undefined,
+            size: o.size,
+            limitPrice: o.limitPrice,
+            backupKey: o.backupKey,
+            isLocal: true,
+            baseSymbol: o.baseSymbol,
+            status: status as 'active' | 'settled' | 'matched' | 'expired',
+            receiptId: receipt?.objectId,
+          };
+        });
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
