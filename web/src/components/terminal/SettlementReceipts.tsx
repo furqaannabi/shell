@@ -22,6 +22,14 @@ function formatU64(raw: string, decimals: number): string {
   return `${whole}.${frac.toString().padStart(decimals, '0').replace(/0+$/, '')}`;
 }
 
+/** Compact count formatter — 1234 -> "1.2k", 2_500_000 -> "2.5M". */
+function formatCount(n: number): string {
+  if (n < 1_000) return n.toString();
+  if (n < 1_000_000) return `${(n / 1_000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, '')}k`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0).replace(/\.0$/, '')}M`;
+  return `${(n / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
+}
+
 /** Compute protocol fee (0.1%) from filled_size × filled_price, in quote units. */
 function computeFee(filledSize: string, filledPrice: string): string {
   const tradeValue = (BigInt(filledSize) * BigInt(filledPrice)) / BigInt(1_000_000_000);
@@ -72,9 +80,22 @@ export default function SettlementReceipts() {
     <div className="glass-panel rounded-lg p-4 flex flex-col flex-1 overflow-hidden">
       <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#1E293B]">
         <h2 className="font-headline-md text-[14px] text-on-surface uppercase tracking-wider">Settlement Receipts</h2>
-        {isLoading && (
-          <span className="material-symbols-outlined text-[14px] text-on-surface-variant animate-spin">sync</span>
-        )}
+        <div className="flex items-center gap-2 ml-auto">
+          {isLoading && (
+            <span className="material-symbols-outlined text-[14px] text-on-surface-variant animate-spin">sync</span>
+          )}
+          {account && (
+            <span
+              className={`font-mono-data text-[11px] text-primary border border-primary/30 px-1.5 py-0.5 rounded bg-primary/10 transition-all ${
+                flashIds.size > 0 ? 'scale-110 shadow-[0_0_8px_rgba(87,241,219,0.4)]' : ''
+              }`}
+              aria-live="polite"
+              title={`${receipts?.length ?? 0} receipts`}
+            >
+              {formatCount(receipts?.length ?? 0)}
+            </span>
+          )}
+        </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
         {!account ? (
