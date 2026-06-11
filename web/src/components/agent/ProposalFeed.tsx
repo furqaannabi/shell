@@ -13,6 +13,7 @@ import {
   submitOrderTx,
   getActiveOrders,
   getReceipts,
+  getConsumedOrderIds,
 } from '@/lib/shell-sdk';
 import { getBlob } from '@/lib/walrus';
 import { parseMatchProposal } from '@/lib/ioi';
@@ -220,6 +221,71 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     refetchInterval: 10_000,
   });
 
+  // For each receipt, the OrderCommitment ids its settle tx consumed (deleted).
+  // The receipt maps to the order whose id is in this set — so we match a
+  // receipt to the exact order this wallet submitted, regardless of pair,
+  // partial fills, or price improvement. Settle txs are immutable, so this is
+  // cached by the set of receipt ids.
+  const { data: consumedByReceipt } = useQuery({
+    queryKey: ['receipt-consumed-orders', (userReceipts ?? []).map((r) => r.objectId).join(',')],
+    queryFn: async () => {
+      const recs = userReceipts ?? [];
+      const digests = recs
+        .map((r) => r.previousTransaction)
+        .filter((d): d is string => !!d);
+      const byDigest = await getConsumedOrderIds(suiClient, digests);
+      const map: Record<string, string[]> = {};
+      for (const r of recs) {
+        map[r.objectId] = r.previousTransaction ? (byDigest[r.previousTransaction] ?? []) : [];
+      }
+      return map;
+    },
+    enabled: !!userReceipts && userReceipts.length > 0,
+  });
+
+  // proposalKey → the accept tx digest this wallet submitted (from the
+  // persisted `accepted` map's `key:` entries).
+  const acceptDigestByKey = useMemo(() => {
+    const m: Record<string, string> = {};
+    const addr = account?.address.toLowerCase();
+    if (!addr) return m;
+    const prefix = `${addr}:key:`;
+    for (const [k, v] of Object.entries(accepted)) {
+      if (k.startsWith(prefix) && v) m[k.slice(prefix.length)] = v;
+    }
+    return m;
+  }, [accepted, account]);
+
+  // proposalKey → the OrderCommitment id this wallet created on accept.
+  // submit_order shares exactly one object (the OrderCommitment), so the
+  // sole Shared-owner object created by the accept tx is that order. Works
+  // for historical trades too — derived from the stored accept digest.
+  const { data: derivedOrderIds } = useQuery({
+    queryKey: ['accept-order-ids', Object.entries(acceptDigestByKey).flat().join(',')],
+    queryFn: async () => {
+      const entries = Object.entries(acceptDigestByKey);
+      const digests = [...new Set(entries.map(([, d]) => d))];
+      if (digests.length === 0) return {} as Record<string, string>;
+      const txs = await suiClient.multiGetTransactionBlocks({
+        digests,
+        options: { showEffects: true },
+      });
+      const orderByDigest: Record<string, string> = {};
+      for (const tx of txs) {
+        const shared = (tx.effects?.created ?? []).find(
+          (c) => typeof c.owner === 'object' && c.owner !== null && 'Shared' in c.owner,
+        );
+        if (shared) orderByDigest[tx.digest] = shared.reference.objectId;
+      }
+      const out: Record<string, string> = {};
+      for (const [key, d] of entries) {
+        if (orderByDigest[d]) out[key] = orderByDigest[d];
+      }
+      return out;
+    },
+    enabled: Object.keys(acceptDigestByKey).length > 0,
+  });
+
   const { data, isLoading } = useQuery({
     queryKey: ['match-proposed', account?.address],
     queryFn: async () => {
@@ -400,12 +466,29 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
       const rk = rowKey(p as typeof p & { matchId?: bigint });
       const ck = proposalKey(p); // content key — for acceptedProposalKeys lookup
       if (acceptedProposalKeys.has(ck)) {
-        const rIdx = remainingReceipts.findIndex(
-          (r) =>
-            r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
-            BigInt(r.fields.filled_price) === p.agreedPrice &&
-            BigInt(r.fields.filled_size) === p.agreedSize,
-        );
+        // Preferred: find the receipt whose settle tx consumed the
+        // OrderCommitment this wallet created on accept. Precise across pairs,
+        // partial fills, and price improvement — no value-equality guessing.
+        const myOrderId = derivedOrderIds?.[ck]?.toLowerCase();
+        let rIdx =
+          myOrderId && consumedByReceipt
+            ? remainingReceipts.findIndex((r) =>
+                (consumedByReceipt[r.objectId] ?? []).some(
+                  (id) => id.toLowerCase() === myOrderId,
+                ),
+              )
+            : -1;
+        // Legacy fallback for trades accepted before the order id was captured:
+        // exact (counterparty, price, size). Receipts carry no asset, so this
+        // can mis-attribute across pairs — only used when no order id is known.
+        if (rIdx < 0) {
+          rIdx = remainingReceipts.findIndex(
+            (r) =>
+              r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
+              BigInt(r.fields.filled_price) === p.agreedPrice &&
+              BigInt(r.fields.filled_size) === p.agreedSize,
+          );
+        }
         if (rIdx >= 0) {
           out[rk] = {
             status: 'settled',
@@ -439,7 +522,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
       }
     }
     return out;
-  }, [data, aliveOrders, userReceipts, acceptedProposalKeys, claimedReceiptIds]);
+  }, [data, aliveOrders, userReceipts, acceptedProposalKeys, claimedReceiptIds, derivedOrderIds, consumedByReceipt, account]);
 
   // When chainAccepted finds a live OrderCommitment → persist the key.
   // When chainAccepted shows SETTLED → persist the receipt objectId so it
@@ -640,6 +723,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
       });
       queryClient.invalidateQueries({ queryKey: ['alive-orders-with-collateral'] });
       queryClient.invalidateQueries({ queryKey: ['user-receipts-feed'] });
+      queryClient.invalidateQueries({ queryKey: ['accept-order-ids'] });
     } catch (err) {
       setError(friendlyError(err, 'Accept failed'));
     } finally {
