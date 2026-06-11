@@ -6,7 +6,7 @@ import {
   useSignAndExecuteTransaction,
   useSuiClient,
 } from '@mysten/dapp-kit';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Transaction } from '@mysten/sui/transactions';
 import {
   encryptOrder,
@@ -35,6 +35,10 @@ import {
 function baseDecimalsFor(coinType: string): number {
   return TRADING_PAIRS.find((p) => p.baseCoinType === coinType)?.baseDecimals ?? 9;
 }
+
+// One-shot diagnostic guard — chainAccepted recomputes every render, so log
+// the SETTLED-miss detail only once per page load (avoids crashing DevTools).
+let __pfDiagLogged = false;
 
 const WALRUS_EXPLORER = 'https://walruscan.com/testnet/blob';
 
@@ -182,7 +186,6 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
         // collateral is Balance<T> on-chain → JSON: { value: "123" }
         const fields = o.data.content.fields as { collateral?: { value?: string } };
         const rawCollateral = fields.collateral?.value ?? '0';
-        console.debug('[aliveOrders] objectId', o.data.objectId, 'collateral raw:', fields.collateral, 'parsed:', rawCollateral);
         byId.set(o.data.objectId, {
           collateral: BigInt(rawCollateral),
           submitDigest: o.data.previousTransaction ?? '',
@@ -241,49 +244,7 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
       return map;
     },
     enabled: !!userReceipts && userReceipts.length > 0,
-  });
-
-  // proposalKey → the accept tx digest this wallet submitted (from the
-  // persisted `accepted` map's `key:` entries).
-  const acceptDigestByKey = useMemo(() => {
-    const m: Record<string, string> = {};
-    const addr = account?.address.toLowerCase();
-    if (!addr) return m;
-    const prefix = `${addr}:key:`;
-    for (const [k, v] of Object.entries(accepted)) {
-      if (k.startsWith(prefix) && v) m[k.slice(prefix.length)] = v;
-    }
-    return m;
-  }, [accepted, account]);
-
-  // proposalKey → the OrderCommitment id this wallet created on accept.
-  // submit_order shares exactly one object (the OrderCommitment), so the
-  // sole Shared-owner object created by the accept tx is that order. Works
-  // for historical trades too — derived from the stored accept digest.
-  const { data: derivedOrderIds } = useQuery({
-    queryKey: ['accept-order-ids', Object.entries(acceptDigestByKey).flat().join(',')],
-    queryFn: async () => {
-      const entries = Object.entries(acceptDigestByKey);
-      const digests = [...new Set(entries.map(([, d]) => d))];
-      if (digests.length === 0) return {} as Record<string, string>;
-      const txs = await suiClient.multiGetTransactionBlocks({
-        digests,
-        options: { showEffects: true },
-      });
-      const orderByDigest: Record<string, string> = {};
-      for (const tx of txs) {
-        const shared = (tx.effects?.created ?? []).find(
-          (c) => typeof c.owner === 'object' && c.owner !== null && 'Shared' in c.owner,
-        );
-        if (shared) orderByDigest[tx.digest] = shared.reference.objectId;
-      }
-      const out: Record<string, string> = {};
-      for (const [key, d] of entries) {
-        if (orderByDigest[d]) out[key] = orderByDigest[d];
-      }
-      return out;
-    },
-    enabled: Object.keys(acceptDigestByKey).length > 0,
+    placeholderData: keepPreviousData,
   });
 
   const { data, isLoading } = useQuery({
@@ -445,9 +406,68 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     return keys;
   }, [accepted, account, data]);
 
+  // blobId → the accept tx digest this wallet submitted for THAT specific
+  // proposal. Keyed per blob (not per content) so repeated identical-terms
+  // trades stay distinct — otherwise a fresh accept inherits an old fill's
+  // order id and shows SETTLED before it actually settles.
+  const acceptDigestByBlob = useMemo(() => {
+    const m: Record<string, string> = {};
+    const addr = account?.address.toLowerCase();
+    if (!addr) return m;
+    const keyPrefix = `${addr}:key:`;
+    const blobPrefix = `${addr}:`;
+    for (const [k, v] of Object.entries(accepted)) {
+      // Only direct blob entries: `${addr}:${blobId}` (skip `${addr}:key:…`).
+      if (v && k.startsWith(blobPrefix) && !k.startsWith(keyPrefix)) {
+        m[k.slice(blobPrefix.length)] = v;
+      }
+    }
+    return m;
+  }, [accepted, account]);
+
+  // blobId → the OrderCommitment id this wallet created when accepting that
+  // proposal. submit_order shares exactly one object (the OrderCommitment), so
+  // the sole Shared-owner object created by the accept tx is that order.
+  const { data: orderIdByBlob } = useQuery({
+    queryKey: [
+      'accept-order-ids',
+      Object.entries(acceptDigestByBlob).map(([b, d]) => `${b}:${d}`).sort().join(','),
+    ],
+    queryFn: async () => {
+      const entries = Object.entries(acceptDigestByBlob);
+      const digests = [...new Set(entries.map(([, d]) => d))];
+      if (digests.length === 0) return {} as Record<string, string>;
+      const orderByDigest: Record<string, string> = {};
+      for (let i = 0; i < digests.length; i += 50) {
+        const txs = await suiClient.multiGetTransactionBlocks({
+          digests: digests.slice(i, i + 50),
+          options: { showEffects: true },
+        });
+        for (const tx of txs) {
+          const shared = (tx.effects?.created ?? []).find(
+            (c) => typeof c.owner === 'object' && c.owner !== null && 'Shared' in c.owner,
+          );
+          if (shared) orderByDigest[tx.digest] = shared.reference.objectId;
+        }
+      }
+      const out: Record<string, string> = {};
+      for (const [blob, d] of entries) {
+        if (orderByDigest[d]) out[blob] = orderByDigest[d];
+      }
+      return out;
+    },
+    enabled: Object.keys(acceptDigestByBlob).length > 0,
+    // Keep the prior mapping while the key changes on a new accept — otherwise
+    // all settled rows briefly lose their order ids and flicker to SUBMITTED.
+    placeholderData: keepPreviousData,
+  });
+
   const chainAccepted = useMemo(() => {
     if (!data) return {} as Record<string, ChainState>;
     const out: Record<string, ChainState> = {};
+    const misses: Record<string, unknown>[] = [];
+    let detailLogged = false;
+    let detailObj: Record<string, unknown> | null = null;
     const remainingOrders = [...(aliveOrders ?? [])];
     const remainingReceipts = [...(userReceipts ?? [])];
     // Dedup by rowKey so each distinct match_id gets its own slot.
@@ -462,67 +482,80 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     const sorted = Array.from(byKey.values()).sort(
       (a, b) => a.timestamp - b.timestamp,
     );
+    // PASS 1 — precise, per-blob settlement. Each proposal's accept created one
+    // OrderCommitment (orderIdByBlob[p.blob]); a row is SETTLED only if some
+    // receipt's settle tx consumed THAT order. Per-blob (not per content) so a
+    // fresh accept can't inherit an old identical-terms fill and show SETTLED.
+    const handled = new Set<string>();
     for (const p of sorted) {
       const rk = rowKey(p as typeof p & { matchId?: bigint });
-      const ck = proposalKey(p); // content key — for acceptedProposalKeys lookup
-      if (acceptedProposalKeys.has(ck)) {
-        // Preferred: find the receipt whose settle tx consumed the
-        // OrderCommitment this wallet created on accept. Precise across pairs,
-        // partial fills, and price improvement — no value-equality guessing.
-        const myOrderId = derivedOrderIds?.[ck]?.toLowerCase();
-        let rIdx =
-          myOrderId && consumedByReceipt
-            ? remainingReceipts.findIndex((r) =>
-                (consumedByReceipt[r.objectId] ?? []).some(
-                  (id) => id.toLowerCase() === myOrderId,
-                ),
-              )
-            : -1;
-        // Legacy fallback for trades accepted before the order id was captured:
-        // exact (counterparty, price, size). Receipts carry no asset, so this
-        // can mis-attribute across pairs — only used when no order id is known.
-        if (rIdx < 0) {
-          rIdx = remainingReceipts.findIndex(
-            (r) =>
-              r.fields.counterparty.toLowerCase() === p.counterparty.toLowerCase() &&
-              BigInt(r.fields.filled_price) === p.agreedPrice &&
-              BigInt(r.fields.filled_size) === p.agreedSize,
-          );
-        }
-        if (rIdx >= 0) {
-          out[rk] = {
-            status: 'settled',
-            receiptId: remainingReceipts[rIdx].objectId,
+      const myOrderId = orderIdByBlob?.[p.blob]?.toLowerCase();
+      if (!myOrderId || !consumedByReceipt) continue;
+      const rIdx = remainingReceipts.findIndex((r) =>
+        (consumedByReceipt[r.objectId] ?? []).some((id) => id.toLowerCase() === myOrderId),
+      );
+      if (rIdx >= 0) {
+        out[rk] = { status: 'settled', receiptId: remainingReceipts[rIdx].objectId };
+        remainingReceipts.splice(rIdx, 1);
+        handled.add(rk);
+      }
+    }
+
+    // PASS 2 — leftovers: live-order "accepted" (pending) state. No value-based
+    // settled fallback — for identical-terms trades it would false-match an old
+    // receipt and show SETTLED before the trade actually settles.
+    for (const p of sorted) {
+      const rk = rowKey(p as typeof p & { matchId?: bigint });
+      if (handled.has(rk) || out[rk]) continue;
+      // Diagnostic: this wallet accepted this blob but no receipt consumed its order.
+      if (acceptDigestByBlob[p.blob]) {
+        const myOrderId = orderIdByBlob?.[p.blob];
+        misses.push({
+          side: p.side,
+          size: p.agreedSize.toString(),
+          price: p.agreedPrice.toString(),
+          asset: ((p as { asset?: string }).asset ?? '').split('::').pop() ?? '',
+          blob: p.blob.slice(0, 8),
+          orderId: myOrderId ? myOrderId.slice(0, 10) : '—',
+          receiptsWithConsumed: remainingReceipts.filter(
+            (r) => (consumedByReceipt?.[r.objectId] ?? []).length > 0,
+          ).length,
+        });
+        if (!detailLogged && myOrderId) {
+          detailLogged = true;
+          detailObj = {
+            blob: p.blob,
+            myOrderId,
+            remainingCount: remainingReceipts.length,
+            consumedSample: remainingReceipts
+              .slice(0, 20)
+              .map((r) => (consumedByReceipt?.[r.objectId] ?? []).map((x) => x.toLowerCase())),
           };
-          remainingReceipts.splice(rIdx, 1);
-          continue;
         }
       }
-      // Accepted but not yet settled?
+      // Accepted but not yet settled? Match a live OrderCommitment by collateral.
       const baseCoin = (p as { asset?: string }).asset ?? BASE_COIN_TYPE;
       const floatScaling = BigInt(10 ** baseDecimalsFor(baseCoin));
       const expectedType = p.side === 'buy' ? QUOTE_COIN_TYPE : baseCoin;
       const tradeValueExpected = (p.agreedSize * p.agreedPrice) / floatScaling;
       const feeExpected = (tradeValueExpected * BigInt(10)) / BigInt(10000);
-      const expectedValue =
-        p.side === 'sell'
-          ? p.agreedSize
-          : tradeValueExpected + feeExpected;
+      const expectedValue = p.side === 'sell' ? p.agreedSize : tradeValueExpected + feeExpected;
       const oIdx = remainingOrders.findIndex(
-        (o) =>
-          o.collateralType === expectedType &&
-          o.collateralValue === expectedValue,
+        (o) => o.collateralType === expectedType && o.collateralValue === expectedValue,
       );
       if (oIdx >= 0) {
-        out[rk] = {
-          status: 'accepted',
-          digest: remainingOrders[oIdx].submitDigest,
-        };
+        out[rk] = { status: 'accepted', digest: remainingOrders[oIdx].submitDigest };
         remainingOrders.splice(oIdx, 1);
       }
     }
+    if (misses.length && !__pfDiagLogged && consumedByReceipt && orderIdByBlob) {
+      __pfDiagLogged = true; // once per page load — avoids DevTools-crashing spam
+      console.warn(`[ProposalFeed] ${misses.length} SETTLED MISS — receipts=${(userReceipts ?? []).length}, consumedMapReady=${!!consumedByReceipt}, orderIdByBlob=${Object.keys(orderIdByBlob ?? {}).length}`);
+      console.log('[ProposalFeed] misses', JSON.stringify(misses));
+      console.log('[ProposalFeed] detail', JSON.stringify(detailObj));
+    }
     return out;
-  }, [data, aliveOrders, userReceipts, acceptedProposalKeys, claimedReceiptIds, derivedOrderIds, consumedByReceipt, account]);
+  }, [data, aliveOrders, userReceipts, acceptedProposalKeys, claimedReceiptIds, orderIdByBlob, consumedByReceipt, account]);
 
   // When chainAccepted finds a live OrderCommitment → persist the key.
   // When chainAccepted shows SETTLED → persist the receipt objectId so it

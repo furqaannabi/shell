@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Shell Finance — What's Next</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #111318;
+    --surface: #1e2024;
+    --surface-2: #16181c;
+    --primary: #57f1db;
+    --primary-dim: #3cddc7;
+    --on: #e2e2e8;
+    --on-variant: #bacac5;
+    --outline: #859490;
+    --line: #2a2d33;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #000; }
+
+  /* Fixed 1920x1080 canvas — screenshot at 100%. */
+  .slide {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    background:
+      radial-gradient(1200px 700px at 78% 18%, rgba(87,241,219,0.08), transparent 60%),
+      var(--bg);
+    color: var(--on);
+    font-family: var(--sans);
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1.55fr 1fr;
+  }
+  /* faint engineering grid */
+  .slide::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 64px 64px;
+    opacity: 0.12;
+    pointer-events: none;
+  }
+
+  /* ---------- LEFT: runway ---------- */
+  .left { position: relative; padding: 92px 80px 72px 100px; display: flex; flex-direction: column; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 18px; letter-spacing: 0.42em; text-transform: uppercase;
+    color: var(--primary);
+  }
+  .title { margin-top: 18px; font-size: 76px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.02; }
+  .title .accent { color: var(--primary); }
+  .subtitle { margin-top: 16px; font-size: 22px; color: var(--on-variant); font-family: var(--mono); }
+
+  .timeline { margin-top: 64px; position: relative; padding-left: 56px; }
+  /* vertical spine */
+  .timeline::before {
+    content: '';
+    position: absolute; left: 19px; top: 8px; bottom: 8px;
+    width: 2px;
+    background: linear-gradient(180deg, var(--primary) 0%, var(--primary-dim) 55%, var(--outline) 100%);
+    opacity: 0.5;
+  }
+  .step { position: relative; padding: 0 0 46px 0; }
+  .step:last-child { padding-bottom: 0; }
+  .node {
+    position: absolute; left: -56px; top: -4px;
+    width: 40px; height: 40px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-weight: 700; font-size: 17px;
+    background: var(--surface); color: var(--primary);
+    border: 1.5px solid var(--primary);
+    box-shadow: 0 0 0 6px rgba(87,241,219,0.06), 0 0 18px rgba(87,241,219,0.25);
+  }
+  .step-head { display: flex; align-items: baseline; gap: 16px; }
+  .step h3 { font-size: 30px; font-weight: 600; letter-spacing: -0.01em; }
+  .tag {
+    font-family: var(--mono); font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--primary); border: 1px solid rgba(87,241,219,0.35);
+    border-radius: 4px; padding: 3px 9px; white-space: nowrap;
+  }
+  .step p { margin-top: 9px; font-size: 19px; line-height: 1.5; color: var(--on-variant); max-width: 760px; }
+
+  .status {
+    margin-top: auto; padding-top: 40px;
+    display: flex; gap: 14px; align-items: center;
+    font-family: var(--mono); font-size: 16px; color: var(--on-variant);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 10px var(--primary); }
+  .sep { color: var(--line); }
+
+  /* ---------- RIGHT: QR ---------- */
+  .right {
+    position: relative;
+    border-left: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(87,241,219,0.04), transparent 40%), var(--surface-2);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 80px 72px;
+    gap: 30px;
+  }
+  .brand { position: absolute; top: 64px; left: 0; right: 0; text-align: center;
+    font-family: var(--mono); font-size: 16px; letter-spacing: 0.4em; text-transform: uppercase; color: var(--on-variant); }
+  .qr-card {
+    background: #fff; padding: 26px; border-radius: 18px;
+    box-shadow: 0 0 0 1px rgba(87,241,219,0.4), 0 0 60px rgba(87,241,219,0.18);
+  }
+  .qr-card img { display: block; width: 360px; height: 360px; }
+  .qr-label { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; text-align: center; }
+  .qr-sub { font-family: var(--mono); font-size: 17px; color: var(--on-variant); text-align: center; line-height: 1.6; }
+  .qr-sub .hl { color: var(--primary); }
+  .wordmark { position: absolute; bottom: 56px; left: 0; right: 0; text-align: center;
+    font-size: 22px; font-weight: 700; letter-spacing: 0.02em; }
+  .wordmark .accent { color: var(--primary); }
+</style>
+</head>
+<body>
+  <div class="slide">
+    <!-- LEFT -->
+    <section class="left">
+      <div class="eyebrow">Post-hackathon runway</div>
+      <h1 class="title">What comes <span class="accent">next</span>.</h1>
+      <div class="subtitle">Testnet live now · SDK + agent on npm today</div>
+
+      <div class="timeline">
+        <div class="step">
+          <div class="node">1</div>
+          <div class="step-head">
+            <h3>Mainnet cutover</h3>
+            <span class="tag">Public audit</span>
+          </div>
+          <p>Independent security audit of the <strong>Move package</strong> and the <strong>Nautilus enclave</strong> before the mainnet switch.</p>
+        </div>
+
+        <div class="step">
+          <div class="node">2</div>
+          <div class="step-head">
+            <h3>RWA pair expansion</h3>
+            <span class="tag">Zero-code</span>
+          </div>
+          <p>Every Pyth feed becomes a tradable confidential pair — no contract change to list a new market.</p>
+        </div>
+
+        <div class="step">
+          <div class="node">3</div>
+          <div class="step-head">
+            <h3>Institutional onboarding</h3>
+            <span class="tag">IOI Desk</span>
+          </div>
+          <p>White-glove onboarding through the IOI Desk for size that can't touch public order books.</p>
+        </div>
+
+        <div class="step">
+          <div class="node">4</div>
+          <div class="step-head">
+            <h3>Compliance layer</h3>
+            <span class="tag">Permissioned</span>
+          </div>
+          <p>KYC-gated access, counterparty allowlists, and a verifiable audit trail — the bar regulated RWA desks need to trade at all.</p>
+        </div>
+      </div>
+
+      <div class="status">
+        <span class="dot"></span> Confidential by construction
+        <span class="sep">·</span> Seal
+        <span class="sep">·</span> Nautilus
+        <span class="sep">·</span> Walrus
+        <span class="sep">·</span> one atomic PTB
+      </div>
+    </section>
+
+    <!-- RIGHT -->
+    <aside class="right">
+      <div class="brand">Shell Finance</div>
+      <div class="qr-card"><img src="slide5_qr.png" alt="Scan for live Shell Finance testnet" /></div>
+      <div class="qr-label">Try it live</div>
+      <div class="qr-sub">Scan to open the <span class="hl">testnet</span> trader UI<br />and the IOI Desk.</div>
+      <div class="wordmark">Shell<span class="accent">·</span>Finance</div>
+    </aside>
+  </div>
+</body>
+</html>
