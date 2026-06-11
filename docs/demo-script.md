@@ -78,7 +78,7 @@ Catch-up if D1–D5 ran long. Otherwise extend D3 settlement narration.
 **Voice (45s):**
 > One protocol. Two access points. Three primitives — Seal, Nautilus, Walrus — composed inside a single atomic PTB. Testnet live now. SDK and agent on npm today.
 >
-> What comes next. Mainnet cutover with a public security audit of the Move package and the enclave. RWA pair expansion — every Pyth feed becomes a tradable confidential pair without a code change. Institutional onboarding through the IOI Desk for size that can't touch public books. Mobile SDK so traders Seal-encrypt from a phone. And an agent marketplace — publish a policy, others run it under their own keys, Shell agent runtime as the execution substrate.
+> What comes next. Mainnet cutover with a public security audit of the Move package and the enclave. RWA pair expansion — every Pyth feed becomes a tradable confidential pair without a code change. Institutional onboarding through the IOI Desk for size that can't touch public books. And a compliance layer — KYC-gated access, counterparty allowlists, and a verifiable audit trail, the bar regulated RWA desks need to trade at all.
 >
 > Shell Finance. Confidential by construction. Thank you.
 

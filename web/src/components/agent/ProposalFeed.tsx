@@ -36,10 +36,6 @@ function baseDecimalsFor(coinType: string): number {
   return TRADING_PAIRS.find((p) => p.baseCoinType === coinType)?.baseDecimals ?? 9;
 }
 
-// One-shot diagnostic guard — chainAccepted recomputes every render, so log
-// the SETTLED-miss detail only once per page load (avoids crashing DevTools).
-let __pfDiagLogged = false;
-
 const WALRUS_EXPLORER = 'https://walruscan.com/testnet/blob';
 
 const EXPLORER = (id: string) => `https://suiscan.xyz/${NETWORK}/tx/${id}`;
@@ -465,9 +461,6 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
   const chainAccepted = useMemo(() => {
     if (!data) return {} as Record<string, ChainState>;
     const out: Record<string, ChainState> = {};
-    const misses: Record<string, unknown>[] = [];
-    let detailLogged = false;
-    let detailObj: Record<string, unknown> | null = null;
     const remainingOrders = [...(aliveOrders ?? [])];
     const remainingReceipts = [...(userReceipts ?? [])];
     // Dedup by rowKey so each distinct match_id gets its own slot.
@@ -507,32 +500,6 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
     for (const p of sorted) {
       const rk = rowKey(p as typeof p & { matchId?: bigint });
       if (handled.has(rk) || out[rk]) continue;
-      // Diagnostic: this wallet accepted this blob but no receipt consumed its order.
-      if (acceptDigestByBlob[p.blob]) {
-        const myOrderId = orderIdByBlob?.[p.blob];
-        misses.push({
-          side: p.side,
-          size: p.agreedSize.toString(),
-          price: p.agreedPrice.toString(),
-          asset: ((p as { asset?: string }).asset ?? '').split('::').pop() ?? '',
-          blob: p.blob.slice(0, 8),
-          orderId: myOrderId ? myOrderId.slice(0, 10) : '—',
-          receiptsWithConsumed: remainingReceipts.filter(
-            (r) => (consumedByReceipt?.[r.objectId] ?? []).length > 0,
-          ).length,
-        });
-        if (!detailLogged && myOrderId) {
-          detailLogged = true;
-          detailObj = {
-            blob: p.blob,
-            myOrderId,
-            remainingCount: remainingReceipts.length,
-            consumedSample: remainingReceipts
-              .slice(0, 20)
-              .map((r) => (consumedByReceipt?.[r.objectId] ?? []).map((x) => x.toLowerCase())),
-          };
-        }
-      }
       // Accepted but not yet settled? Match a live OrderCommitment by collateral.
       const baseCoin = (p as { asset?: string }).asset ?? BASE_COIN_TYPE;
       const floatScaling = BigInt(10 ** baseDecimalsFor(baseCoin));
@@ -547,12 +514,6 @@ export default function ProposalFeed({ embedded }: { embedded?: boolean } = {}) 
         out[rk] = { status: 'accepted', digest: remainingOrders[oIdx].submitDigest };
         remainingOrders.splice(oIdx, 1);
       }
-    }
-    if (misses.length && !__pfDiagLogged && consumedByReceipt && orderIdByBlob) {
-      __pfDiagLogged = true; // once per page load — avoids DevTools-crashing spam
-      console.warn(`[ProposalFeed] ${misses.length} SETTLED MISS — receipts=${(userReceipts ?? []).length}, consumedMapReady=${!!consumedByReceipt}, orderIdByBlob=${Object.keys(orderIdByBlob ?? {}).length}`);
-      console.log('[ProposalFeed] misses', JSON.stringify(misses));
-      console.log('[ProposalFeed] detail', JSON.stringify(detailObj));
     }
     return out;
   }, [data, aliveOrders, userReceipts, acceptedProposalKeys, claimedReceiptIds, orderIdByBlob, consumedByReceipt, account]);
