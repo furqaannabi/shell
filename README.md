@@ -422,7 +422,6 @@ Current testnet IDs after the 2026-05-24 clean-slate republish:
 | --- | --- |
 | Shell package (original-id) | `0x23d1e8b5b562bff7e30c69a20d2d0075074e3170898aa8bf9596de635764e36e` |
 | Shell package (latest — `settle_v4` + `ESelfMatch` + fee + RWA) | `0x275cf49740a458b3ca92e85ca387b84dd16bd0466dd58efceb97614846e95031` |
-| Shell package (prev — `settle_v3`) | `0xd2972abf8df0378463f3b5acf000a2af5de6af05acd893adba37952d2ecc805a` |
 | `Pool` (shared) | `0x33682a9652567989b094989fcabe9eda53fbde32c4a3e0204657a06510bab22b` |
 | `EnclaveConfig<SHELL>` (shared) | `0x9ddc4bd22c4a84a7f02ac86d1a64530ecc768cb47df48dffd8d33803a096a504` |
 | `Cap<SHELL>` (deployer) | `0x0c71e66d311f26a6dfa7ebbfb0dfc924439f503a5e7ac70280f92544c11770ef` |
