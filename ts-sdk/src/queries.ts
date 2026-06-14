@@ -119,15 +119,28 @@ export interface GetReceiptsOptions {
 export async function getReceipts(
   suiClient: SuiJsonRpcClient,
   opts: GetReceiptsOptions,
-): Promise<Array<{ objectId: string; fields: SettlementReceiptFields }>> {
-  const all: Array<{ objectId: string; fields: SettlementReceiptFields }> = [];
+): Promise<
+  Array<{
+    objectId: string;
+    /** Digest of the settle tx that minted this receipt. Its `effects.deleted`
+     *  lists the consumed OrderCommitment ids — lets a client map the receipt
+     *  back to the exact order it submitted (asset-aware, partial-fill safe). */
+    previousTransaction: string | null;
+    fields: SettlementReceiptFields;
+  }>
+> {
+  const all: Array<{
+    objectId: string;
+    previousTransaction: string | null;
+    fields: SettlementReceiptFields;
+  }> = [];
   let cursor: string | null | undefined = undefined;
 
   do {
     const res = await suiClient.getOwnedObjects({
       owner: opts.owner,
       filter: { StructType: `${opts.shellPackageId}::pool::SettlementReceipt` },
-      options: { showContent: true },
+      options: { showContent: true, showPreviousTransaction: true },
       limit: 50,
       ...(cursor ? { cursor } : {}),
     });
@@ -137,6 +150,7 @@ export async function getReceipts(
         .filter((obj) => obj.data?.content?.dataType === "moveObject")
         .map((obj) => ({
           objectId: obj.data!.objectId,
+          previousTransaction: obj.data!.previousTransaction ?? null,
           fields: (obj.data!.content as unknown as { fields: SettlementReceiptFields })
             .fields,
         })),
@@ -146,4 +160,27 @@ export async function getReceipts(
   } while (cursor);
 
   return all;
+}
+
+/// For each settle tx digest, return the object ids it deleted — i.e. the
+/// `OrderCommitment`s `shell::pool::consume` destroyed during settlement.
+/// A receipt maps to the order whose id appears in its tx's deleted set,
+/// so clients can correlate a receipt to the exact order they submitted.
+export async function getConsumedOrderIds(
+  suiClient: SuiJsonRpcClient,
+  digests: string[],
+): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {};
+  const unique = [...new Set(digests.filter(Boolean))];
+  for (let i = 0; i < unique.length; i += 50) {
+    const batch = unique.slice(i, i + 50);
+    const txs = await suiClient.multiGetTransactionBlocks({
+      digests: batch,
+      options: { showEffects: true },
+    });
+    for (const tx of txs) {
+      out[tx.digest] = (tx.effects?.deleted ?? []).map((d) => d.objectId);
+    }
+  }
+  return out;
 }

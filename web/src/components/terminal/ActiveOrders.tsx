@@ -87,6 +87,13 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
   // submitted this session. A refresh wipes them until decrypt flow ships.
   const onChainIds = new Set((onChainOrders ?? []).map(o => o.orderId));
 
+  // An order is only eligible for settledRows after it has been observed
+  // on-chain at least once. A just-submitted session order is absent from the
+  // stale onChainOrders snapshot (cached, not loading) — without this gate it
+  // briefly renders MATCHED before the refetch shows AWAITING MATCH.
+  const seenOnChain = useRef<Set<string>>(new Set());
+  onChainIds.forEach(id => seenOnChain.current.add(id));
+
   const mergedOrders = (onChainOrders || []).map((oc) => {
     const local = sessionOrders.find((s) => s.orderId === oc.orderId);
     const baseSymbol = local?.baseSymbol ?? symbolFor(oc.collateralType);
@@ -152,7 +159,16 @@ export default function ActiveOrders({ orders: sessionOrders }: Props) {
             status: status as 'active' | 'settled' | 'matched' | 'expired',
             receiptId: receipt?.objectId,
           };
-        });
+        })
+        // Settled rows (receipt matched) always show — that's the history.
+        // A non-settled row only shows once the order was actually observed
+        // on-chain; otherwise a just-submitted order missing from the stale
+        // snapshot would flash MATCHED before the refetch shows AWAITING MATCH.
+        .filter(row =>
+          row.status === 'settled' ||
+          seenOnChain.current.has(row.orderId) ||
+          settledCache.current.has(row.orderId)
+        );
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);

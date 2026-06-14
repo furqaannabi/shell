@@ -6,7 +6,7 @@ export { submitOrderTx, cancelOrderTx } from "./tx.js";
 export type { SubmitOrderTxOptions, CancelOrderTxOptions } from "./tx.js";
 export { getOrderCollateralType, settleMatchTx } from "./settle.js";
 export type { SettleMatchOptions } from "./settle.js";
-export { getActiveOrders, getReceipts } from "./queries.js";
+export { getActiveOrders, getReceipts, getConsumedOrderIds } from "./queries.js";
 export type {
   ActiveOrder,
   GetActiveOrdersOptions,
